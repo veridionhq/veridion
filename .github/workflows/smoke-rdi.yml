@@ -1,0 +1,45 @@
+name: smoke-rdi
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+  workflow_dispatch:
+
+jobs:
+  smoke-rdi:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build sample diff
+        shell: bash
+        run: cp tests/fixtures/diffs/sample_pr.diff pr.diff
+
+      - name: Run Veridion RDI smoke
+        id: run-rdi
+        uses: ./
+        with:
+          diff-path: pr.diff
+          reports: |
+            trivy=tests/fixtures/scanners/trivy_report.json
+            semgrep=tests/fixtures/scanners/semgrep_report.json
+            grype=tests/fixtures/scanners/grype_report.json
+            syft=tests/fixtures/scanners/syft_report.json
+          baseline-reports: |
+            semgrep=tests/fixtures/scanners/semgrep_report.json
+          policy-path: tests/fixtures/policies/default_policy.yaml
+          comment-path: veridion-pr-comment.md
+          json-output-path: veridion-result.json
+
+      - name: Show outputs
+        shell: bash
+        run: |
+          echo "Decision: ${{ steps.run-rdi.outputs.decision }}"
+          echo "Score: ${{ steps.run-rdi.outputs.score }}"
+          echo "Confidence: ${{ steps.run-rdi.outputs.confidence }}"
+          echo "Comment identifier: ${{ steps.run-rdi.outputs.comment_identifier }}"

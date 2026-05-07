@@ -1,0 +1,44 @@
+{
+  "matches": [
+    {
+      "vulnerability": {
+        "id": "CVE-2025-20001",
+        "severity": "High",
+        "description": "Requests vulnerable to header confusion in specific proxy chains.",
+        "dataSource": "https://grype.example/db/vulnerability/CVE-2025-20001",
+        "namespace": "nvd:cpe",
+        "cvss": [
+          {
+            "metrics": {
+              "baseScore": 8.8
+            }
+          }
+        ],
+        "epss": [
+          {
+            "probability": 0.42
+          }
+        ],
+        "urls": [
+          "https://nvd.nist.gov/vuln/detail/CVE-2025-20001"
+        ]
+      },
+      "artifact": {
+        "name": "requests",
+        "version": "2.31.0",
+        "type": "python",
+        "purl": "pkg:pypi/requests@2.31.0",
+        "locations": [
+          {
+            "path": "/workspace/requirements.txt"
+          }
+        ]
+      },
+      "fix": {
+        "versions": [
+          "2.32.3"
+        ]
+      }
+    }
+  ]
+}

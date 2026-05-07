@@ -1,0 +1,40 @@
+{
+  "version": "1.75.0",
+  "results": [
+    {
+      "check_id": "python.flask.security.audit.render-template-string.render-template-string",
+      "path": "app/routes.py",
+      "start": {
+        "line": 12,
+        "col": 5
+      },
+      "end": {
+        "line": 12,
+        "col": 44
+      },
+      "extra": {
+        "message": "Untrusted input flows into render_template_string.",
+        "lines": "return render_template_string(user_input)",
+        "severity": "ERROR",
+        "metadata": {
+          "category": "security",
+          "confidence": "HIGH",
+          "source": "https://semgrep.dev/r/python.flask.security.audit.render-template-string.render-template-string",
+          "shortlink": "https://sg.run/abc123",
+          "technology": [
+            "python",
+            "flask"
+          ],
+          "cwe": [
+            "CWE-94: Code Injection"
+          ],
+          "owasp": [
+            "A03:2021 - Injection"
+          ],
+          "impact": "high",
+          "likelihood": "medium"
+        }
+      }
+    }
+  ]
+}

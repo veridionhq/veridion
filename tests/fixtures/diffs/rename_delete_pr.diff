@@ -1,0 +1,25 @@
+diff --git a/app/old_name.py b/app/new_name.py
+similarity index 96%
+rename from app/old_name.py
+rename to app/new_name.py
+index 9999999..aaaaaaa 100644
+--- a/app/old_name.py
++++ b/app/new_name.py
+@@ -1,1 +1,1 @@
+-print("old")
++print("new")
+diff --git a/package-lock.json b/package-lock.json
+deleted file mode 100644
+index bbbbbbb..0000000
+--- a/package-lock.json
++++ /dev/null
+@@ -1,1 +0,0 @@
+-{"lockfileVersion": 3}
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+new file mode 100644
+index 0000000..ccccccc
+--- /dev/null
++++ b/.github/workflows/release.yml
+@@ -0,0 +1,2 @@
++name: release
++on: push

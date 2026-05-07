@@ -1,0 +1,23 @@
+{
+  "artifacts": [
+    {
+      "id": "1234",
+      "name": "flask",
+      "version": "3.0.3",
+      "type": "python",
+      "language": "python",
+      "purl": "pkg:pypi/flask@3.0.3",
+      "locations": [
+        {
+          "path": "/workspace/requirements.txt"
+        }
+      ],
+      "licenses": [
+        {
+          "value": "BSD-3-Clause",
+          "spdxExpression": "BSD-3-Clause"
+        }
+      ]
+    }
+  ]
+}
