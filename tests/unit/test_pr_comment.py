@@ -27,7 +27,7 @@ def test_render_pr_comment_renders_policy_decision_for_high_risk_change() -> Non
 **RDI Score:** 38
 **Confidence:** HIGH
 
-**Summary:** Introduced findings: 3 | Existing findings: 1 | Unattributed findings: 0 | Changed files: 4
+**Summary:** Introduced findings: 2 | Existing findings: 1 | Unattributed findings: 0 | Changed files: 4
 
 ### Why
 
@@ -53,13 +53,11 @@ def test_render_pr_comment_renders_policy_decision_for_high_risk_change() -> Non
 ### Introduced Severity
 
 - high: 2
-- unknown: 1
 
 ### Introduced Finding Types
 
 - code: 1
 - dependency: 1
-- package: 1
 <!-- veridion:rdi:end -->
 """
 

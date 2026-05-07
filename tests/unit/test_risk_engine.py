@@ -9,14 +9,13 @@ def test_extract_risk_features_counts_introduced_findings_and_context() -> None:
 
     features = extract_risk_features(bundle)
 
-    assert features.introduced_findings == 3
+    assert features.introduced_findings == 2
     assert features.introduced_critical == 0
     assert features.introduced_high == 2
     assert features.introduced_medium == 0
     assert features.introduced_low == 0
     assert features.introduced_code_findings == 1
     assert features.introduced_dependency_findings == 1
-    assert features.introduced_package_findings == 1
     assert features.changed_files == 4
     assert features.has_dependency_changes is True
     assert features.has_lockfile_changes is True

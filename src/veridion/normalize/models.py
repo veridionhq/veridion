@@ -42,6 +42,20 @@ class NormalizedFinding:
         return asdict(self)
 
     @property
+    def is_inventory_only(self) -> bool:
+        """Return whether this record is supporting inventory rather than a scored finding."""
+
+        return self.finding_type == "package"
+
+    @property
+    def dedup_key(self) -> str:
+        """Return a cross-scanner deduplication key for equivalent findings."""
+
+        if self.finding_type == "dependency" and self.package_name and self.package_version:
+            return f"dependency|{self.rule_id}|{self.package_name}|{self.package_version}"
+        return self.fingerprint
+
+    @property
     def fingerprint(self) -> str:
         """Stable identifier used for baseline comparisons."""
 

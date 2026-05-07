@@ -25,6 +25,7 @@ def compare_findings_against_baseline(
     """Identify findings that are newly introduced by the current change."""
 
     baseline_fingerprints = {finding.fingerprint for finding in baseline_findings}
+    baseline_dedup_keys = {finding.dedup_key for finding in baseline_findings}
     changed_paths = set(change_context.changed_paths)
     changed_paths.update(file.previous_path for file in change_context.files if file.previous_path)
     has_dependency_surface_change = change_context.has_dependency_changes or change_context.has_lockfile_changes
@@ -34,7 +35,7 @@ def compare_findings_against_baseline(
     unattributed: list[NormalizedFinding] = []
 
     for finding in current_findings:
-        if finding.fingerprint in baseline_fingerprints:
+        if finding.fingerprint in baseline_fingerprints or finding.dedup_key in baseline_dedup_keys:
             existing.append(finding)
             continue
 

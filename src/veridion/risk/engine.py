@@ -18,7 +18,6 @@ class RiskFeatures:
     introduced_low: int
     introduced_code_findings: int
     introduced_dependency_findings: int
-    introduced_package_findings: int
     changed_files: int
     has_dependency_changes: bool
     has_lockfile_changes: bool
@@ -49,7 +48,6 @@ def extract_risk_features(bundle: AnalysisBundle) -> RiskFeatures:
         introduced_low=_count_introduced_with_severity(bundle, "low"),
         introduced_code_findings=_count_introduced_with_type(bundle, "code"),
         introduced_dependency_findings=_count_introduced_with_type(bundle, "dependency"),
-        introduced_package_findings=_count_introduced_with_type(bundle, "package"),
         changed_files=bundle.summary.changed_files,
         has_dependency_changes=bundle.summary.dependency_changes,
         has_lockfile_changes=bundle.summary.lockfile_changes,
@@ -76,14 +74,10 @@ def score_analysis_bundle(bundle: AnalysisBundle) -> RdiResult:
     elif features.has_infrastructure_changes:
         score -= 5
 
-    if features.has_dependency_changes and (
-        features.introduced_dependency_findings or features.introduced_package_findings
-    ):
+    if features.has_dependency_changes and features.introduced_dependency_findings:
         score -= 8
 
-    if features.has_lockfile_changes and (
-        features.introduced_dependency_findings or features.introduced_package_findings
-    ):
+    if features.has_lockfile_changes and features.introduced_dependency_findings:
         score -= 4
 
     score = max(0, min(100, score))
@@ -155,8 +149,6 @@ def _derive_reasons(features: RiskFeatures) -> tuple[str, ...]:
         reasons.append("infrastructure changes are present in the current diff")
     if features.introduced_dependency_findings:
         reasons.append("new dependency vulnerability findings were introduced")
-    if features.introduced_package_findings and not features.introduced_dependency_findings:
-        reasons.append("new packages were introduced through dependency surface changes")
     if not reasons and features.introduced_findings == 0:
         reasons.append("no introduced findings detected")
 

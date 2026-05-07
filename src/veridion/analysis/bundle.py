@@ -8,6 +8,7 @@ from veridion.baseline import BaselineComparison, compare_findings_against_basel
 from veridion.change_context import ParsedChangeContext
 from veridion.normalize.models import NormalizedFinding
 from veridion.util import plain
+from veridion.analysis.dedup import deduplicate_findings
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ class AnalysisSummary:
     dependency_changes: bool
     lockfile_changes: bool
     infrastructure_changes: bool
+    inventory_packages: int
     by_severity: dict[str, int]
     introduced_by_severity: dict[str, int]
     by_finding_type: dict[str, int]
@@ -34,6 +36,8 @@ class AnalysisBundle:
 
     current_findings: tuple[NormalizedFinding, ...]
     baseline_findings: tuple[NormalizedFinding, ...]
+    current_inventory: tuple[NormalizedFinding, ...]
+    baseline_inventory: tuple[NormalizedFinding, ...]
     change_context: ParsedChangeContext
     baseline_comparison: BaselineComparison
     summary: AnalysisSummary
@@ -51,20 +55,30 @@ def build_analysis_bundle(
 ) -> AnalysisBundle:
     """Assemble the deterministic analysis object used by the decision engine."""
 
+    current_inventory = [finding for finding in current_findings if finding.is_inventory_only]
+    baseline_inventory = [finding for finding in baseline_findings if finding.is_inventory_only]
+    scored_current_findings = deduplicate_findings([finding for finding in current_findings if not finding.is_inventory_only])
+    scored_baseline_findings = deduplicate_findings(
+        [finding for finding in baseline_findings if not finding.is_inventory_only]
+    )
+
     baseline_comparison = compare_findings_against_baseline(
-        current_findings=current_findings,
-        baseline_findings=baseline_findings,
+        current_findings=scored_current_findings,
+        baseline_findings=scored_baseline_findings,
         change_context=change_context,
     )
     summary = _build_summary(
-        current_findings=current_findings,
+        current_findings=scored_current_findings,
+        current_inventory=current_inventory,
         change_context=change_context,
         baseline_comparison=baseline_comparison,
     )
 
     return AnalysisBundle(
-        current_findings=tuple(current_findings),
-        baseline_findings=tuple(baseline_findings),
+        current_findings=tuple(scored_current_findings),
+        baseline_findings=tuple(scored_baseline_findings),
+        current_inventory=tuple(current_inventory),
+        baseline_inventory=tuple(baseline_inventory),
         change_context=change_context,
         baseline_comparison=baseline_comparison,
         summary=summary,
@@ -74,6 +88,7 @@ def build_analysis_bundle(
 def _build_summary(
     *,
     current_findings: list[NormalizedFinding],
+    current_inventory: list[NormalizedFinding],
     change_context: ParsedChangeContext,
     baseline_comparison: BaselineComparison,
 ) -> AnalysisSummary:
@@ -86,6 +101,7 @@ def _build_summary(
         dependency_changes=change_context.has_dependency_changes,
         lockfile_changes=change_context.has_lockfile_changes,
         infrastructure_changes=change_context.has_iac_changes,
+        inventory_packages=len(current_inventory),
         by_severity=_count_by_severity(current_findings),
         introduced_by_severity=_count_by_severity(list(baseline_comparison.introduced)),
         by_finding_type=_count_by_finding_type(current_findings),

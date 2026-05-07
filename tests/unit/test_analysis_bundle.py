@@ -79,37 +79,34 @@ def test_build_analysis_bundle_assembles_deterministic_summary_and_partitions() 
     assert tuple(finding.rule_id for finding in bundle.baseline_comparison.introduced) == (
         "python.audit.new",
         "CVE-2025-99999",
-        "pkg:pypi/flask@3.0.3",
     )
     assert tuple(finding.rule_id for finding in bundle.baseline_comparison.existing) == ("python.audit.old",)
-    assert bundle.summary.total_findings == 4
-    assert bundle.summary.introduced_findings == 3
+    assert tuple(finding.rule_id for finding in bundle.current_inventory) == ("pkg:pypi/flask@3.0.3",)
+    assert bundle.summary.total_findings == 3
+    assert bundle.summary.introduced_findings == 2
     assert bundle.summary.existing_findings == 1
     assert bundle.summary.unattributed_findings == 0
     assert bundle.summary.changed_files == 3
     assert bundle.summary.dependency_changes is True
     assert bundle.summary.lockfile_changes is True
     assert bundle.summary.infrastructure_changes is False
+    assert bundle.summary.inventory_packages == 1
     assert bundle.summary.by_severity == {
         "critical": 1,
         "high": 1,
         "medium": 1,
-        "unknown": 1,
     }
     assert bundle.summary.introduced_by_severity == {
         "critical": 1,
         "high": 1,
-        "unknown": 1,
     }
     assert bundle.summary.by_finding_type == {
         "code": 2,
         "dependency": 1,
-        "package": 1,
     }
     assert bundle.summary.introduced_by_finding_type == {
         "code": 1,
         "dependency": 1,
-        "package": 1,
     }
 
 
@@ -123,6 +120,8 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
     assert bundle.to_dict() == {
         "current_findings": [],
         "baseline_findings": [],
+        "current_inventory": [],
+        "baseline_inventory": [],
         "change_context": {"files": []},
         "baseline_comparison": {
             "introduced": [],
@@ -138,6 +137,7 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "dependency_changes": False,
             "lockfile_changes": False,
             "infrastructure_changes": False,
+            "inventory_packages": 0,
             "by_severity": {},
             "introduced_by_severity": {},
             "by_finding_type": {},
