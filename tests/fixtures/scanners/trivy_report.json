@@ -1,0 +1,25 @@
+{
+  "SchemaVersion": 2,
+  "ArtifactName": "payments-api",
+  "Results": [
+    {
+      "Target": "requirements.txt",
+      "Class": "lang-pkgs",
+      "Type": "pip",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2024-10000",
+          "PkgName": "urllib3",
+          "InstalledVersion": "1.26.0",
+          "FixedVersion": "2.2.2",
+          "Title": "urllib3 vulnerable to crafted request smuggling",
+          "Description": "A crafted request can trigger unsafe proxy handling in affected versions.",
+          "Severity": "CRITICAL",
+          "References": [
+            "https://avd.aquasec.com/nvd/cve-2024-10000"
+          ]
+        }
+      ]
+    }
+  ]
+}

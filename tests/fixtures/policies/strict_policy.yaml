@@ -1,0 +1,6 @@
+max_severity: critical
+allow_conditional: false
+no_go_below_score: 70
+conditional_go_below_score: 90
+require_approval_for:
+  - production_iac

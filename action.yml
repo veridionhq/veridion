@@ -1,0 +1,115 @@
+name: "Veridion RDI"
+description: "Release Decision Intelligence for pull requests"
+inputs:
+  diff-path:
+    description: "Path to a unified diff file for the current change"
+    required: true
+  reports:
+    description: "Newline-delimited TOOL=PATH mappings for current scanner reports"
+    required: false
+    default: ""
+  baseline-reports:
+    description: "Newline-delimited TOOL=PATH mappings for baseline scanner reports"
+    required: false
+    default: ""
+  policy-path:
+    description: "Path to policy YAML"
+    required: false
+    default: ""
+  comment-path:
+    description: "Path to write the rendered PR comment markdown"
+    required: false
+    default: "veridion-pr-comment.md"
+  json-output-path:
+    description: "Path to write structured JSON output"
+    required: false
+    default: "veridion-result.json"
+  github-token:
+    description: "GitHub token used to upsert the PR comment"
+    required: false
+    default: ""
+  repository:
+    description: "GitHub repository in owner/repo format"
+    required: false
+    default: ""
+  pull-request-number:
+    description: "Pull request number to comment on"
+    required: false
+    default: ""
+  post-comment:
+    description: "Whether to create or update the PR comment"
+    required: false
+    default: "false"
+outputs:
+  decision:
+    description: "Final release decision"
+  score:
+    description: "RDI score"
+  confidence:
+    description: "Decision confidence"
+  required_approvals:
+    description: "Comma-separated approval roles"
+  comment_path:
+    description: "Path to rendered PR comment"
+  json_output_path:
+    description: "Path to structured JSON result"
+  comment_identifier:
+    description: "Stable comment identifier"
+  comment_id:
+    description: "GitHub comment id when comment posting is enabled"
+  comment_mode:
+    description: "Whether the PR comment was created or updated"
+runs:
+  using: "composite"
+  steps:
+    - name: Run Veridion RDI
+      shell: bash
+      env:
+        INPUT_DIFF_PATH: ${{ inputs.diff-path }}
+        INPUT_REPORTS: ${{ inputs.reports }}
+        INPUT_BASELINE_REPORTS: ${{ inputs.baseline-reports }}
+        INPUT_POLICY_PATH: ${{ inputs.policy-path }}
+        INPUT_COMMENT_PATH: ${{ inputs.comment-path }}
+        INPUT_JSON_OUTPUT_PATH: ${{ inputs.json-output-path }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        INPUT_PULL_REQUEST_NUMBER: ${{ inputs.pull-request-number }}
+        INPUT_POST_COMMENT: ${{ inputs.post-comment }}
+        PYTHONPATH: ${{ github.action_path }}/src
+      run: |
+        set -euo pipefail
+        reports_args=()
+        if [[ -n "${INPUT_REPORTS}" ]]; then
+          while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            reports_args+=(--report "$line")
+          done <<< "${INPUT_REPORTS}"
+        fi
+        baseline_args=()
+        if [[ -n "${INPUT_BASELINE_REPORTS}" ]]; then
+          while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            baseline_args+=(--baseline-report "$line")
+          done <<< "${INPUT_BASELINE_REPORTS}"
+        fi
+        policy_args=()
+        if [[ -n "${INPUT_POLICY_PATH}" ]]; then
+          policy_args+=(--policy-path "${INPUT_POLICY_PATH}")
+        fi
+        python3 -m veridion.action \
+          --diff-path "${INPUT_DIFF_PATH}" \
+          "${reports_args[@]}" \
+          "${baseline_args[@]}" \
+          "${policy_args[@]}" \
+          --comment-path "${INPUT_COMMENT_PATH}" \
+          --json-output-path "${INPUT_JSON_OUTPUT_PATH}"
+        if [[ "${INPUT_POST_COMMENT}" == "true" ]]; then
+          [[ -n "${INPUT_GITHUB_TOKEN}" ]] || { echo "github-token is required when post-comment=true" >&2; exit 1; }
+          [[ -n "${INPUT_REPOSITORY}" ]] || { echo "repository is required when post-comment=true" >&2; exit 1; }
+          [[ -n "${INPUT_PULL_REQUEST_NUMBER}" ]] || { echo "pull-request-number is required when post-comment=true" >&2; exit 1; }
+          python3 -m veridion.action.github_comment \
+            --repository "${INPUT_REPOSITORY}" \
+            --pull-request-number "${INPUT_PULL_REQUEST_NUMBER}" \
+            --github-token "${INPUT_GITHUB_TOKEN}" \
+            --comment-path "${INPUT_COMMENT_PATH}"
+        fi
