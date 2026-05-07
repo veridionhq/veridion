@@ -57,3 +57,26 @@ def test_github_request_wraps_url_errors(monkeypatch) -> None:
             method="GET",
             github_token="token",
         )
+
+
+def test_github_request_wraps_non_json_success_responses(monkeypatch) -> None:
+    class FakeResponse:
+        headers = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b"<html>outage</html>"
+
+    monkeypatch.setattr(github_comment.request, "urlopen", lambda req: FakeResponse())
+
+    with pytest.raises(github_comment.GitHubCommentError, match="unexpected non-JSON response"):
+        github_comment._github_request(  # type: ignore[attr-defined]
+            url="https://api.github.com/test",
+            method="GET",
+            github_token="token",
+        )

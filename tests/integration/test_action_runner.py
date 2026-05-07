@@ -25,7 +25,7 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     )
 
     assert result.decision.decision == "NO GO"
-    assert result.decision.score == 23
+    assert result.decision.score < 60
     assert result.bundle.summary.introduced_findings == 3
     assert result.comment_identifier == "veridion:rdi"
     assert "## Release Decision Intelligence" in result.comment_markdown

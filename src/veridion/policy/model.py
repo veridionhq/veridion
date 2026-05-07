@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from veridion.normalize.common import SEVERITY_ORDER, normalize_severity
+from veridion.normalize.common import SEVERITY_ORDER, as_string, normalize_severity
 
 
 @dataclass(frozen=True)
 class PolicyConfig:
     """Configurable release policy for decision evaluation."""
 
+    # Semantics: "high" means block high and critical findings, not allow high.
     max_severity: str = "critical"
     allow_conditional: bool = True
     no_go_below_score: int = 60
@@ -60,7 +61,7 @@ def parse_policy_yaml(text: str) -> PolicyConfig:
 
 
 def _policy_from_mapping(parsed: dict[str, object]) -> PolicyConfig:
-    max_severity = normalize_severity(_as_string(parsed.get("max_severity"), default="critical"))
+    max_severity = normalize_severity(as_string(parsed.get("max_severity"), default="critical"))
     if max_severity not in SEVERITY_ORDER:
         raise ValueError(f"unsupported max_severity: {max_severity}")
 
@@ -73,7 +74,7 @@ def _policy_from_mapping(parsed: dict[str, object]) -> PolicyConfig:
         allow_conditional=_as_bool(parsed.get("allow_conditional"), default=True),
         no_go_below_score=_as_int(parsed.get("no_go_below_score"), default=60),
         conditional_go_below_score=_as_int(parsed.get("conditional_go_below_score"), default=85),
-        require_approval_for=tuple(_as_string(item, default="") for item in approval_values if _as_string(item)),
+        require_approval_for=tuple(as_string(item, default="") for item in approval_values if as_string(item)),
     )
 
 
@@ -86,14 +87,6 @@ def _parse_scalar(value: str) -> object:
     if value.isdigit():
         return int(value)
     return value
-
-
-def _as_string(value: object, *, default: str | None = None) -> str | None:
-    if value is None:
-        return default
-    if isinstance(value, str):
-        return value
-    return str(value)
 
 
 def _as_bool(value: object, *, default: bool) -> bool:

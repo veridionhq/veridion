@@ -5,6 +5,17 @@ from __future__ import annotations
 from veridion.normalize.common import as_float, as_string, normalize_severity
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 
+IAC_PATH_HINTS = (
+    "terraform/",
+    "helm/",
+    "k8s/",
+    "kubernetes/",
+    "manifests/",
+    "deploy/",
+    "infrastructure/",
+    ".github/workflows/",
+)
+
 
 def normalize_trivy_report(report: dict[str, object]) -> list[NormalizedFinding]:
     """Convert a Trivy JSON report into the unified finding schema."""
@@ -52,7 +63,9 @@ def _classify_target(target: str | None) -> str:
     if not target:
         return "dependency"
 
-    if ".tf" in target or target.endswith((".yaml", ".yml", ".json")):
+    if target.endswith((".tf", ".tfvars")):
+        return "infrastructure"
+    if any(hint in target for hint in IAC_PATH_HINTS) and target.endswith((".yaml", ".yml", ".json", ".tf", ".tfvars")):
         return "infrastructure"
 
     return "dependency"

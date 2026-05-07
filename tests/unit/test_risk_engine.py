@@ -104,6 +104,38 @@ def test_score_analysis_bundle_returns_no_go_for_critical_introduced_risk() -> N
     )
 
 
+def test_score_analysis_bundle_emits_reason_for_medium_findings() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.medium",
+                title="Medium issue",
+                severity="medium",
+                location=NormalizedLocation(path="app/routes.py", start_line=12, end_line=12),
+            )
+        ],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="app/routes.py",
+                    change_type="modified",
+                    added_lines=2,
+                    removed_lines=1,
+                    signals=("application_code",),
+                    previous_path="app/routes.py",
+                ),
+            )
+        ),
+    )
+
+    result = score_analysis_bundle(bundle)
+
+    assert "1 introduced medium-severity finding(s)" in result.reasons
+
+
 def _bundle_with_high_code_and_dependency_risk():
     baseline = [
         NormalizedFinding(

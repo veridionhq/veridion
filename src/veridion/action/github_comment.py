@@ -92,20 +92,14 @@ def main(argv: list[str] | None = None) -> int:
 
 def _fetch_issue_comments(*, repository: str, issue_number: int, github_token: str) -> list[CommentRecord]:
     url = f"https://api.github.com/repos/{repository}/issues/{issue_number}/comments?per_page=100"
-    payload = _github_request(url=url, method="GET", github_token=github_token)
-    return [
-        CommentRecord(
-            comment_id=item["id"],
-            author_login=item["user"]["login"],
-            body=item["body"],
-        )
-        for item in payload
-        if isinstance(item, dict)
-        and isinstance(item.get("id"), int)
-        and isinstance(item.get("body"), str)
-        and isinstance(item.get("user"), dict)
-        and isinstance(item["user"].get("login"), str)
-    ]
+    comments: list[CommentRecord] = []
+
+    while url:
+        payload, headers = _github_request_with_headers(url=url, method="GET", github_token=github_token)
+        comments.extend(_parse_comment_records(payload))
+        url = _next_link(headers.get("Link"))
+
+    return comments
 
 
 def _create_issue_comment(
@@ -137,6 +131,22 @@ def _github_request(
     github_token: str,
     body: dict[str, Any] | None = None,
 ) -> Any:
+    payload, _ = _github_request_with_headers(
+        url=url,
+        method=method,
+        github_token=github_token,
+        body=body,
+    )
+    return payload
+
+
+def _github_request_with_headers(
+    *,
+    url: str,
+    method: str,
+    github_token: str,
+    body: dict[str, Any] | None = None,
+) -> tuple[Any, dict[str, str]]:
     data = None
     headers = {
         "Accept": "application/vnd.github+json",
@@ -152,7 +162,12 @@ def _github_request(
     try:
         with request.urlopen(req) as response:
             payload = response.read().decode("utf-8")
-        return json.loads(payload) if payload else {}
+            response_headers = dict(response.headers.items())
+        try:
+            parsed = json.loads(payload) if payload else {}
+        except json.JSONDecodeError as exc:
+            raise GitHubCommentError(f"unexpected non-JSON response from {url}") from exc
+        return parsed, response_headers
     except error.HTTPError as exc:
         payload = exc.read().decode("utf-8") if exc.fp else ""
         detail = _extract_error_message(payload) or exc.reason
@@ -200,4 +215,38 @@ def _extract_error_message(payload: str) -> str | None:
         message = parsed.get("message")
         if isinstance(message, str):
             return message
+    return None
+
+
+def _parse_comment_records(payload: Any) -> list[CommentRecord]:
+    if not isinstance(payload, list):
+        return []
+
+    return [
+        CommentRecord(
+            comment_id=item["id"],
+            author_login=item["user"]["login"],
+            body=item["body"],
+        )
+        for item in payload
+        if isinstance(item, dict)
+        and isinstance(item.get("id"), int)
+        and isinstance(item.get("body"), str)
+        and isinstance(item.get("user"), dict)
+        and isinstance(item["user"].get("login"), str)
+    ]
+
+
+def _next_link(link_header: str | None) -> str | None:
+    if not link_header:
+        return None
+
+    for part in link_header.split(","):
+        section = part.strip()
+        if 'rel="next"' not in section:
+            continue
+        if not section.startswith("<") or ">" not in section:
+            continue
+        return section[1 : section.index(">")]
+
     return None

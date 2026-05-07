@@ -21,24 +21,24 @@ def normalize_grype_report(report: dict[str, object]) -> list[NormalizedFinding]
         artifact = artifact if isinstance(artifact, dict) else {}
 
         findings.append(
-                NormalizedFinding(
-                    source="grype",
-                    finding_type="dependency",
-                    rule_id=as_string(vulnerability.get("id"), default="unknown-rule"),
-                    title=as_string(vulnerability.get("description"), default="Untitled vulnerability"),
-                    severity=normalize_severity(as_string(vulnerability.get("severity"))),
-                    description=as_string(vulnerability.get("dataSource")),
-                    package_name=as_string(artifact.get("name")),
-                    package_version=as_string(artifact.get("version")),
-                    fixed_version=_fix_version(match.get("fix", {})),
-                    cvss_score=_extract_grype_cvss(vulnerability),
-                    epss_score=as_float(vulnerability.get("epss")),
-                    location=NormalizedLocation(path=location_path_from_locations(artifact.get("locations"))),
-                    references=_build_references(vulnerability),
-                    categories=("dependency",),
-                    metadata=_build_metadata(artifact, vulnerability),
-                )
+            NormalizedFinding(
+                source="grype",
+                finding_type="dependency",
+                rule_id=as_string(vulnerability.get("id"), default="unknown-rule"),
+                title=as_string(vulnerability.get("description"), default="Untitled vulnerability"),
+                severity=normalize_severity(as_string(vulnerability.get("severity"))),
+                description=as_string(vulnerability.get("dataSource")),
+                package_name=as_string(artifact.get("name")),
+                package_version=as_string(artifact.get("version")),
+                fixed_version=_fix_version(match.get("fix", {})),
+                cvss_score=_extract_grype_cvss(vulnerability),
+                epss_score=_extract_grype_epss(vulnerability),
+                location=NormalizedLocation(path=location_path_from_locations(artifact.get("locations"))),
+                references=_build_references(vulnerability),
+                categories=("dependency",),
+                metadata=_build_metadata(artifact, vulnerability),
             )
+        )
 
     return findings
 
@@ -85,3 +85,18 @@ def _extract_grype_cvss(vulnerability: dict[str, object]) -> float | None:
     if not scores:
         return None
     return max(scores)
+
+
+def _extract_grype_epss(vulnerability: dict[str, object]) -> float | None:
+    epss = vulnerability.get("epss")
+    if not isinstance(epss, list):
+        return None
+
+    for entry in epss:
+        if not isinstance(entry, dict):
+            continue
+        probability = as_float(entry.get("probability"))
+        if probability is not None:
+            return probability
+
+    return None

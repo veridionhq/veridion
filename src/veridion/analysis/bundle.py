@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any
 
 from veridion.baseline import BaselineComparison, compare_findings_against_baseline
 from veridion.change_context import ParsedChangeContext
 from veridion.normalize.models import NormalizedFinding
+from veridion.util import plain
 
 
 @dataclass(frozen=True)
@@ -41,7 +41,7 @@ class AnalysisBundle:
     def to_dict(self) -> dict[str, object]:
         """Convert the bundle into plain Python objects for testing and serialization."""
 
-        return _plain(asdict(self))
+        return plain(asdict(self))
 
 
 def build_analysis_bundle(
@@ -105,13 +105,3 @@ def _count_by_finding_type(findings: list[NormalizedFinding]) -> dict[str, int]:
     for finding in findings:
         counts[finding.finding_type] = counts.get(finding.finding_type, 0) + 1
     return dict(sorted(counts.items()))
-
-
-def _plain(value: Any) -> Any:
-    if isinstance(value, tuple):
-        return [_plain(item) for item in value]
-    if isinstance(value, list):
-        return [_plain(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _plain(item) for key, item in value.items()}
-    return value

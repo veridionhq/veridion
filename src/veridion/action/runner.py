@@ -7,13 +7,13 @@ import json
 import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
 
 from veridion.analysis import AnalysisBundle, build_analysis_bundle
 from veridion.normalize import NormalizedFinding, normalize_report
 from veridion.policy import PolicyDecision, PolicyConfig, evaluate_release, parse_policy_yaml
 from veridion.report import render_pr_comment
 from veridion.change_context import parse_unified_diff
+from veridion.util import plain
 
 
 @dataclass(frozen=True)
@@ -30,7 +30,7 @@ class ActionResult:
 
         return {
             "analysis": self.bundle.to_dict(),
-            "decision": _plain(asdict(self.decision)),
+            "decision": plain(asdict(self.decision)),
             "comment_markdown": self.comment_markdown,
             "comment_identifier": self.comment_identifier,
         }
@@ -133,7 +133,10 @@ def _parse_report_mappings(values: list[str]) -> dict[str, str]:
 def _load_findings(report_paths: dict[str, str]) -> list[NormalizedFinding]:
     findings: list[NormalizedFinding] = []
     for tool_name, path in report_paths.items():
-        report = json.loads(Path(path).read_text())
+        try:
+            report = json.loads(Path(path).read_text())
+        except Exception as exc:
+            raise RuntimeError(f"failed to load {tool_name} report from {path}") from exc
         findings.extend(normalize_report(tool_name, report))
     return findings
 
@@ -162,13 +165,3 @@ def _write_github_outputs(
 
     with Path(github_output).open("a", encoding="utf-8") as handle:
         handle.write("\n".join(lines) + "\n")
-
-
-def _plain(value: Any) -> Any:
-    if isinstance(value, tuple):
-        return [_plain(item) for item in value]
-    if isinstance(value, list):
-        return [_plain(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _plain(item) for key, item in value.items()}
-    return value

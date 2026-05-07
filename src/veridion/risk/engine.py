@@ -58,7 +58,10 @@ def extract_risk_features(bundle: AnalysisBundle) -> RiskFeatures:
 
 
 def score_analysis_bundle(bundle: AnalysisBundle) -> RdiResult:
-    """Assign an explainable RDI score and release decision."""
+    """Assign an explainable RDI score and release decision.
+
+    CVSS and EPSS are captured in the normalized model but not yet applied in scoring.
+    """
 
     features = extract_risk_features(bundle)
     score = 100
@@ -144,6 +147,10 @@ def _derive_reasons(features: RiskFeatures) -> tuple[str, ...]:
         reasons.append(f"{features.introduced_critical} introduced critical finding(s)")
     if features.introduced_high:
         reasons.append(f"{features.introduced_high} introduced high-severity finding(s)")
+    if features.introduced_medium:
+        reasons.append(f"{features.introduced_medium} introduced medium-severity finding(s)")
+    if features.introduced_low:
+        reasons.append(f"{features.introduced_low} introduced low-severity finding(s)")
     if features.has_infrastructure_changes and features.introduced_findings:
         reasons.append("infrastructure changes are present in the current diff")
     if features.introduced_dependency_findings:
