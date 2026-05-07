@@ -64,7 +64,7 @@ def _is_finding_relevant_to_change(
         if location_path in changed_paths:
             return True
 
-    if finding.finding_type in {"dependency", "package"} and has_dependency_surface_change:
+    if finding.finding_type == "dependency" and has_dependency_surface_change:
         return True
 
     return False

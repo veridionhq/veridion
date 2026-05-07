@@ -39,13 +39,7 @@ jobs:
       - name: Show outputs
         shell: bash
         run: |
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-
-          result = json.loads(Path("veridion-result.json").read_text())
-          print(f"Decision: {result['decision']['decision']}")
-          print(f"Score: {result['decision']['score']}")
-          print(f"Confidence: {result['decision']['confidence']}")
-          print(f"Comment identifier: {result['comment_identifier']}")
-          PY
+          echo "Decision: ${{ steps.run-rdi.outputs.decision }}"
+          echo "Score: ${{ steps.run-rdi.outputs.score }}"
+          echo "Confidence: ${{ steps.run-rdi.outputs.confidence }}"
+          echo "Comment identifier: ${{ steps.run-rdi.outputs.comment_identifier }}"

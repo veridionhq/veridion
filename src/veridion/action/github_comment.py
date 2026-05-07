@@ -250,3 +250,7 @@ def _next_link(link_header: str | None) -> str | None:
         return section[1 : section.index(">")]
 
     return None
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
