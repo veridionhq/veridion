@@ -1,0 +1,31 @@
+{
+  "scope": {
+    "team_id": "platform-trust"
+  },
+  "provenance": {
+    "source": "catalog-example"
+  },
+  "historical": {
+    "repo_criticality": "high",
+    "service_criticality": "critical",
+    "flaky_service": true,
+    "sensitive_repo": true
+  },
+  "runtime": {
+    "environment": "production",
+    "public_exposure": true,
+    "blast_radius": "high"
+  },
+  "ownership": {
+    "review_coverage": "cross_team",
+    "team_trust_level": "degrading"
+  },
+  "trust_baseline": {
+    "repo_stability": "watch",
+    "service_stability": "fragile",
+    "team_deploy_safety": "degrading",
+    "test_coverage_level": "low",
+    "rollback_readiness": "partial",
+    "dependency_reputation_risk": "medium"
+  }
+}

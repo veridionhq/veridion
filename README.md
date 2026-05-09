@@ -33,6 +33,30 @@ Core responsibilities:
 - Produce an RDI score and release decision
 - Explain the decision in a PR comment with recommended actions
 
+The action can now consume two separate context artifacts:
+
+- PR metadata for request-scoped signals like title, body, labels, and commit history
+- trust profile JSON for repo, service, and team posture that should persist across PRs
+
+Trust-profile artifacts are versioned and scoped. The current contract is:
+
+```json
+{
+  "schema_version": 1,
+  "scope": {
+    "repo_id": "acme/payments-platform",
+    "service_id": "payments/api",
+    "team_id": "platform-trust"
+  },
+  "provenance": {
+    "source": "manual-example",
+    "generated_at": "2026-05-08T00:00:00Z"
+  }
+}
+```
+
+The repo-local source example lives at [examples/trust/trust-profile.source.json](/Users/lseino/repos/veridion/examples/trust/trust-profile.source.json:1). A shared catalog baseline can also be layered in from [examples/trust/trust-catalog.source.json](/Users/lseino/repos/veridion/examples/trust/trust-catalog.source.json:1), and the workflow builds the versioned artifact from those sources before running Veridion.
+
 Example output:
 
 ```text

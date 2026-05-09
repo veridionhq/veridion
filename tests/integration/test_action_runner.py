@@ -17,6 +17,7 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     }
     policy_text = Path("tests/fixtures/policies/default_policy.yaml").read_text()
     metadata_text = Path("tests/fixtures/pr/pr_metadata.json").read_text()
+    trust_profile_text = Path("tests/fixtures/pr/trust_profile.json").read_text()
 
     result = run_action(
         diff_text=diff_text,
@@ -24,6 +25,7 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
         baseline_reports=baseline_reports,
         policy_text=policy_text,
         metadata_text=metadata_text,
+        trust_profile_text=trust_profile_text,
     )
 
     assert result.decision.decision == "NO GO"
@@ -36,6 +38,8 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert result.bundle.summary.runtime_risk_signals == 5
     assert result.bundle.summary.ownership_risk_signals == 3
     assert result.bundle.summary.trust_baseline_risk_signals == 6
+    assert result.bundle.trust_profile_metadata.schema_version == 1
+    assert result.bundle.trust_profile_metadata.repo_id == "veridionhq/veridion"
     assert result.decision.required_approvals == (
         "platform_owner",
         "security_owner",
@@ -55,6 +59,7 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert "- security owner" in result.comment_markdown
     assert "- service owner" in result.comment_markdown
     assert "- SRE owner" in result.comment_markdown
+    assert "- Repo profile: veridionhq/veridion" in result.comment_markdown
     assert "Use heightened review for this high-criticality repository" in result.comment_markdown
     assert "Prefer a staged rollout or canary deployment for this historically unstable change surface" in result.comment_markdown
     assert "Increase manual validation for this historically fragile change surface" in result.comment_markdown

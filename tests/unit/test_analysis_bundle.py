@@ -160,6 +160,15 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "team_trust_level": "",
             "oncall_defined": False,
         },
+        "trust_profile_metadata": {
+            "schema_version": 0,
+            "repo_id": "",
+            "service_id": "",
+            "team_id": "",
+            "source": "",
+            "generated_at": "",
+            "precedence": "",
+        },
         "trust_baseline": {
             "repo_stability": "",
             "service_stability": "",

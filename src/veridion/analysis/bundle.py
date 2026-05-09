@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from veridion.attribution import AiAttribution, detect_ai_attribution, PullRequestMetadata
 from veridion.baseline import BaselineComparison, compare_findings_against_baseline
 from veridion.change_context import ParsedChangeContext
-from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals, TrustBaseline
+from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals, TrustBaseline, TrustProfileMetadata
 from veridion.normalize.models import NormalizedFinding
 from veridion.util import plain
 from veridion.analysis.dedup import deduplicate_findings
@@ -50,6 +50,7 @@ class AnalysisBundle:
     historical_signals: HistoricalSignals
     runtime_signals: RuntimeSignals
     ownership_signals: OwnershipSignals
+    trust_profile_metadata: TrustProfileMetadata
     trust_baseline: TrustBaseline
     change_context: ParsedChangeContext
     baseline_comparison: BaselineComparison
@@ -69,6 +70,7 @@ def build_analysis_bundle(
     historical_signals: HistoricalSignals | None = None,
     runtime_signals: RuntimeSignals | None = None,
     ownership_signals: OwnershipSignals | None = None,
+    trust_profile_metadata: TrustProfileMetadata | None = None,
     trust_baseline: TrustBaseline | None = None,
 ) -> AnalysisBundle:
     """Assemble the deterministic analysis object used by the decision engine."""
@@ -89,6 +91,7 @@ def build_analysis_bundle(
     resolved_historical_signals = historical_signals or HistoricalSignals()
     resolved_runtime_signals = runtime_signals or RuntimeSignals()
     resolved_ownership_signals = ownership_signals or OwnershipSignals()
+    resolved_trust_profile_metadata = trust_profile_metadata or TrustProfileMetadata()
     resolved_trust_baseline = trust_baseline or TrustBaseline()
     summary = _build_summary(
         current_findings=scored_current_findings,
@@ -111,6 +114,7 @@ def build_analysis_bundle(
         historical_signals=resolved_historical_signals,
         runtime_signals=resolved_runtime_signals,
         ownership_signals=resolved_ownership_signals,
+        trust_profile_metadata=resolved_trust_profile_metadata,
         trust_baseline=resolved_trust_baseline,
         change_context=change_context,
         baseline_comparison=baseline_comparison,

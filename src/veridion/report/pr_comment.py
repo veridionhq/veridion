@@ -133,4 +133,11 @@ def _format_ownership_signals(bundle: AnalysisBundle) -> tuple[str, ...]:
 def _format_trust_baseline(bundle: AnalysisBundle) -> tuple[str, ...]:
     items = list(bundle.trust_baseline.elevated_signals)
 
+    if bundle.trust_profile_metadata.repo_id:
+        items.append("Repo profile: " + bundle.trust_profile_metadata.repo_id)
+    if bundle.trust_profile_metadata.service_id:
+        items.append("Service profile: " + bundle.trust_profile_metadata.service_id)
+    if bundle.trust_profile_metadata.team_id:
+        items.append("Team profile: " + bundle.trust_profile_metadata.team_id)
+
     return tuple(dict.fromkeys(items))

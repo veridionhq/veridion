@@ -6,6 +6,19 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
+class TrustProfileMetadata:
+    """Metadata about the trust-profile artifact itself."""
+
+    schema_version: int = 0
+    repo_id: str = ""
+    service_id: str = ""
+    team_id: str = ""
+    source: str = ""
+    generated_at: str = ""
+    precedence: str = ""
+
+
+@dataclass(frozen=True)
 class TrustBaseline:
     """Persistent repo, service, and team trust posture."""
 
@@ -53,8 +66,38 @@ def parse_trust_baseline(payload: dict[str, object]) -> TrustBaseline:
     )
 
 
+def parse_trust_profile_metadata(payload: dict[str, object]) -> TrustProfileMetadata:
+    """Parse trust-profile artifact metadata from a permissive payload."""
+
+    raw = payload.get("trust_profile_metadata")
+    if not isinstance(raw, dict):
+        return TrustProfileMetadata()
+
+    return TrustProfileMetadata(
+        schema_version=_as_int(raw.get("schema_version")),
+        repo_id=_as_string(raw.get("repo_id")),
+        service_id=_as_string(raw.get("service_id")),
+        team_id=_as_string(raw.get("team_id")),
+        source=_as_string(raw.get("source")),
+        generated_at=_as_string(raw.get("generated_at")),
+        precedence=_as_string(raw.get("precedence")),
+    )
+
+
 def _normalize_value(value: object, allowed: set[str]) -> str:
     if not isinstance(value, str):
         return ""
     normalized = value.strip().lower()
     return normalized if normalized in allowed else ""
+
+
+def _as_string(value: object) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _as_int(value: object) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return 0

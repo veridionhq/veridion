@@ -44,6 +44,16 @@ jobs:
             --base-ref "${{ github.base_ref }}" \
             --output-path pr-metadata.json
 
+      - name: Build trust profile artifact
+        shell: bash
+        env:
+          PYTHONPATH: src
+        run: |
+          python3 -m veridion.action.trust_profile_builder \
+            --catalog-path examples/trust/trust-catalog.source.json \
+            --config-path examples/trust/trust-profile.source.json \
+            --output-path trust-profile.json
+
       - name: Prepare baseline worktree
         shell: bash
         run: |
@@ -136,6 +146,7 @@ jobs:
             syft=artifacts/baseline-syft.json
           policy-path: examples/policy/veridion-policy.yaml
           metadata-path: pr-metadata.json
+          trust-profile-path: trust-profile.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           post-comment: "true"
@@ -169,3 +180,4 @@ jobs:
             veridion-pr-comment.md
             veridion-result.json
             pr-metadata.json
+            trust-profile.json
