@@ -1,7 +1,11 @@
-name: veridion-rdi
+name: rdi-pr-comment
 
 on:
   pull_request:
+    branches:
+      - develop
+      - main
+  workflow_dispatch:
 
 jobs:
   release-decision-intelligence:
@@ -160,7 +164,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: veridion-rdi-artifacts
+          name: rdi-pr-comment-artifacts
           path: |
             veridion-pr-comment.md
             veridion-result.json

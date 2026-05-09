@@ -96,7 +96,25 @@ def _required_approvals(bundle: AnalysisBundle, policy: PolicyConfig) -> tuple[s
     ):
         approvals.append("security_owner")
 
-    return tuple(approvals)
+    if bundle.historical_signals.repo_criticality in {"high", "critical"}:
+        approvals.append("service_owner")
+
+    if bundle.historical_signals.service_criticality in {"high", "critical"}:
+        approvals.append("service_owner")
+
+    if (
+        bundle.historical_signals.rollback_rate_30d is not None
+        and bundle.historical_signals.rollback_rate_30d >= 0.10
+    ) or (
+        bundle.historical_signals.change_failure_rate_30d is not None
+        and bundle.historical_signals.change_failure_rate_30d >= 0.15
+    ) or bundle.historical_signals.incident_count_30d >= 3 or bundle.historical_signals.flaky_service:
+        approvals.append("sre_owner")
+
+    if bundle.historical_signals.sensitive_repo:
+        approvals.append("security_owner")
+
+    return tuple(dict.fromkeys(approvals))
 
 
 def _recommendations(
@@ -110,11 +128,8 @@ def _recommendations(
     if decision == "NO GO":
         recommendations.append("Block release until introduced risk is remediated or policy is adjusted")
 
-    if "platform_owner" in required_approvals:
-        recommendations.append("Require approval from the platform owner")
-
-    if "security_owner" in required_approvals:
-        recommendations.append("Require approval from the security owner")
+    for approval in required_approvals:
+        recommendations.append(f"Require approval from the {_approval_label(approval)}")
 
     if bundle.summary.infrastructure_changes:
         recommendations.append("Run staging smoke tests for infrastructure-affecting changes")
@@ -125,7 +140,38 @@ def _recommendations(
     if risk.features.introduced_high or risk.features.introduced_critical:
         recommendations.append("Prioritize remediation for introduced high-severity findings")
 
+    if bundle.historical_signals.repo_criticality in {"high", "critical"}:
+        recommendations.append("Use heightened review for this high-criticality repository")
+
+    if bundle.historical_signals.service_criticality in {"high", "critical"}:
+        recommendations.append("Treat this change as high-impact for service operations and release planning")
+
+    if (
+        bundle.historical_signals.rollback_rate_30d is not None
+        and bundle.historical_signals.rollback_rate_30d >= 0.10
+    ) or (
+        bundle.historical_signals.change_failure_rate_30d is not None
+        and bundle.historical_signals.change_failure_rate_30d >= 0.15
+    ):
+        recommendations.append("Prefer a staged rollout or canary deployment for this historically unstable change surface")
+
+    if bundle.historical_signals.incident_count_30d >= 3:
+        recommendations.append("Verify rollback ownership and on-call coverage before deployment")
+
+    if bundle.historical_signals.flaky_service or bundle.historical_signals.sensitive_repo:
+        recommendations.append("Schedule deployment during staffed hours with active operational monitoring")
+
     if not recommendations:
         recommendations.append("Proceed with normal review and deployment checks")
 
     return tuple(dict.fromkeys(recommendations))
+
+
+def _approval_label(value: str) -> str:
+    labels = {
+        "platform_owner": "platform owner",
+        "security_owner": "security owner",
+        "service_owner": "service owner",
+        "sre_owner": "SRE owner",
+    }
+    return labels.get(value, value.replace("_", " "))

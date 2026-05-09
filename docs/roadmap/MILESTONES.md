@@ -58,6 +58,11 @@ Exit criteria:
 - Test fixtures prove baseline suppression behavior
 - Edge cases for renamed files, lockfile churn, and partial diffs are covered
 
+Status:
+
+- Complete for baseline suppression, rename/delete handling, and cross-scanner dedup-aware comparison
+- Partially complete for attribution: lightweight AI-origin metadata signals and historical trust signals are now surfaced, but ownership and richer service metadata are still pending
+
 ## M3: RDI Scoring and Decision Engine
 
 Target:
@@ -97,6 +102,12 @@ Exit criteria:
 - Engineers can understand the decision without opening raw scanner logs
 - Snapshot tests protect formatting regressions
 
+Status:
+
+- Complete for deterministic rendering, marker-based replacement, and GitHub upsert lifecycle
+- AI-attribution and historical trust signals now appear in the comment, recommendation, and approval path as non-scoring context
+- Follow-up remains to convert current exact-string tests into dedicated snapshot artifacts if we want a formal snapshot harness
+
 ## M5: GitHub Action MVP
 
 Target:
@@ -115,6 +126,11 @@ Exit criteria:
 - A test repository can install and run the action successfully
 - Action output is stable across repeated runs
 - Failure modes are explicit and actionable
+
+Status:
+
+- Complete on `main` for composite action execution, explicit outputs, smoke workflow validation, PR comment posting, and artifact upload
+- Follow-up remains around broader runner compatibility and live install validation outside the repo itself
 
 ## M6: Trust Loop
 

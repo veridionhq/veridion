@@ -30,6 +30,11 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
     lines.append("**Summary:** " + " | ".join(summary_parts))
     lines.append("")
 
+    if bundle.ai_attribution.detected:
+        lines.extend(_section("AI Attribution", _format_ai_attribution(bundle)))
+    if bundle.historical_signals.elevated_signals:
+        lines.extend(_section("Historical Trust Signals", _format_historical_signals(bundle)))
+
     lines.extend(_section("Why", decision.reasons))
 
     if decision.required_approvals:
@@ -60,8 +65,38 @@ def _section(title: str, items: tuple[str, ...] | list[str]) -> list[str]:
 
 
 def _format_approval(value: str) -> str:
-    return value.replace("_", " ")
+    labels = {
+        "platform_owner": "platform owner",
+        "security_owner": "security owner",
+        "service_owner": "service owner",
+        "sre_owner": "SRE owner",
+    }
+    return labels.get(value, value.replace("_", " "))
 
 
 def _format_counts(counts: dict[str, int]) -> tuple[str, ...]:
     return tuple(f"{key}: {value}" for key, value in counts.items())
+
+
+def _format_ai_attribution(bundle: AnalysisBundle) -> tuple[str, ...]:
+    items = [f"AI-origin signals detected: {bundle.ai_attribution.signal_count}"]
+
+    if bundle.ai_attribution.ai_authored_commits:
+        items.append(f"AI-attributed commits: {bundle.ai_attribution.ai_authored_commits}")
+    if bundle.ai_attribution.sources:
+        items.append("Sources: " + ", ".join(bundle.ai_attribution.sources))
+    if bundle.ai_attribution.indicators:
+        items.append("Indicators: " + ", ".join(bundle.ai_attribution.indicators))
+
+    return tuple(items)
+
+
+def _format_historical_signals(bundle: AnalysisBundle) -> tuple[str, ...]:
+    items = list(bundle.historical_signals.elevated_signals)
+
+    if bundle.historical_signals.repo_criticality:
+        items.append("Repository criticality: " + bundle.historical_signals.repo_criticality)
+    if bundle.historical_signals.service_criticality:
+        items.append("Service criticality: " + bundle.historical_signals.service_criticality)
+
+    return tuple(dict.fromkeys(items))

@@ -29,6 +29,7 @@ Core responsibilities:
 - Collect findings from security and code analysis tools
 - Understand what the current change introduced
 - Incorporate operational and deployment context
+- Surface lightweight AI-origin signals from PR metadata
 - Produce an RDI score and release decision
 - Explain the decision in a PR comment with recommended actions
 
@@ -86,3 +87,19 @@ Phase 0 and Phase 1:
 - Establish the normalization and decisioning primitives
 - Test every increment as code is written
 - Reach a usable MVP in 60 to 90 days
+
+## Current State
+
+The current `main` branch already includes:
+
+- A working composite GitHub Action with deterministic outputs
+- Multi-scanner normalization for Trivy, Grype, Semgrep, and Syft
+- Introduced-only comparison with baseline suppression
+- Cross-scanner dependency deduplication
+- Policy-aware RDI scoring and PR comment rendering
+- GitHub PR comment create/update support
+- Smoke and PR-commenting workflow examples
+- Initial AI-attribution signals from PR title, body, labels, and commit metadata
+- Initial historical trust signals for criticality, rollback rate, incidents, and flaky services
+
+These metadata-driven AI and historical signals are currently non-scoring. They affect explanation, recommendations, and approval requirements before they affect score.
