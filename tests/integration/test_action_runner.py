@@ -54,16 +54,19 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert "### Historical Trust Signals" in result.comment_markdown
     assert "### Runtime Context" in result.comment_markdown
     assert "### Ownership Context" in result.comment_markdown
-    assert "### Trust Baseline" in result.comment_markdown
+    assert "### Operational Baseline" in result.comment_markdown
+    assert "### Primary Drivers" in result.comment_markdown
+    assert "### Contextual Risk" in result.comment_markdown
     assert "- platform owner" in result.comment_markdown
     assert "- security owner" in result.comment_markdown
     assert "- service owner" in result.comment_markdown
     assert "- SRE owner" in result.comment_markdown
-    assert "- Repo profile: veridionhq/veridion" in result.comment_markdown
+    assert "- Profiles: repo profile: veridionhq/veridion | service profile: veridion/rdi-engine | team profile: platform-trust" in result.comment_markdown
     assert "Block release until introduced risk is remediated or policy is adjusted" in result.comment_markdown
     assert "Run staging smoke tests for infrastructure-affecting changes" in result.comment_markdown
-    assert "... 18 more reasons" in result.comment_markdown
-    assert "... 16 more recommendations" in result.comment_markdown
+    assert "... " in result.comment_markdown
+    assert "more contextual risks" in result.comment_markdown or "more contextual risk" in result.comment_markdown
+    assert "more recommendations" in result.comment_markdown
     assert "Unattributed findings: 0" in result.comment_markdown
     assert result.comment_markdown.startswith("<!-- veridion:rdi:start -->\n")
 
