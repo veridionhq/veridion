@@ -125,6 +125,10 @@ def _recommendations(
     required_approvals: tuple[str, ...],
 ) -> tuple[str, ...]:
     recommendations: list[str] = []
+    runtime = bundle.runtime_signals
+    ownership = bundle.ownership_signals
+    historical = bundle.historical_signals
+    ownership_present = _has_ownership_metadata(bundle)
 
     if decision == "NO GO":
         recommendations.append("Block release until introduced risk is remediated or policy is adjusted")
@@ -141,26 +145,52 @@ def _recommendations(
     if risk.features.introduced_high or risk.features.introduced_critical:
         recommendations.append("Prioritize remediation for introduced high-severity findings")
 
-    if bundle.historical_signals.repo_criticality in {"high", "critical"}:
+    if historical.repo_criticality in {"high", "critical"}:
         recommendations.append("Use heightened review for this high-criticality repository")
 
-    if bundle.historical_signals.service_criticality in {"high", "critical"}:
+    if historical.service_criticality in {"high", "critical"}:
         recommendations.append("Treat this change as high-impact for service operations and release planning")
 
     if (
-        bundle.historical_signals.rollback_rate_30d is not None
-        and bundle.historical_signals.rollback_rate_30d >= 0.10
+        historical.rollback_rate_30d is not None
+        and historical.rollback_rate_30d >= 0.10
     ) or (
-        bundle.historical_signals.change_failure_rate_30d is not None
-        and bundle.historical_signals.change_failure_rate_30d >= 0.15
+        historical.change_failure_rate_30d is not None
+        and historical.change_failure_rate_30d >= 0.15
     ):
         recommendations.append("Prefer a staged rollout or canary deployment for this historically unstable change surface")
 
-    if bundle.historical_signals.incident_count_30d >= 3:
+    if historical.incident_count_30d >= 3:
         recommendations.append("Verify rollback ownership and on-call coverage before deployment")
 
-    if bundle.historical_signals.flaky_service or bundle.historical_signals.sensitive_repo:
+    if historical.flaky_service or historical.sensitive_repo:
         recommendations.append("Schedule deployment during staffed hours with active operational monitoring")
+
+    if runtime.environment == "production" and runtime.blast_radius in {"high", "critical"}:
+        recommendations.append("Use a staged rollout with a validated rollback plan for this production deployment")
+
+    if runtime.public_exposure:
+        recommendations.append("Verify customer-facing monitoring and alerting before deployment")
+
+    if runtime.rollout_strategy in {"direct", "all_at_once"} and (
+        runtime.environment == "production" or runtime.blast_radius in {"high", "critical"}
+    ):
+        recommendations.append("Prefer canary, rolling, or blue-green rollout over a direct production release")
+
+    if runtime.deployment_window == "after_hours":
+        if ownership_present and not ownership.oncall_defined:
+            recommendations.append("Avoid after-hours deployment until on-call coverage is defined")
+        else:
+            recommendations.append("Confirm staffed on-call coverage for this after-hours deployment")
+
+    if ownership_present and ownership.review_coverage == "cross_team":
+        recommendations.append("Coordinate sign-off across owning teams before deployment")
+
+    if ownership_present and not ownership.service_owner:
+        recommendations.append("Define a service owner before relying on this change path in production")
+
+    if ownership_present and ownership.team_trust_level in {"low", "degrading"}:
+        recommendations.append("Use an explicit deployment checklist and reviewer sign-off for this low-trust team surface")
 
     if not recommendations:
         recommendations.append("Proceed with normal review and deployment checks")
@@ -321,6 +351,10 @@ def _apply_policy_score_adjustments(
         adjusted_score -= policy.production_deployment_score_penalty
         adjustments.append(f"production deployment: -{policy.production_deployment_score_penalty}")
 
+    if policy.after_hours_deploy_score_penalty and _trigger_matches("after_hours_deploy", bundle):
+        adjusted_score -= policy.after_hours_deploy_score_penalty
+        adjustments.append(f"after-hours deployment: -{policy.after_hours_deploy_score_penalty}")
+
     if policy.public_exposure_score_penalty and _trigger_matches("public_exposure", bundle):
         adjusted_score -= policy.public_exposure_score_penalty
         adjustments.append(f"public exposure: -{policy.public_exposure_score_penalty}")
@@ -333,7 +367,19 @@ def _apply_policy_score_adjustments(
         adjusted_score -= policy.low_team_trust_score_penalty
         adjustments.append(f"low team trust: -{policy.low_team_trust_score_penalty}")
 
-        adjusted_score = max(0, min(100, adjusted_score))
+    if policy.unowned_service_score_penalty and _trigger_matches("unowned_service", bundle):
+        adjusted_score -= policy.unowned_service_score_penalty
+        adjustments.append(f"unowned service: -{policy.unowned_service_score_penalty}")
+
+    if policy.missing_oncall_score_penalty and _trigger_matches("missing_oncall", bundle):
+        adjusted_score -= policy.missing_oncall_score_penalty
+        adjustments.append(f"missing on-call coverage: -{policy.missing_oncall_score_penalty}")
+
+    if policy.cross_team_change_score_penalty and _trigger_matches("cross_team_change", bundle):
+        adjusted_score -= policy.cross_team_change_score_penalty
+        adjustments.append(f"cross-team change surface: -{policy.cross_team_change_score_penalty}")
+
+    adjusted_score = max(0, min(100, adjusted_score))
 
     return (
         RdiResult(

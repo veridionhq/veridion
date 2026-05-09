@@ -34,9 +34,13 @@ def test_parse_policy_yaml_builds_expected_config() -> None:
     assert policy.ai_signal_score_penalty == 0
     assert policy.ai_authored_commit_score_penalty == 0
     assert policy.production_deployment_score_penalty == 0
+    assert policy.after_hours_deploy_score_penalty == 0
     assert policy.public_exposure_score_penalty == 0
     assert policy.large_blast_radius_score_penalty == 0
     assert policy.low_team_trust_score_penalty == 0
+    assert policy.unowned_service_score_penalty == 0
+    assert policy.missing_oncall_score_penalty == 0
+    assert policy.cross_team_change_score_penalty == 0
 
 
 def test_evaluate_release_applies_required_approvals_and_recommendations() -> None:
@@ -139,6 +143,13 @@ def test_evaluate_release_adds_advisory_recommendations_for_historical_trust_sig
         "Prefer a staged rollout or canary deployment for this historically unstable change surface",
         "Verify rollback ownership and on-call coverage before deployment",
         "Schedule deployment during staffed hours with active operational monitoring",
+        "Use a staged rollout with a validated rollback plan for this production deployment",
+        "Verify customer-facing monitoring and alerting before deployment",
+        "Prefer canary, rolling, or blue-green rollout over a direct production release",
+        "Avoid after-hours deployment until on-call coverage is defined",
+        "Coordinate sign-off across owning teams before deployment",
+        "Define a service owner before relying on this change path in production",
+        "Use an explicit deployment checklist and reviewer sign-off for this low-trust team surface",
     )
 
 
@@ -253,15 +264,16 @@ def test_evaluate_release_can_apply_runtime_and_team_score_penalties() -> None:
         change_context=ParsedChangeContext(files=()),
         runtime_signals=RuntimeSignals(
             environment="production",
+            deployment_window="after_hours",
             public_exposure=True,
             blast_radius="high",
         ),
         ownership_signals=OwnershipSignals(
-            service_owner="payments-owner",
+            service_owner="",
             owning_team="payments-platform",
             review_coverage="cross_team",
             team_trust_level="degrading",
-            oncall_defined=True,
+            oncall_defined=False,
         ),
     )
 
@@ -271,20 +283,64 @@ def test_evaluate_release_can_apply_runtime_and_team_score_penalties() -> None:
             """
 allow_conditional: true
 production_deployment_score_penalty: 4
+after_hours_deploy_score_penalty: 2
 public_exposure_score_penalty: 3
 large_blast_radius_score_penalty: 5
 low_team_trust_score_penalty: 6
+unowned_service_score_penalty: 4
+missing_oncall_score_penalty: 3
+cross_team_change_score_penalty: 2
 """
         ),
     )
 
-    assert decision.score == 82
+    assert decision.score == 71
     assert decision.score_adjustments == (
         "production deployment: -4",
+        "after-hours deployment: -2",
         "public exposure: -3",
         "large blast radius: -5",
         "low team trust: -6",
+        "unowned service: -4",
+        "missing on-call coverage: -3",
+        "cross-team change surface: -2",
     )
+
+
+def test_evaluate_release_clamps_policy_adjusted_score_at_zero() -> None:
+    from veridion.context import OwnershipSignals, RuntimeSignals
+
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        runtime_signals=RuntimeSignals(
+            environment="production",
+            public_exposure=True,
+            blast_radius="critical",
+        ),
+        ownership_signals=OwnershipSignals(
+            service_owner="payments-owner",
+            team_trust_level="low",
+            oncall_defined=True,
+        ),
+    )
+
+    decision = evaluate_release(
+        bundle,
+        parse_policy_yaml(
+            """
+allow_conditional: true
+production_deployment_score_penalty: 60
+after_hours_deploy_score_penalty: 60
+public_exposure_score_penalty: 60
+large_blast_radius_score_penalty: 60
+low_team_trust_score_penalty: 60
+"""
+        ),
+    )
+
+    assert decision.score == 0
 
 
 def _bundle_with_iac_and_dependency_risk():

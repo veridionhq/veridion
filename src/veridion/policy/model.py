@@ -32,9 +32,13 @@ class PolicyConfig:
     ai_signal_score_penalty: int = 0
     ai_authored_commit_score_penalty: int = 0
     production_deployment_score_penalty: int = 0
+    after_hours_deploy_score_penalty: int = 0
     public_exposure_score_penalty: int = 0
     large_blast_radius_score_penalty: int = 0
     low_team_trust_score_penalty: int = 0
+    unowned_service_score_penalty: int = 0
+    missing_oncall_score_penalty: int = 0
+    cross_team_change_score_penalty: int = 0
 
 
 def parse_policy_yaml(text: str) -> PolicyConfig:
@@ -103,9 +107,13 @@ def _policy_from_mapping(parsed: dict[str, object]) -> PolicyConfig:
         ai_signal_score_penalty=_as_int(parsed.get("ai_signal_score_penalty"), default=0),
         ai_authored_commit_score_penalty=_as_int(parsed.get("ai_authored_commit_score_penalty"), default=0),
         production_deployment_score_penalty=_as_int(parsed.get("production_deployment_score_penalty"), default=0),
+        after_hours_deploy_score_penalty=_as_int(parsed.get("after_hours_deploy_score_penalty"), default=0),
         public_exposure_score_penalty=_as_int(parsed.get("public_exposure_score_penalty"), default=0),
         large_blast_radius_score_penalty=_as_int(parsed.get("large_blast_radius_score_penalty"), default=0),
         low_team_trust_score_penalty=_as_int(parsed.get("low_team_trust_score_penalty"), default=0),
+        unowned_service_score_penalty=_as_int(parsed.get("unowned_service_score_penalty"), default=0),
+        missing_oncall_score_penalty=_as_int(parsed.get("missing_oncall_score_penalty"), default=0),
+        cross_team_change_score_penalty=_as_int(parsed.get("cross_team_change_score_penalty"), default=0),
     )
 
 

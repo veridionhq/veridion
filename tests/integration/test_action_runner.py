@@ -55,6 +55,8 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert "- SRE owner" in result.comment_markdown
     assert "Use heightened review for this high-criticality repository" in result.comment_markdown
     assert "Prefer a staged rollout or canary deployment for this historically unstable change surface" in result.comment_markdown
+    assert "Use a staged rollout with a validated rollback plan for this production deployment" in result.comment_markdown
+    assert "Avoid after-hours deployment until on-call coverage is defined" in result.comment_markdown
     assert "Unattributed findings: 0" in result.comment_markdown
     assert result.comment_markdown.startswith("<!-- veridion:rdi:start -->\n")
 

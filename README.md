@@ -130,7 +130,11 @@ sensitive_repo_score_penalty: 3
 ai_signal_score_penalty: 0
 ai_authored_commit_score_penalty: 0
 production_deployment_score_penalty: 0
+after_hours_deploy_score_penalty: 0
 public_exposure_score_penalty: 0
 large_blast_radius_score_penalty: 0
 low_team_trust_score_penalty: 0
+unowned_service_score_penalty: 0
+missing_oncall_score_penalty: 0
+cross_team_change_score_penalty: 0
 ```
