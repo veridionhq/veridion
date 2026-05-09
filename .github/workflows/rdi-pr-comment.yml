@@ -44,6 +44,81 @@ jobs:
             --base-ref "${{ github.base_ref }}" \
             --output-path pr-metadata.json
 
+      - name: Prepare baseline worktree
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git worktree add --detach ../veridion-base "${{ github.event.pull_request.base.sha }}"
+          elif git rev-parse HEAD^ >/dev/null 2>&1; then
+            git worktree add --detach ../veridion-base HEAD^
+          else
+            cp -R . ../veridion-base
+          fi
+
+      - name: Install Semgrep CLI
+        shell: bash
+        run: python3 -m pip install semgrep
+
+      - name: Run Semgrep on current workspace
+        shell: bash
+        run: semgrep scan --config auto --json --output artifacts/semgrep.json .
+
+      - name: Run Semgrep on baseline workspace
+        shell: bash
+        run: semgrep scan --config auto --json --output artifacts/baseline-semgrep.json ../veridion-base
+
+      - name: Run Trivy on current workspace
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: json
+          output: artifacts/trivy.json
+          exit-code: "0"
+          scanners: vuln
+          hide-progress: true
+
+      - name: Run Trivy on baseline workspace
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: fs
+          scan-ref: ../veridion-base
+          format: json
+          output: artifacts/baseline-trivy.json
+          exit-code: "0"
+          scanners: vuln
+          hide-progress: true
+          skip-setup-trivy: true
+
+      - name: Run Grype on current workspace
+        uses: anchore/scan-action@v7
+        with:
+          path: .
+          output-format: json
+          output-file: artifacts/grype.json
+          fail-build: false
+
+      - name: Run Grype on baseline workspace
+        uses: anchore/scan-action@v7
+        with:
+          path: ../veridion-base
+          output-format: json
+          output-file: artifacts/baseline-grype.json
+          fail-build: false
+
+      - name: Install Syft CLI
+        uses: anchore/sbom-action/download-syft@v0
+        id: syft
+
+      - name: Run Syft on current workspace
+        shell: bash
+        run: ${{ steps.syft.outputs.cmd }} . -o syft-json=artifacts/syft.json
+
+      - name: Run Syft on baseline workspace
+        shell: bash
+        run: ${{ steps.syft.outputs.cmd }} ../veridion-base -o syft-json=artifacts/baseline-syft.json
+
       - name: Run Veridion RDI
         id: run-rdi
         uses: ./
@@ -77,6 +152,13 @@ jobs:
           echo "Comment identifier: ${{ steps.run-rdi.outputs.comment_identifier }}"
           echo "Comment mode: ${{ steps.run-rdi.outputs.comment_mode }}"
           echo "Comment id: ${{ steps.run-rdi.outputs.comment_id }}"
+
+      - name: Clean up baseline worktree
+        if: always()
+        shell: bash
+        run: |
+          git worktree remove ../veridion-base --force 2>/dev/null || true
+          rm -rf ../veridion-base
 
       - name: Upload RDI artifacts
         if: always()
