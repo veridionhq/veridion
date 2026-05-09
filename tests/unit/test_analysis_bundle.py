@@ -1,7 +1,7 @@
 from veridion.analysis import build_analysis_bundle
 from veridion.attribution import PullRequestMetadata, CommitMetadata
 from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
-from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals
+from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals, TrustBaseline
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 
 
@@ -98,6 +98,7 @@ def test_build_analysis_bundle_assembles_deterministic_summary_and_partitions() 
     assert bundle.summary.historical_risk_signals == 0
     assert bundle.summary.runtime_risk_signals == 0
     assert bundle.summary.ownership_risk_signals == 0
+    assert bundle.summary.trust_baseline_risk_signals == 0
     assert bundle.summary.by_severity == {
         "critical": 1,
         "high": 1,
@@ -159,6 +160,14 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "team_trust_level": "",
             "oncall_defined": False,
         },
+        "trust_baseline": {
+            "repo_stability": "",
+            "service_stability": "",
+            "team_deploy_safety": "",
+            "test_coverage_level": "",
+            "rollback_readiness": "",
+            "dependency_reputation_risk": "",
+        },
         "change_context": {"files": []},
         "baseline_comparison": {
             "introduced": [],
@@ -180,6 +189,7 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "historical_risk_signals": 0,
             "runtime_risk_signals": 0,
             "ownership_risk_signals": 0,
+            "trust_baseline_risk_signals": 0,
             "by_severity": {},
             "introduced_by_severity": {},
             "by_finding_type": {},
@@ -251,3 +261,22 @@ def test_build_analysis_bundle_surfaces_runtime_and_ownership_summary() -> None:
 
     assert bundle.summary.runtime_risk_signals == 5
     assert bundle.summary.ownership_risk_signals == 4
+
+
+def test_build_analysis_bundle_surfaces_trust_baseline_summary() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        trust_baseline=TrustBaseline(
+            repo_stability="fragile",
+            service_stability="watch",
+            team_deploy_safety="degrading",
+            test_coverage_level="low",
+            rollback_readiness="partial",
+            dependency_reputation_risk="high",
+        ),
+    )
+
+    assert bundle.summary.trust_baseline_risk_signals == 6
+    assert bundle.trust_baseline.elevated_signals[0] == "repository stability: fragile"

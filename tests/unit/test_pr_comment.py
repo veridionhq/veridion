@@ -1,7 +1,7 @@
 from veridion.analysis import build_analysis_bundle
 from veridion.attribution import PullRequestMetadata
 from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
-from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals
+from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals, TrustBaseline
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.policy import PolicyConfig, evaluate_release
 from veridion.report import render_pr_comment
@@ -205,6 +205,29 @@ def test_render_pr_comment_includes_runtime_and_ownership_sections_when_present(
     assert "### Ownership Context" in comment
     assert "- service owner missing" in comment
     assert "- Owning team: payments-platform" in comment
+
+
+def test_render_pr_comment_includes_trust_baseline_section_when_present() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        trust_baseline=TrustBaseline(
+            repo_stability="fragile",
+            service_stability="watch",
+            team_deploy_safety="degrading",
+            test_coverage_level="low",
+            rollback_readiness="partial",
+            dependency_reputation_risk="high",
+        ),
+    )
+    decision = evaluate_release(bundle)
+
+    comment = render_pr_comment(bundle, decision)
+
+    assert "### Trust Baseline" in comment
+    assert "- repository stability: fragile" in comment
+    assert "- dependency reputation risk: high" in comment
 
 
 def _bundle_with_iac_and_dependency_risk():

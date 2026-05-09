@@ -101,8 +101,9 @@ The current `main` branch already includes:
 - Smoke and PR-commenting workflow examples
 - Initial AI-attribution signals from PR title, body, labels, and commit metadata
 - Initial historical trust signals for criticality, rollback rate, incidents, and flaky services
+- Initial trust-baseline signals for repo fragility, service stability, rollback readiness, and dependency reputation
 
-These metadata-driven AI and historical signals are currently non-scoring. They affect explanation, recommendations, and approval requirements before they affect score.
+These metadata-driven AI, historical, and trust-baseline signals are currently non-scoring by default. They affect explanation, recommendations, and approval requirements before they affect score.
 
 The current policy surface can also drive metadata-based approvals, for example:
 

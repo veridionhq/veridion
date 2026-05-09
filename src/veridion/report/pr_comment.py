@@ -39,6 +39,8 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
         lines.extend(_section("Runtime Context", _format_runtime_signals(bundle)))
     if bundle.ownership_signals.elevated_signals:
         lines.extend(_section("Ownership Context", _format_ownership_signals(bundle)))
+    if bundle.trust_baseline.elevated_signals:
+        lines.extend(_section("Trust Baseline", _format_trust_baseline(bundle)))
 
     lines.extend(_section("Why", decision.reasons))
 
@@ -124,5 +126,11 @@ def _format_ownership_signals(bundle: AnalysisBundle) -> tuple[str, ...]:
         items.append("Service owner: " + bundle.ownership_signals.service_owner)
     if bundle.ownership_signals.owning_team:
         items.append("Owning team: " + bundle.ownership_signals.owning_team)
+
+    return tuple(dict.fromkeys(items))
+
+
+def _format_trust_baseline(bundle: AnalysisBundle) -> tuple[str, ...]:
+    items = list(bundle.trust_baseline.elevated_signals)
 
     return tuple(dict.fromkeys(items))

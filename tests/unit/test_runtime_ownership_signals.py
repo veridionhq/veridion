@@ -1,8 +1,10 @@
 from veridion.context import (
     OwnershipSignals,
     RuntimeSignals,
+    TrustBaseline,
     parse_ownership_signals,
     parse_runtime_signals,
+    parse_trust_baseline,
 )
 
 
@@ -60,4 +62,36 @@ def test_parse_ownership_signals_extracts_elevated_team_context() -> None:
         "review coverage: cross team",
         "team trust: degrading",
         "on-call coverage missing",
+    )
+
+
+def test_parse_trust_baseline_extracts_elevated_posture_context() -> None:
+    signals = parse_trust_baseline(
+        {
+            "trust_baseline": {
+                "repo_stability": "fragile",
+                "service_stability": "watch",
+                "team_deploy_safety": "degrading",
+                "test_coverage_level": "low",
+                "rollback_readiness": "partial",
+                "dependency_reputation_risk": "high",
+            }
+        }
+    )
+
+    assert signals == TrustBaseline(
+        repo_stability="fragile",
+        service_stability="watch",
+        team_deploy_safety="degrading",
+        test_coverage_level="low",
+        rollback_readiness="partial",
+        dependency_reputation_risk="high",
+    )
+    assert signals.elevated_signals == (
+        "repository stability: fragile",
+        "service stability: watch",
+        "team deploy safety: degrading",
+        "test coverage: low",
+        "rollback readiness: partial",
+        "dependency reputation risk: high",
     )

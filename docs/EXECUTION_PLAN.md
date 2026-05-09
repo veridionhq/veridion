@@ -64,6 +64,7 @@ Core capabilities:
 - PR comment rendering
 - Lightweight AI-attribution from PR metadata
 - Lightweight historical trust signals from optional metadata
+- Lightweight trust-baseline posture from optional metadata
 
 Inputs:
 
@@ -80,6 +81,7 @@ Lightweight signals:
 - Prior rollback frequency
 - Sensitive repository tags
 - Flaky service markers
+- Low-coverage or weak-rollback service baselines
 
 Exit criteria:
 
@@ -186,5 +188,6 @@ Proprietary core:
 Current implementation note:
 
 - AI-attribution and historical trust signals are non-scoring today. They influence reporting, recommendations, and approval requirements, not the numeric RDI score.
+- AI-attribution, historical trust signals, and learned trust-baseline posture are non-scoring by default today. They influence reporting, recommendations, and approval requirements before they affect the numeric RDI score.
 - Metadata-driven approval rules are now policy-configurable, so operational governance can evolve through policy before it is baked into score semantics.
 - The first contextual scoring hooks are policy-controlled and opt-in. Default policy leaves the base RDI model unchanged, including AI-origin, runtime, deployment-window, and ownership penalties unless explicitly configured.
