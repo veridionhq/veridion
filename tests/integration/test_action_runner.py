@@ -33,6 +33,8 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert result.bundle.summary.ai_change_signals == 4
     assert result.bundle.summary.ai_authored_commits == 1
     assert result.bundle.summary.historical_risk_signals == 7
+    assert result.bundle.summary.runtime_risk_signals == 5
+    assert result.bundle.summary.ownership_risk_signals == 3
     assert result.decision.required_approvals == (
         "platform_owner",
         "security_owner",
@@ -40,16 +42,21 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
         "sre_owner",
     )
     assert result.comment_identifier == "veridion:rdi"
+    assert result.decision.score_adjustments == ()
     assert "## Release Decision Intelligence" in result.comment_markdown
     assert "**Decision:** NO GO" in result.comment_markdown
     assert "### AI Attribution" in result.comment_markdown
     assert "### Historical Trust Signals" in result.comment_markdown
+    assert "### Runtime Context" in result.comment_markdown
+    assert "### Ownership Context" in result.comment_markdown
     assert "- platform owner" in result.comment_markdown
     assert "- security owner" in result.comment_markdown
     assert "- service owner" in result.comment_markdown
     assert "- SRE owner" in result.comment_markdown
     assert "Use heightened review for this high-criticality repository" in result.comment_markdown
     assert "Prefer a staged rollout or canary deployment for this historically unstable change surface" in result.comment_markdown
+    assert "Use a staged rollout with a validated rollback plan for this production deployment" in result.comment_markdown
+    assert "Avoid after-hours deployment until on-call coverage is defined" in result.comment_markdown
     assert "Unattributed findings: 0" in result.comment_markdown
     assert result.comment_markdown.startswith("<!-- veridion:rdi:start -->\n")
 

@@ -18,12 +18,27 @@ class PolicyConfig:
     no_go_below_score: int = 60
     conditional_go_below_score: int = 85
     require_approval_for: tuple[str, ...] = ()
+    # Valid values: production_deployment, public_exposure, large_blast_radius, after_hours_deploy.
+    require_platform_owner_for: tuple[str, ...] = ()
     # Valid values: repo_criticality_high, service_criticality_high.
     require_service_owner_for: tuple[str, ...] = ()
-    # Valid values: historical_instability, flaky_service.
+    # Valid values: historical_instability, flaky_service, production_deployment, after_hours_deploy, missing_oncall.
     require_sre_owner_for: tuple[str, ...] = ()
-    # Valid values: sensitive_repo.
+    # Valid values: sensitive_repo, public_exposure.
     require_security_owner_for: tuple[str, ...] = ()
+    historical_instability_score_penalty: int = 0
+    service_criticality_score_penalty: int = 0
+    sensitive_repo_score_penalty: int = 0
+    ai_signal_score_penalty: int = 0
+    ai_authored_commit_score_penalty: int = 0
+    production_deployment_score_penalty: int = 0
+    after_hours_deploy_score_penalty: int = 0
+    public_exposure_score_penalty: int = 0
+    large_blast_radius_score_penalty: int = 0
+    low_team_trust_score_penalty: int = 0
+    unowned_service_score_penalty: int = 0
+    missing_oncall_score_penalty: int = 0
+    cross_team_change_score_penalty: int = 0
 
 
 def parse_policy_yaml(text: str) -> PolicyConfig:
@@ -82,9 +97,23 @@ def _policy_from_mapping(parsed: dict[str, object]) -> PolicyConfig:
         no_go_below_score=_as_int(parsed.get("no_go_below_score"), default=60),
         conditional_go_below_score=_as_int(parsed.get("conditional_go_below_score"), default=85),
         require_approval_for=tuple(as_string(item, default="") for item in approval_values if as_string(item)),
+        require_platform_owner_for=_string_list(parsed.get("require_platform_owner_for"), "require_platform_owner_for"),
         require_service_owner_for=_string_list(parsed.get("require_service_owner_for"), "require_service_owner_for"),
         require_sre_owner_for=_string_list(parsed.get("require_sre_owner_for"), "require_sre_owner_for"),
         require_security_owner_for=_string_list(parsed.get("require_security_owner_for"), "require_security_owner_for"),
+        historical_instability_score_penalty=_as_int(parsed.get("historical_instability_score_penalty"), default=0),
+        service_criticality_score_penalty=_as_int(parsed.get("service_criticality_score_penalty"), default=0),
+        sensitive_repo_score_penalty=_as_int(parsed.get("sensitive_repo_score_penalty"), default=0),
+        ai_signal_score_penalty=_as_int(parsed.get("ai_signal_score_penalty"), default=0),
+        ai_authored_commit_score_penalty=_as_int(parsed.get("ai_authored_commit_score_penalty"), default=0),
+        production_deployment_score_penalty=_as_int(parsed.get("production_deployment_score_penalty"), default=0),
+        after_hours_deploy_score_penalty=_as_int(parsed.get("after_hours_deploy_score_penalty"), default=0),
+        public_exposure_score_penalty=_as_int(parsed.get("public_exposure_score_penalty"), default=0),
+        large_blast_radius_score_penalty=_as_int(parsed.get("large_blast_radius_score_penalty"), default=0),
+        low_team_trust_score_penalty=_as_int(parsed.get("low_team_trust_score_penalty"), default=0),
+        unowned_service_score_penalty=_as_int(parsed.get("unowned_service_score_penalty"), default=0),
+        missing_oncall_score_penalty=_as_int(parsed.get("missing_oncall_score_penalty"), default=0),
+        cross_team_change_score_penalty=_as_int(parsed.get("cross_team_change_score_penalty"), default=0),
     )
 
 

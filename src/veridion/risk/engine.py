@@ -83,7 +83,7 @@ def score_analysis_bundle(bundle: AnalysisBundle) -> RdiResult:
     score = max(0, min(100, score))
 
     decision = _derive_decision(score, features)
-    confidence = _derive_confidence(features)
+    confidence = _derive_confidence(bundle, features)
     reasons = _derive_reasons(features)
 
     return RdiResult(
@@ -117,19 +117,25 @@ def _derive_decision(score: int, features: RiskFeatures) -> str:
     return "GO"
 
 
-def _derive_confidence(features: RiskFeatures) -> str:
-    signal_count = 0
+def _derive_confidence(bundle: AnalysisBundle, features: RiskFeatures) -> str:
+    evidence_count = 0
 
     if features.changed_files:
-        signal_count += 1
-    if features.introduced_findings:
-        signal_count += 1
+        evidence_count += 1
+    if features.changed_files >= 5:
+        evidence_count += 1
+    if bundle.summary.total_findings or bundle.summary.inventory_packages:
+        evidence_count += 1
     if features.has_dependency_changes or features.has_lockfile_changes or features.has_infrastructure_changes:
-        signal_count += 1
+        evidence_count += 1
+    if bundle.baseline_comparison.existing or bundle.baseline_comparison.introduced or bundle.baseline_comparison.unattributed:
+        evidence_count += 1
+    if bundle.summary.ai_change_signals or bundle.summary.historical_risk_signals:
+        evidence_count += 1
 
-    if signal_count >= 3:
+    if evidence_count >= 3:
         return "high"
-    if signal_count == 2:
+    if evidence_count >= 2:
         return "medium"
     return "low"
 

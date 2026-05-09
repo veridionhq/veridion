@@ -35,8 +35,15 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
         lines.extend(_section("AI Attribution", _format_ai_attribution(bundle)))
     if bundle.historical_signals.elevated_signals:
         lines.extend(_section("Historical Trust Signals", _format_historical_signals(bundle)))
+    if bundle.runtime_signals.elevated_signals:
+        lines.extend(_section("Runtime Context", _format_runtime_signals(bundle)))
+    if bundle.ownership_signals.elevated_signals:
+        lines.extend(_section("Ownership Context", _format_ownership_signals(bundle)))
 
     lines.extend(_section("Why", decision.reasons))
+
+    if decision.score_adjustments:
+        lines.extend(_section("Policy Score Adjustments", decision.score_adjustments))
 
     if decision.required_approvals:
         approvals = tuple(_format_approval(name) for name in decision.required_approvals)
@@ -93,5 +100,29 @@ def _format_historical_signals(bundle: AnalysisBundle) -> tuple[str, ...]:
         items.append("Repository criticality: " + bundle.historical_signals.repo_criticality)
     if bundle.historical_signals.service_criticality not in {"", "high", "critical"}:
         items.append("Service criticality: " + bundle.historical_signals.service_criticality)
+
+    return tuple(dict.fromkeys(items))
+
+
+def _format_runtime_signals(bundle: AnalysisBundle) -> tuple[str, ...]:
+    items = list(bundle.runtime_signals.elevated_signals)
+
+    if bundle.runtime_signals.environment not in {"", "production"}:
+        items.append("Deployment target: " + bundle.runtime_signals.environment)
+    if bundle.runtime_signals.blast_radius not in {"", "high", "critical"}:
+        items.append("Blast radius: " + bundle.runtime_signals.blast_radius)
+    if bundle.runtime_signals.rollout_strategy and bundle.runtime_signals.rollout_strategy not in {"direct", "all_at_once"}:
+        items.append("Rollout strategy: " + bundle.runtime_signals.rollout_strategy)
+
+    return tuple(dict.fromkeys(items))
+
+
+def _format_ownership_signals(bundle: AnalysisBundle) -> tuple[str, ...]:
+    items = list(bundle.ownership_signals.elevated_signals)
+
+    if bundle.ownership_signals.service_owner:
+        items.append("Service owner: " + bundle.ownership_signals.service_owner)
+    if bundle.ownership_signals.owning_team:
+        items.append("Owning team: " + bundle.ownership_signals.owning_team)
 
     return tuple(dict.fromkeys(items))

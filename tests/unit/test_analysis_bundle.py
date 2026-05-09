@@ -1,7 +1,7 @@
 from veridion.analysis import build_analysis_bundle
 from veridion.attribution import PullRequestMetadata, CommitMetadata
 from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
-from veridion.context import HistoricalSignals
+from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 
 
@@ -96,6 +96,8 @@ def test_build_analysis_bundle_assembles_deterministic_summary_and_partitions() 
     assert bundle.summary.ai_change_signals == 0
     assert bundle.summary.ai_authored_commits == 0
     assert bundle.summary.historical_risk_signals == 0
+    assert bundle.summary.runtime_risk_signals == 0
+    assert bundle.summary.ownership_risk_signals == 0
     assert bundle.summary.by_severity == {
         "critical": 1,
         "high": 1,
@@ -143,6 +145,20 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "flaky_service": False,
             "sensitive_repo": False,
         },
+        "runtime_signals": {
+            "environment": "",
+            "deployment_window": "",
+            "public_exposure": False,
+            "blast_radius": "",
+            "rollout_strategy": "",
+        },
+        "ownership_signals": {
+            "service_owner": "",
+            "owning_team": "",
+            "review_coverage": "",
+            "team_trust_level": "",
+            "oncall_defined": False,
+        },
         "change_context": {"files": []},
         "baseline_comparison": {
             "introduced": [],
@@ -162,6 +178,8 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "ai_change_signals": 0,
             "ai_authored_commits": 0,
             "historical_risk_signals": 0,
+            "runtime_risk_signals": 0,
+            "ownership_risk_signals": 0,
             "by_severity": {},
             "introduced_by_severity": {},
             "by_finding_type": {},
@@ -208,3 +226,28 @@ def test_build_analysis_bundle_surfaces_historical_trust_summary() -> None:
 
     assert bundle.summary.historical_risk_signals == 7
     assert bundle.historical_signals.elevated_signals[0] == "repo criticality: high"
+
+
+def test_build_analysis_bundle_surfaces_runtime_and_ownership_summary() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        runtime_signals=RuntimeSignals(
+            environment="production",
+            deployment_window="after_hours",
+            public_exposure=True,
+            blast_radius="high",
+            rollout_strategy="direct",
+        ),
+        ownership_signals=OwnershipSignals(
+            service_owner="",
+            owning_team="payments-platform",
+            review_coverage="cross_team",
+            team_trust_level="degrading",
+            oncall_defined=False,
+        ),
+    )
+
+    assert bundle.summary.runtime_risk_signals == 5
+    assert bundle.summary.ownership_risk_signals == 4

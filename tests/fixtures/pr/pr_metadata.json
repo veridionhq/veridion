@@ -18,5 +18,19 @@
     "change_failure_rate_30d": 0.22,
     "flaky_service": true,
     "sensitive_repo": true
+  },
+  "runtime": {
+    "environment": "production",
+    "deployment_window": "after_hours",
+    "public_exposure": true,
+    "blast_radius": "high",
+    "rollout_strategy": "direct"
+  },
+  "ownership": {
+    "service_owner": "payments-owner",
+    "owning_team": "payments-platform",
+    "review_coverage": "cross_team",
+    "team_trust_level": "degrading",
+    "oncall_defined": false
   }
 }
