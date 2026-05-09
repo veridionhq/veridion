@@ -32,6 +32,8 @@ jobs:
 
       - name: Build PR metadata artifact
         shell: bash
+        env:
+          PYTHONPATH: src
         run: |
           python3 -m veridion.action.metadata_builder \
             --event-path "${GITHUB_EVENT_PATH}" \
