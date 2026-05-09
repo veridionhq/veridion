@@ -37,6 +37,7 @@ def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None)
     reasons.extend(_historical_context_reasons(bundle))
     reasons.extend(_runtime_context_reasons(bundle))
     reasons.extend(_ownership_context_reasons(bundle))
+    reasons.extend(_trust_baseline_reasons(bundle))
     decision = _apply_policy_decision(risk, bundle, resolved_policy, reasons)
     required_approvals = _required_approvals(bundle, resolved_policy)
     recommendations = _recommendations(bundle, risk, decision, required_approvals)
@@ -128,6 +129,7 @@ def _recommendations(
     runtime = bundle.runtime_signals
     ownership = bundle.ownership_signals
     historical = bundle.historical_signals
+    trust_baseline = bundle.trust_baseline
     ownership_present = _has_ownership_metadata(bundle)
 
     if decision == "NO GO":
@@ -191,6 +193,24 @@ def _recommendations(
 
     if ownership_present and ownership.team_trust_level in {"low", "degrading"}:
         recommendations.append("Use an explicit deployment checklist and reviewer sign-off for this low-trust team surface")
+
+    if trust_baseline.repo_stability in {"watch", "fragile"} or trust_baseline.service_stability in {"watch", "fragile"}:
+        recommendations.append("Increase manual validation for this historically fragile change surface")
+
+    if trust_baseline.test_coverage_level == "low":
+        recommendations.append("Run targeted regression coverage because baseline test coverage is low")
+
+    if trust_baseline.rollback_readiness in {"partial", "weak"}:
+        recommendations.append("Require and verify a rollback path before deployment")
+
+    if (
+        trust_baseline.dependency_reputation_risk in {"medium", "high"}
+        and (bundle.summary.dependency_changes or bundle.summary.lockfile_changes)
+    ):
+        recommendations.append("Review dependency reputation and maintenance signals before approving new packages")
+
+    if trust_baseline.team_deploy_safety in {"low", "degrading"}:
+        recommendations.append("Use an operator-assisted release path for this low-safety team baseline")
 
     if not recommendations:
         recommendations.append("Proceed with normal review and deployment checks")
@@ -274,6 +294,26 @@ def _matches_policy_trigger(triggers: tuple[str, ...], bundle: AnalysisBundle) -
         if _trigger_matches(trigger, bundle):
             return True
     return False
+
+
+def _trust_baseline_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
+    trust_baseline = bundle.trust_baseline
+    reasons: list[str] = []
+
+    if trust_baseline.repo_stability in {"watch", "fragile"}:
+        reasons.append(f"repository stability baseline is {trust_baseline.repo_stability}")
+    if trust_baseline.service_stability in {"watch", "fragile"}:
+        reasons.append(f"service stability baseline is {trust_baseline.service_stability}")
+    if trust_baseline.team_deploy_safety in {"low", "degrading"}:
+        reasons.append(f"team deployment safety baseline is {trust_baseline.team_deploy_safety}")
+    if trust_baseline.test_coverage_level == "low":
+        reasons.append("test coverage baseline is low")
+    if trust_baseline.rollback_readiness in {"partial", "weak"}:
+        reasons.append(f"rollback readiness baseline is {trust_baseline.rollback_readiness}")
+    if trust_baseline.dependency_reputation_risk in {"medium", "high"}:
+        reasons.append(f"dependency reputation baseline is {trust_baseline.dependency_reputation_risk} risk")
+
+    return tuple(reasons)
 
 
 def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:

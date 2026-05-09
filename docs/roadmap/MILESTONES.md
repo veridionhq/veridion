@@ -61,7 +61,7 @@ Exit criteria:
 Status:
 
 - Complete for baseline suppression, rename/delete handling, and cross-scanner dedup-aware comparison
-- Partially complete for attribution: lightweight AI-origin metadata signals and historical trust signals are now surfaced, but ownership and richer service metadata are still pending
+- Partially complete for attribution: lightweight AI-origin metadata signals, historical trust signals, runtime/ownership context, and learned trust-baseline posture are now surfaced, but richer service graph data is still pending
 
 ## M3: RDI Scoring and Decision Engine
 
@@ -105,7 +105,7 @@ Exit criteria:
 Status:
 
 - Complete for deterministic rendering, marker-based replacement, and GitHub upsert lifecycle
-- AI-attribution and historical trust signals now appear in the comment, recommendation, and approval path as non-scoring context
+- AI-attribution, historical trust signals, runtime/ownership context, and trust-baseline posture now appear in the comment, recommendation, and approval path as non-scoring context
 - Follow-up remains to convert current exact-string tests into dedicated snapshot artifacts if we want a formal snapshot harness
 
 ## M5: GitHub Action MVP

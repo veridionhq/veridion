@@ -2,7 +2,7 @@ from pathlib import Path
 
 from veridion.analysis import build_analysis_bundle
 from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
-from veridion.context import HistoricalSignals
+from veridion.context import HistoricalSignals, TrustBaseline
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.policy import evaluate_release, parse_policy_yaml
 
@@ -113,6 +113,14 @@ def test_evaluate_release_adds_advisory_recommendations_for_historical_trust_sig
             team_trust_level="degrading",
             oncall_defined=False,
         ),
+        trust_baseline=TrustBaseline(
+            repo_stability="fragile",
+            service_stability="watch",
+            team_deploy_safety="degrading",
+            test_coverage_level="low",
+            rollback_readiness="partial",
+            dependency_reputation_risk="high",
+        ),
     )
 
     decision = evaluate_release(bundle, parse_policy_yaml(DEFAULT_POLICY_PATH.read_text()))
@@ -132,6 +140,12 @@ def test_evaluate_release_adds_advisory_recommendations_for_historical_trust_sig
     assert "change requires cross-team review coverage" in decision.reasons
     assert "team trust level is degrading" in decision.reasons
     assert "on-call coverage is not defined for this service" in decision.reasons
+    assert "repository stability baseline is fragile" in decision.reasons
+    assert "service stability baseline is watch" in decision.reasons
+    assert "team deployment safety baseline is degrading" in decision.reasons
+    assert "test coverage baseline is low" in decision.reasons
+    assert "rollback readiness baseline is partial" in decision.reasons
+    assert "dependency reputation baseline is high risk" in decision.reasons
     assert decision.score_adjustments == ()
     assert decision.recommendations == (
         "Require approval from the platform owner",
@@ -150,6 +164,10 @@ def test_evaluate_release_adds_advisory_recommendations_for_historical_trust_sig
         "Coordinate sign-off across owning teams before deployment",
         "Define a service owner before relying on this change path in production",
         "Use an explicit deployment checklist and reviewer sign-off for this low-trust team surface",
+        "Increase manual validation for this historically fragile change surface",
+        "Run targeted regression coverage because baseline test coverage is low",
+        "Require and verify a rollback path before deployment",
+        "Use an operator-assisted release path for this low-safety team baseline",
     )
 
 
@@ -305,6 +323,32 @@ cross_team_change_score_penalty: 2
         "missing on-call coverage: -3",
         "cross-team change surface: -2",
     )
+
+
+def test_evaluate_release_adds_dependency_reputation_guidance_when_dependency_surface_changes() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=2,
+                    removed_lines=1,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+        trust_baseline=TrustBaseline(
+            dependency_reputation_risk="high",
+        ),
+    )
+
+    decision = evaluate_release(bundle)
+
+    assert "Review dependency reputation and maintenance signals before approving new packages" in decision.recommendations
 
 
 def test_evaluate_release_clamps_policy_adjusted_score_at_zero() -> None:

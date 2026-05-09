@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from veridion.attribution import AiAttribution, detect_ai_attribution, PullRequestMetadata
 from veridion.baseline import BaselineComparison, compare_findings_against_baseline
 from veridion.change_context import ParsedChangeContext
-from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals
+from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals, TrustBaseline
 from veridion.normalize.models import NormalizedFinding
 from veridion.util import plain
 from veridion.analysis.dedup import deduplicate_findings
@@ -31,6 +31,7 @@ class AnalysisSummary:
     historical_risk_signals: int
     runtime_risk_signals: int
     ownership_risk_signals: int
+    trust_baseline_risk_signals: int
     by_severity: dict[str, int]
     introduced_by_severity: dict[str, int]
     by_finding_type: dict[str, int]
@@ -49,6 +50,7 @@ class AnalysisBundle:
     historical_signals: HistoricalSignals
     runtime_signals: RuntimeSignals
     ownership_signals: OwnershipSignals
+    trust_baseline: TrustBaseline
     change_context: ParsedChangeContext
     baseline_comparison: BaselineComparison
     summary: AnalysisSummary
@@ -67,6 +69,7 @@ def build_analysis_bundle(
     historical_signals: HistoricalSignals | None = None,
     runtime_signals: RuntimeSignals | None = None,
     ownership_signals: OwnershipSignals | None = None,
+    trust_baseline: TrustBaseline | None = None,
 ) -> AnalysisBundle:
     """Assemble the deterministic analysis object used by the decision engine."""
 
@@ -86,6 +89,7 @@ def build_analysis_bundle(
     resolved_historical_signals = historical_signals or HistoricalSignals()
     resolved_runtime_signals = runtime_signals or RuntimeSignals()
     resolved_ownership_signals = ownership_signals or OwnershipSignals()
+    resolved_trust_baseline = trust_baseline or TrustBaseline()
     summary = _build_summary(
         current_findings=scored_current_findings,
         current_inventory=current_inventory,
@@ -95,6 +99,7 @@ def build_analysis_bundle(
         historical_signals=resolved_historical_signals,
         runtime_signals=resolved_runtime_signals,
         ownership_signals=resolved_ownership_signals,
+        trust_baseline=resolved_trust_baseline,
     )
 
     return AnalysisBundle(
@@ -106,6 +111,7 @@ def build_analysis_bundle(
         historical_signals=resolved_historical_signals,
         runtime_signals=resolved_runtime_signals,
         ownership_signals=resolved_ownership_signals,
+        trust_baseline=resolved_trust_baseline,
         change_context=change_context,
         baseline_comparison=baseline_comparison,
         summary=summary,
@@ -122,6 +128,7 @@ def _build_summary(
     historical_signals: HistoricalSignals,
     runtime_signals: RuntimeSignals,
     ownership_signals: OwnershipSignals,
+    trust_baseline: TrustBaseline,
 ) -> AnalysisSummary:
     return AnalysisSummary(
         total_findings=len(current_findings),
@@ -138,6 +145,7 @@ def _build_summary(
         historical_risk_signals=len(historical_signals.elevated_signals),
         runtime_risk_signals=len(runtime_signals.elevated_signals),
         ownership_risk_signals=len(ownership_signals.elevated_signals),
+        trust_baseline_risk_signals=len(trust_baseline.elevated_signals),
         by_severity=_count_by_severity(current_findings),
         introduced_by_severity=_count_by_severity(list(baseline_comparison.introduced)),
         by_finding_type=_count_by_finding_type(current_findings),
