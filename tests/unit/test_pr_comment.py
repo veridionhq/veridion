@@ -232,6 +232,57 @@ def test_render_pr_comment_includes_trust_baseline_section_when_present() -> Non
     assert "- dependency reputation risk: high" in comment
 
 
+def test_render_pr_comment_truncates_verbose_sections() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        historical_signals=HistoricalSignals(
+            repo_criticality="high",
+            service_criticality="critical",
+            rollback_rate_30d=0.18,
+            incident_count_30d=4,
+            change_failure_rate_30d=0.22,
+            flaky_service=True,
+            sensitive_repo=True,
+        ),
+        runtime_signals=RuntimeSignals(
+            environment="production",
+            deployment_window="after_hours",
+            public_exposure=True,
+            blast_radius="high",
+            rollout_strategy="canary",
+        ),
+        ownership_signals=OwnershipSignals(
+            service_owner="payments-owner",
+            owning_team="payments-platform",
+            review_coverage="cross_team",
+            team_trust_level="degrading",
+            oncall_defined=False,
+            service_owner_provided=True,
+            oncall_defined_provided=True,
+        ),
+        trust_baseline=TrustBaseline(
+            repo_stability="watch",
+            service_stability="fragile",
+            team_deploy_safety="degrading",
+            test_coverage_level="low",
+            rollback_readiness="partial",
+            dependency_reputation_risk="medium",
+        ),
+    )
+    decision = evaluate_release(bundle)
+
+    comment = render_pr_comment(bundle, decision)
+
+    assert "### Historical Trust Signals" in comment
+    assert "- repository marked sensitive" in comment
+    assert "### Recommendations" in comment
+    assert "### Why" in comment
+    assert "- ... " in comment
+    assert "more recommendations" in comment
+
+
 def _bundle_with_iac_and_dependency_risk():
     baseline = [
         NormalizedFinding(

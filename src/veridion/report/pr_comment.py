@@ -8,6 +8,9 @@ from veridion.policy.labels import APPROVAL_LABELS
 
 COMMENT_MARKER_START = "<!-- veridion:rdi:start -->"
 COMMENT_MARKER_END = "<!-- veridion:rdi:end -->"
+MAX_AI_ITEMS = 3
+MAX_REASON_ITEMS = 8
+MAX_RECOMMENDATION_ITEMS = 8
 
 
 def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
@@ -32,7 +35,7 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
     lines.append("")
 
     if bundle.ai_attribution.detected:
-        lines.extend(_section("AI Attribution", _format_ai_attribution(bundle)))
+        lines.extend(_section("AI Attribution", _truncate_items(_format_ai_attribution(bundle), MAX_AI_ITEMS, "detail")))
     if bundle.historical_signals.elevated_signals:
         lines.extend(_section("Historical Trust Signals", _format_historical_signals(bundle)))
     if bundle.runtime_signals.elevated_signals:
@@ -42,7 +45,7 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
     if bundle.trust_baseline.elevated_signals:
         lines.extend(_section("Trust Baseline", _format_trust_baseline(bundle)))
 
-    lines.extend(_section("Why", decision.reasons))
+    lines.extend(_section("Why", _truncate_items(decision.reasons, MAX_REASON_ITEMS, "reason")))
 
     if decision.score_adjustments:
         lines.extend(_section("Policy Score Adjustments", decision.score_adjustments))
@@ -51,7 +54,12 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
         approvals = tuple(_format_approval(name) for name in decision.required_approvals)
         lines.extend(_section("Required Approvals", approvals))
 
-    lines.extend(_section("Recommendations", decision.recommendations))
+    lines.extend(
+        _section(
+            "Recommendations",
+            _truncate_items(decision.recommendations, MAX_RECOMMENDATION_ITEMS, "recommendation"),
+        )
+    )
     lines.extend(_section("Introduced Severity", _format_counts(bundle.summary.introduced_by_severity)))
     lines.extend(_section("Introduced Finding Types", _format_counts(bundle.summary.introduced_by_finding_type)))
 
@@ -80,6 +88,14 @@ def _format_approval(value: str) -> str:
 
 def _format_counts(counts: dict[str, int]) -> tuple[str, ...]:
     return tuple(f"{key}: {value}" for key, value in counts.items())
+
+
+def _truncate_items(items: tuple[str, ...], limit: int, noun: str) -> tuple[str, ...]:
+    if len(items) <= limit:
+        return items
+    remaining = len(items) - limit
+    suffix = noun if remaining == 1 else noun + "s"
+    return items[:limit] + (f"... {remaining} more {suffix}",)
 
 
 def _format_ai_attribution(bundle: AnalysisBundle) -> tuple[str, ...]:

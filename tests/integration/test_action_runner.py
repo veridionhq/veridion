@@ -60,11 +60,10 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert "- service owner" in result.comment_markdown
     assert "- SRE owner" in result.comment_markdown
     assert "- Repo profile: veridionhq/veridion" in result.comment_markdown
-    assert "Use heightened review for this high-criticality repository" in result.comment_markdown
-    assert "Prefer a staged rollout or canary deployment for this historically unstable change surface" in result.comment_markdown
-    assert "Increase manual validation for this historically fragile change surface" in result.comment_markdown
-    assert "Use a staged rollout with a validated rollback plan for this production deployment" in result.comment_markdown
-    assert "Avoid after-hours deployment until on-call coverage is defined" in result.comment_markdown
+    assert "Block release until introduced risk is remediated or policy is adjusted" in result.comment_markdown
+    assert "Run staging smoke tests for infrastructure-affecting changes" in result.comment_markdown
+    assert "... 18 more reasons" in result.comment_markdown
+    assert "... 16 more recommendations" in result.comment_markdown
     assert "Unattributed findings: 0" in result.comment_markdown
     assert result.comment_markdown.startswith("<!-- veridion:rdi:start -->\n")
 
