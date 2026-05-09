@@ -10,8 +10,9 @@ COMMENT_MARKER_START = "<!-- veridion:rdi:start -->"
 COMMENT_MARKER_END = "<!-- veridion:rdi:end -->"
 MAX_AI_ITEMS = 3
 MAX_PRIMARY_DRIVER_ITEMS = 6
-MAX_CONTEXTUAL_RISK_ITEMS = 6
-MAX_RECOMMENDATION_ITEMS = 8
+MAX_CONTEXTUAL_RISK_ITEMS = 5
+MAX_REQUIRED_NEXT_STEP_ITEMS = 6
+MAX_ADVISORY_GUIDANCE_ITEMS = 6
 
 
 def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
@@ -63,12 +64,22 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
         approvals = tuple(_format_approval(name) for name in decision.required_approvals)
         lines.extend(_section("Required Approvals", approvals))
 
+    required_next_steps, advisory_guidance = _split_recommendations(
+        _filter_recommendations(decision.recommendations, decision.required_approvals)
+    )
     lines.extend(
         _section(
-            "Recommendations",
-            _truncate_items(_filter_recommendations(decision.recommendations, decision.required_approvals), MAX_RECOMMENDATION_ITEMS, "recommendation"),
+            "Required Next Steps",
+            _truncate_items(required_next_steps, MAX_REQUIRED_NEXT_STEP_ITEMS, "required step"),
         )
     )
+    if advisory_guidance:
+        lines.extend(
+            _section(
+                "Advisory Guidance",
+                _truncate_items(advisory_guidance, MAX_ADVISORY_GUIDANCE_ITEMS, "guidance item"),
+            )
+        )
     lines.extend(_section("Introduced Severity", _format_counts(bundle.summary.introduced_by_severity)))
     lines.extend(_section("Introduced Finding Types", _format_counts(bundle.summary.introduced_by_finding_type)))
 
@@ -232,13 +243,13 @@ def _format_trust_baseline(bundle: AnalysisBundle) -> tuple[str, ...]:
 
     profile_parts: list[str] = []
     if bundle.trust_profile_metadata.repo_id:
-        profile_parts.append("repo profile: " + bundle.trust_profile_metadata.repo_id)
+        profile_parts.append(bundle.trust_profile_metadata.repo_id)
     if bundle.trust_profile_metadata.service_id:
-        profile_parts.append("service profile: " + bundle.trust_profile_metadata.service_id)
+        profile_parts.append(bundle.trust_profile_metadata.service_id)
     if bundle.trust_profile_metadata.team_id:
-        profile_parts.append("team profile: " + bundle.trust_profile_metadata.team_id)
+        profile_parts.append(bundle.trust_profile_metadata.team_id)
     if profile_parts:
-        items.append("Profiles: " + " | ".join(profile_parts))
+        items.append("Trust profile: " + " | ".join(profile_parts))
 
     return tuple(items)
 
@@ -276,3 +287,29 @@ def _filter_recommendations(
 ) -> tuple[str, ...]:
     blocked = {f"Require approval from the {_format_approval(value)}" for value in required_approvals}
     return tuple(item for item in recommendations if item not in blocked)
+
+
+def _split_recommendations(recommendations: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    required: list[str] = []
+    advisory: list[str] = []
+
+    for recommendation in recommendations:
+        if _is_required_next_step(recommendation):
+            required.append(recommendation)
+        else:
+            advisory.append(recommendation)
+
+    return tuple(required), tuple(advisory)
+
+
+def _is_required_next_step(recommendation: str) -> bool:
+    required_markers = (
+        "Block release",
+        "Run staging smoke tests",
+        "Prioritize remediation",
+        "Review newly introduced dependencies",
+        "Verify rollback ownership and on-call coverage",
+        "Require and verify a rollback path",
+        "Define a service owner",
+    )
+    return recommendation.startswith(required_markers)

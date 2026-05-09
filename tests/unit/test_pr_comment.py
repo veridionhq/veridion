@@ -43,7 +43,7 @@ def test_render_pr_comment_renders_policy_decision_for_high_risk_change() -> Non
 - platform owner
 - security owner
 
-### Recommendations
+### Required Next Steps
 
 - Block release until introduced risk is remediated or policy is adjusted
 - Run staging smoke tests for infrastructure-affecting changes
@@ -272,11 +272,13 @@ def test_render_pr_comment_truncates_verbose_sections() -> None:
 
     assert "### Historical Trust Signals" in comment
     assert "- Operational flags: service marked flaky | repository marked sensitive" in comment
-    assert "### Recommendations" in comment
+    assert "### Required Next Steps" in comment
+    assert "### Advisory Guidance" in comment
     assert "### Primary Drivers" in comment
     assert "### Contextual Risk" in comment
     assert "- ... " in comment
-    assert "more recommendations" in comment
+    assert "more contextual risks" in comment
+    assert "more guidance items" in comment
 
 
 def _bundle_with_iac_and_dependency_risk():

@@ -61,12 +61,14 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert "- security owner" in result.comment_markdown
     assert "- service owner" in result.comment_markdown
     assert "- SRE owner" in result.comment_markdown
-    assert "- Profiles: repo profile: veridionhq/veridion | service profile: veridion/rdi-engine | team profile: platform-trust" in result.comment_markdown
+    assert "- Trust profile: veridionhq/veridion | veridion/rdi-engine | platform-trust" in result.comment_markdown
     assert "Block release until introduced risk is remediated or policy is adjusted" in result.comment_markdown
     assert "Run staging smoke tests for infrastructure-affecting changes" in result.comment_markdown
+    assert "### Required Next Steps" in result.comment_markdown
+    assert "### Advisory Guidance" in result.comment_markdown
     assert "... " in result.comment_markdown
     assert "more contextual risks" in result.comment_markdown or "more contextual risk" in result.comment_markdown
-    assert "more recommendations" in result.comment_markdown
+    assert "more guidance items" in result.comment_markdown or "more guidance item" in result.comment_markdown
     assert "Unattributed findings: 0" in result.comment_markdown
     assert result.comment_markdown.startswith("<!-- veridion:rdi:start -->\n")
 
