@@ -141,6 +141,8 @@ def test_render_pr_comment_includes_historical_trust_signals_when_present() -> N
     assert "- repository marked sensitive" in comment
     assert "- repository criticality is high" in comment
     assert "- 30d change failure rate is elevated at 22%" in comment
+    assert "Repository criticality: high" not in comment
+    assert "Service criticality: critical" not in comment
 
 
 def _bundle_with_iac_and_dependency_risk():

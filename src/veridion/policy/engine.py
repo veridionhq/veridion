@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from veridion.analysis import AnalysisBundle
 from veridion.normalize.common import SEVERITY_ORDER
+from veridion.policy.labels import APPROVAL_LABELS, VALID_POLICY_TRIGGERS
 from veridion.policy.model import PolicyConfig
 from veridion.risk import RdiResult, score_analysis_bundle
 
@@ -160,13 +161,7 @@ def _recommendations(
 
 
 def _approval_label(value: str) -> str:
-    labels = {
-        "platform_owner": "platform owner",
-        "security_owner": "security owner",
-        "service_owner": "service owner",
-        "sre_owner": "SRE owner",
-    }
-    return labels.get(value, value.replace("_", " "))
+    return APPROVAL_LABELS.get(value, value.replace("_", " "))
 
 
 def _historical_context_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
@@ -221,4 +216,4 @@ def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
         "flaky_service": historical.flaky_service,
         "sensitive_repo": historical.sensitive_repo,
     }
-    return checks.get(trigger, False)
+    return checks.get(trigger, False) if trigger in VALID_POLICY_TRIGGERS else False

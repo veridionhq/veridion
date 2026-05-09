@@ -37,17 +37,20 @@ def collect_commit_metadata(base_ref: str, *, head_ref: str = "HEAD") -> list[di
     """Collect commit metadata for the PR commit range using git log."""
 
     revision_range = f"origin/{base_ref}..{head_ref}"
-    result = subprocess.run(
-        [
-            "git",
-            "log",
-            "--format=%an%x1f%ae%x1f%B%x1e",
-            revision_range,
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "log",
+                "--format=%an%x1f%ae%x1f%B%x1e",
+                revision_range,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(f"git log failed for range {revision_range!r}") from exc
     return parse_git_log_output(result.stdout)
 
 

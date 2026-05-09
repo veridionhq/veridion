@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from veridion.normalize.common import SEVERITY_ORDER, as_string, normalize_severity
+from veridion.policy.labels import VALID_POLICY_TRIGGERS
 
 
 @dataclass(frozen=True)
@@ -17,8 +18,11 @@ class PolicyConfig:
     no_go_below_score: int = 60
     conditional_go_below_score: int = 85
     require_approval_for: tuple[str, ...] = ()
+    # Valid values: repo_criticality_high, service_criticality_high.
     require_service_owner_for: tuple[str, ...] = ()
+    # Valid values: historical_instability, flaky_service.
     require_sre_owner_for: tuple[str, ...] = ()
+    # Valid values: sensitive_repo.
     require_security_owner_for: tuple[str, ...] = ()
 
 
@@ -89,7 +93,11 @@ def _string_list(value: object, field_name: str) -> tuple[str, ...]:
         return ()
     if not isinstance(value, list):
         raise ValueError(f"{field_name} must be a list")
-    return tuple(as_string(item, default="") for item in value if as_string(item))
+    values = tuple(as_string(item, default="") for item in value if as_string(item))
+    invalid = tuple(item for item in values if item not in VALID_POLICY_TRIGGERS)
+    if invalid:
+        raise ValueError(f"{field_name} contains unsupported trigger(s): {', '.join(invalid)}")
+    return values
 
 
 def _parse_scalar(value: str) -> object:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from veridion.analysis import AnalysisBundle
 from veridion.policy.engine import PolicyDecision
+from veridion.policy.labels import APPROVAL_LABELS
 
 COMMENT_MARKER_START = "<!-- veridion:rdi:start -->"
 COMMENT_MARKER_END = "<!-- veridion:rdi:end -->"
@@ -65,13 +66,7 @@ def _section(title: str, items: tuple[str, ...] | list[str]) -> list[str]:
 
 
 def _format_approval(value: str) -> str:
-    labels = {
-        "platform_owner": "platform owner",
-        "security_owner": "security owner",
-        "service_owner": "service owner",
-        "sre_owner": "SRE owner",
-    }
-    return labels.get(value, value.replace("_", " "))
+    return APPROVAL_LABELS.get(value, value.replace("_", " "))
 
 
 def _format_counts(counts: dict[str, int]) -> tuple[str, ...]:
@@ -94,9 +89,9 @@ def _format_ai_attribution(bundle: AnalysisBundle) -> tuple[str, ...]:
 def _format_historical_signals(bundle: AnalysisBundle) -> tuple[str, ...]:
     items = list(bundle.historical_signals.elevated_signals)
 
-    if bundle.historical_signals.repo_criticality:
+    if bundle.historical_signals.repo_criticality not in {"", "high", "critical"}:
         items.append("Repository criticality: " + bundle.historical_signals.repo_criticality)
-    if bundle.historical_signals.service_criticality:
+    if bundle.historical_signals.service_criticality not in {"", "high", "critical"}:
         items.append("Service criticality: " + bundle.historical_signals.service_criticality)
 
     return tuple(dict.fromkeys(items))
