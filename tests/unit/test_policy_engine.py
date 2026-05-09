@@ -19,15 +19,23 @@ def test_parse_policy_yaml_builds_expected_config() -> None:
     assert policy.no_go_below_score == 60
     assert policy.conditional_go_below_score == 85
     assert policy.require_approval_for == ("production_iac", "dependency_changes")
-    assert policy.require_platform_owner_for == ("production_deployment", "large_blast_radius")
+    assert policy.require_platform_owner_for == ("production_deployment", "large_blast_radius", "weak_rollback_readiness")
     assert policy.require_service_owner_for == (
         "repo_criticality_high",
         "service_criticality_high",
         "low_team_trust",
         "unowned_service",
+        "low_test_coverage",
     )
-    assert policy.require_sre_owner_for == ("historical_instability", "flaky_service", "after_hours_deploy", "missing_oncall")
-    assert policy.require_security_owner_for == ("sensitive_repo", "public_exposure")
+    assert policy.require_sre_owner_for == (
+        "historical_instability",
+        "flaky_service",
+        "after_hours_deploy",
+        "missing_oncall",
+        "service_fragility",
+        "low_team_deploy_safety",
+    )
+    assert policy.require_security_owner_for == ("sensitive_repo", "public_exposure", "dependency_reputation_risk")
     assert policy.historical_instability_score_penalty == 0
     assert policy.service_criticality_score_penalty == 0
     assert policy.sensitive_repo_score_penalty == 0
@@ -41,6 +49,12 @@ def test_parse_policy_yaml_builds_expected_config() -> None:
     assert policy.unowned_service_score_penalty == 0
     assert policy.missing_oncall_score_penalty == 0
     assert policy.cross_team_change_score_penalty == 0
+    assert policy.repo_fragility_score_penalty == 0
+    assert policy.service_fragility_score_penalty == 0
+    assert policy.low_test_coverage_score_penalty == 0
+    assert policy.weak_rollback_readiness_score_penalty == 0
+    assert policy.dependency_reputation_risk_score_penalty == 0
+    assert policy.low_team_deploy_safety_score_penalty == 0
 
 
 def test_evaluate_release_applies_required_approvals_and_recommendations() -> None:
@@ -204,6 +218,48 @@ require_security_owner_for: []
     assert "Require approval from the service owner" in decision.recommendations
 
 
+def test_evaluate_release_can_require_approvals_from_trust_baseline_triggers() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        trust_baseline=TrustBaseline(
+            repo_stability="fragile",
+            service_stability="watch",
+            team_deploy_safety="degrading",
+            test_coverage_level="low",
+            rollback_readiness="partial",
+            dependency_reputation_risk="high",
+        ),
+    )
+
+    decision = evaluate_release(
+        bundle,
+        parse_policy_yaml(
+            """
+allow_conditional: true
+require_platform_owner_for:
+  - repo_fragility
+  - weak_rollback_readiness
+require_service_owner_for:
+  - low_test_coverage
+require_sre_owner_for:
+  - service_fragility
+  - low_team_deploy_safety
+require_security_owner_for:
+  - dependency_reputation_risk
+"""
+        ),
+    )
+
+    assert decision.required_approvals == (
+        "platform_owner",
+        "service_owner",
+        "sre_owner",
+        "security_owner",
+    )
+
+
 def test_evaluate_release_can_apply_policy_controlled_score_penalties() -> None:
     bundle = build_analysis_bundle(
         current_findings=[],
@@ -322,6 +378,58 @@ cross_team_change_score_penalty: 2
         "unowned service: -4",
         "missing on-call coverage: -3",
         "cross-team change surface: -2",
+    )
+
+
+def test_evaluate_release_can_apply_trust_baseline_score_penalties() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=2,
+                    removed_lines=1,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+        trust_baseline=TrustBaseline(
+            repo_stability="fragile",
+            service_stability="watch",
+            team_deploy_safety="degrading",
+            test_coverage_level="low",
+            rollback_readiness="partial",
+            dependency_reputation_risk="high",
+        ),
+    )
+
+    decision = evaluate_release(
+        bundle,
+        parse_policy_yaml(
+            """
+allow_conditional: true
+repo_fragility_score_penalty: 4
+service_fragility_score_penalty: 3
+low_test_coverage_score_penalty: 5
+weak_rollback_readiness_score_penalty: 6
+dependency_reputation_risk_score_penalty: 2
+low_team_deploy_safety_score_penalty: 7
+"""
+        ),
+    )
+
+    assert decision.score == 73
+    assert decision.score_adjustments == (
+        "repository fragility baseline: -4",
+        "service fragility baseline: -3",
+        "low test coverage baseline: -5",
+        "weak rollback readiness baseline: -6",
+        "dependency reputation baseline: -2",
+        "low team deploy safety baseline: -7",
     )
 
 

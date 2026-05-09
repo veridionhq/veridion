@@ -21,4 +21,10 @@ VALID_POLICY_TRIGGERS = (
     "unowned_service",
     "missing_oncall",
     "cross_team_change",
+    "repo_fragility",
+    "service_fragility",
+    "low_test_coverage",
+    "weak_rollback_readiness",
+    "dependency_reputation_risk",
+    "low_team_deploy_safety",
 )
