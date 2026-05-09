@@ -9,6 +9,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from veridion.analysis import AnalysisBundle, build_analysis_bundle
+from veridion.attribution import parse_pull_request_metadata
+from veridion.context import parse_historical_signals
 from veridion.normalize import NormalizedFinding, normalize_report
 from veridion.policy import PolicyDecision, PolicyConfig, evaluate_release, parse_policy_yaml
 from veridion.report import render_pr_comment
@@ -42,6 +44,7 @@ def run_action(
     current_reports: dict[str, str],
     baseline_reports: dict[str, str] | None = None,
     policy_text: str | None = None,
+    metadata_text: str | None = None,
 ) -> ActionResult:
     """Run the full RDI pipeline from file-backed action inputs."""
 
@@ -49,11 +52,16 @@ def run_action(
     baseline_findings = _load_findings(baseline_reports or {})
     change_context = parse_unified_diff(diff_text)
     policy = parse_policy_yaml(policy_text) if policy_text else PolicyConfig()
+    parsed_metadata = json.loads(metadata_text) if metadata_text else {}
+    metadata = parse_pull_request_metadata(parsed_metadata) if metadata_text else None
+    historical_signals = parse_historical_signals(parsed_metadata) if metadata_text else None
 
     bundle = build_analysis_bundle(
         current_findings=current_findings,
         baseline_findings=baseline_findings,
         change_context=change_context,
+        metadata=metadata,
+        historical_signals=historical_signals,
     )
     decision = evaluate_release(bundle, policy)
     comment_markdown = render_pr_comment(bundle, decision)
@@ -75,12 +83,14 @@ def main(argv: list[str] | None = None) -> int:
     current_reports = _parse_report_mappings(args.report)
     baseline_reports = _parse_report_mappings(args.baseline_report)
     policy_text = Path(args.policy_path).read_text() if args.policy_path else None
+    metadata_text = Path(args.metadata_path).read_text() if args.metadata_path else None
 
     result = run_action(
         diff_text=diff_text,
         current_reports=current_reports,
         baseline_reports=baseline_reports,
         policy_text=policy_text,
+        metadata_text=metadata_text,
     )
 
     if args.comment_path:
@@ -112,6 +122,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Baseline scanner report mapping, repeatable",
     )
     parser.add_argument("--policy-path", help="Path to a policy YAML file")
+    parser.add_argument("--metadata-path", help="Path to optional pull request metadata JSON")
     parser.add_argument("--comment-path", help="Path to write rendered PR comment markdown")
     parser.add_argument("--json-output-path", help="Path to write structured JSON output")
     return parser

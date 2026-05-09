@@ -2,6 +2,7 @@ from pathlib import Path
 
 from veridion.analysis import build_analysis_bundle
 from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
+from veridion.context import HistoricalSignals
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.policy import evaluate_release, parse_policy_yaml
 
@@ -60,6 +61,38 @@ def test_evaluate_release_blocks_when_max_severity_policy_is_exceeded() -> None:
 
     assert decision.decision == "NO GO"
     assert "policy max_severity exceeded by introduced high finding(s)" in decision.reasons
+
+
+def test_evaluate_release_adds_advisory_recommendations_for_historical_trust_signals() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        historical_signals=HistoricalSignals(
+            repo_criticality="high",
+            service_criticality="critical",
+            rollback_rate_30d=0.18,
+            incident_count_30d=4,
+            change_failure_rate_30d=0.22,
+            flaky_service=True,
+            sensitive_repo=True,
+        ),
+    )
+
+    decision = evaluate_release(bundle)
+
+    assert decision.decision == "GO"
+    assert decision.required_approvals == ("service_owner", "sre_owner", "security_owner")
+    assert decision.recommendations == (
+        "Require approval from the service owner",
+        "Require approval from the SRE owner",
+        "Require approval from the security owner",
+        "Use heightened review for this high-criticality repository",
+        "Treat this change as high-impact for service operations and release planning",
+        "Prefer a staged rollout or canary deployment for this historically unstable change surface",
+        "Verify rollback ownership and on-call coverage before deployment",
+        "Schedule deployment during staffed hours with active operational monitoring",
+    )
 
 
 def _bundle_with_iac_and_dependency_risk():

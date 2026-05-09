@@ -62,6 +62,8 @@ Core capabilities:
 - Lightweight policy evaluation
 - RDI scoring and decisioning
 - PR comment rendering
+- Lightweight AI-attribution from PR metadata
+- Lightweight historical trust signals from optional metadata
 
 Inputs:
 
@@ -176,6 +178,11 @@ Proprietary core:
 - Build the narrowest slice that proves the decisioning value
 - Keep every scoring decision explainable
 - Default to introduced-only context when possible
+- Add new signals visibly before they affect score
 - Treat false positives as a top-level product risk
 - Require tests for every meaningful code change
 - Keep docs aligned with implementation, not separate from it
+
+Current implementation note:
+
+- AI-attribution and historical trust signals are non-scoring today. They influence reporting, recommendations, and approval requirements, not the numeric RDI score.

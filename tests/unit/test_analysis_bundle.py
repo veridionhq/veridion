@@ -1,5 +1,7 @@
 from veridion.analysis import build_analysis_bundle
+from veridion.attribution import PullRequestMetadata, CommitMetadata
 from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
+from veridion.context import HistoricalSignals
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 
 
@@ -91,6 +93,9 @@ def test_build_analysis_bundle_assembles_deterministic_summary_and_partitions() 
     assert bundle.summary.lockfile_changes is True
     assert bundle.summary.infrastructure_changes is False
     assert bundle.summary.inventory_packages == 1
+    assert bundle.summary.ai_change_signals == 0
+    assert bundle.summary.ai_authored_commits == 0
+    assert bundle.summary.historical_risk_signals == 0
     assert bundle.summary.by_severity == {
         "critical": 1,
         "high": 1,
@@ -122,6 +127,22 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
         "baseline_findings": [],
         "current_inventory": [],
         "baseline_inventory": [],
+        "ai_attribution": {
+            "detected": False,
+            "signal_count": 0,
+            "ai_authored_commits": 0,
+            "sources": [],
+            "indicators": [],
+        },
+        "historical_signals": {
+            "repo_criticality": "",
+            "service_criticality": "",
+            "rollback_rate_30d": None,
+            "incident_count_30d": 0,
+            "change_failure_rate_30d": None,
+            "flaky_service": False,
+            "sensitive_repo": False,
+        },
         "change_context": {"files": []},
         "baseline_comparison": {
             "introduced": [],
@@ -138,9 +159,52 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "lockfile_changes": False,
             "infrastructure_changes": False,
             "inventory_packages": 0,
+            "ai_change_signals": 0,
+            "ai_authored_commits": 0,
+            "historical_risk_signals": 0,
             "by_severity": {},
             "introduced_by_severity": {},
             "by_finding_type": {},
             "introduced_by_finding_type": {},
         },
     }
+
+
+def test_build_analysis_bundle_surfaces_ai_attribution_summary() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        metadata=PullRequestMetadata(
+            body="This PR was prepared with ChatGPT.",
+            commits=(
+                CommitMetadata(
+                    message="feat: generated with Claude",
+                ),
+            ),
+        ),
+    )
+
+    assert bundle.ai_attribution.detected is True
+    assert bundle.summary.ai_change_signals == 2
+    assert bundle.summary.ai_authored_commits == 1
+
+
+def test_build_analysis_bundle_surfaces_historical_trust_summary() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        historical_signals=HistoricalSignals(
+            repo_criticality="high",
+            service_criticality="critical",
+            rollback_rate_30d=0.18,
+            incident_count_30d=4,
+            change_failure_rate_30d=0.22,
+            flaky_service=True,
+            sensitive_repo=True,
+        ),
+    )
+
+    assert bundle.summary.historical_risk_signals == 7
+    assert bundle.historical_signals.elevated_signals[0] == "repo criticality: high"

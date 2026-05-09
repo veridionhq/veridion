@@ -1,5 +1,7 @@
 from veridion.analysis import build_analysis_bundle
+from veridion.attribution import PullRequestMetadata
 from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
+from veridion.context import HistoricalSignals
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.policy import PolicyConfig, evaluate_release
 from veridion.report import render_pr_comment
@@ -91,6 +93,52 @@ def test_render_pr_comment_handles_clean_change_without_approvals() -> None:
     assert "- None" in comment
     assert comment.startswith("<!-- veridion:rdi:start -->\n")
     assert comment.endswith("<!-- veridion:rdi:end -->\n")
+
+
+def test_render_pr_comment_includes_ai_attribution_when_present() -> None:
+    bundle_with_ai = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        metadata=PullRequestMetadata(
+            body="Prepared with Cursor.",
+        ),
+    )
+    decision = evaluate_release(bundle_with_ai)
+
+    comment = render_pr_comment(bundle_with_ai, decision)
+
+    assert "### AI Attribution" in comment
+    assert "- AI-origin signals detected: 1" in comment
+    assert "- Sources: pr_body" in comment
+    assert "- Indicators: Cursor" in comment
+    assert "### Why" in comment
+
+
+def test_render_pr_comment_includes_historical_trust_signals_when_present() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        historical_signals=HistoricalSignals(
+            repo_criticality="high",
+            service_criticality="critical",
+            rollback_rate_30d=0.18,
+            incident_count_30d=4,
+            change_failure_rate_30d=0.22,
+            flaky_service=True,
+            sensitive_repo=True,
+        ),
+    )
+    decision = evaluate_release(bundle)
+
+    comment = render_pr_comment(bundle, decision)
+
+    assert "### Historical Trust Signals" in comment
+    assert "- repo criticality: high" in comment
+    assert "- service criticality: critical" in comment
+    assert "- 30d rollback rate: 18%" in comment
+    assert "- repository marked sensitive" in comment
 
 
 def _bundle_with_iac_and_dependency_risk():

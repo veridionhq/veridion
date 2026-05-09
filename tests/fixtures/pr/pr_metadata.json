@@ -1,0 +1,22 @@
+{
+  "title": "feat: tighten release policy checks",
+  "body": "Prepared with Cursor and reviewed by a human.",
+  "labels": ["ai-assisted"],
+  "commits": [
+    {
+      "message": "feat: generated with Claude to add parser support",
+      "author_name": "Release Bot",
+      "author_email": "bot@example.com",
+      "co_authors": ["GitHub Copilot <copilot@github.com>"]
+    }
+  ],
+  "historical": {
+    "repo_criticality": "high",
+    "service_criticality": "critical",
+    "rollback_rate_30d": 0.18,
+    "incident_count_30d": 4,
+    "change_failure_rate_30d": 0.22,
+    "flaky_service": true,
+    "sensitive_repo": true
+  }
+}

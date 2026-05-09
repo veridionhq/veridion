@@ -16,9 +16,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Build sample diff
         shell: bash
-        run: cp tests/fixtures/diffs/sample_pr.diff pr.diff
+        run: |
+          cp tests/fixtures/diffs/sample_pr.diff pr.diff
+          cp tests/fixtures/pr/pr_metadata.json pr-metadata.json
 
       - name: Run Veridion RDI smoke
         id: run-rdi
@@ -33,6 +39,7 @@ jobs:
           baseline-reports: |
             semgrep=tests/fixtures/scanners/semgrep_report.json
           policy-path: tests/fixtures/policies/default_policy.yaml
+          metadata-path: pr-metadata.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
 
@@ -43,3 +50,12 @@ jobs:
           echo "Score: ${{ steps.run-rdi.outputs.score }}"
           echo "Confidence: ${{ steps.run-rdi.outputs.confidence }}"
           echo "Comment identifier: ${{ steps.run-rdi.outputs.comment_identifier }}"
+
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-rdi-artifacts
+          path: |
+            veridion-pr-comment.md
+            veridion-result.json

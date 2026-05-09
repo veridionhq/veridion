@@ -16,21 +16,40 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
         "semgrep": "tests/fixtures/scanners/semgrep_report.json",
     }
     policy_text = Path("tests/fixtures/policies/default_policy.yaml").read_text()
+    metadata_text = Path("tests/fixtures/pr/pr_metadata.json").read_text()
 
     result = run_action(
         diff_text=diff_text,
         current_reports=current_reports,
         baseline_reports=baseline_reports,
         policy_text=policy_text,
+        metadata_text=metadata_text,
     )
 
     assert result.decision.decision == "NO GO"
     assert result.decision.score < 60
     assert result.bundle.summary.introduced_findings == 2
     assert result.bundle.summary.inventory_packages == 1
+    assert result.bundle.summary.ai_change_signals == 4
+    assert result.bundle.summary.ai_authored_commits == 1
+    assert result.bundle.summary.historical_risk_signals == 7
+    assert result.decision.required_approvals == (
+        "platform_owner",
+        "security_owner",
+        "service_owner",
+        "sre_owner",
+    )
     assert result.comment_identifier == "veridion:rdi"
     assert "## Release Decision Intelligence" in result.comment_markdown
     assert "**Decision:** NO GO" in result.comment_markdown
+    assert "### AI Attribution" in result.comment_markdown
+    assert "### Historical Trust Signals" in result.comment_markdown
+    assert "- platform owner" in result.comment_markdown
+    assert "- security owner" in result.comment_markdown
+    assert "- service owner" in result.comment_markdown
+    assert "- SRE owner" in result.comment_markdown
+    assert "Use heightened review for this high-criticality repository" in result.comment_markdown
+    assert "Prefer a staged rollout or canary deployment for this historically unstable change surface" in result.comment_markdown
     assert "Unattributed findings: 0" in result.comment_markdown
     assert result.comment_markdown.startswith("<!-- veridion:rdi:start -->\n")
 
