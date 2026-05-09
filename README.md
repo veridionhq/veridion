@@ -112,14 +112,18 @@ require_service_owner_for:
   - repo_criticality_high
   - service_criticality_high
   - low_team_trust
+  - low_test_coverage
 require_sre_owner_for:
   - historical_instability
   - flaky_service
+  - service_fragility
 require_security_owner_for:
   - sensitive_repo
+  - dependency_reputation_risk
 require_platform_owner_for:
   - production_deployment
   - large_blast_radius
+  - weak_rollback_readiness
 ```
 
 The same policy can opt into contextual score penalties without changing the default model:
@@ -138,4 +142,10 @@ low_team_trust_score_penalty: 0
 unowned_service_score_penalty: 0
 missing_oncall_score_penalty: 0
 cross_team_change_score_penalty: 0
+repo_fragility_score_penalty: 0
+service_fragility_score_penalty: 0
+low_test_coverage_score_penalty: 0
+weak_rollback_readiness_score_penalty: 0
+dependency_reputation_risk_score_penalty: 0
+low_team_deploy_safety_score_penalty: 0
 ```

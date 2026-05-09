@@ -18,13 +18,16 @@ class PolicyConfig:
     no_go_below_score: int = 60
     conditional_go_below_score: int = 85
     require_approval_for: tuple[str, ...] = ()
-    # Valid values: production_deployment, public_exposure, large_blast_radius, after_hours_deploy.
+    # Valid values: production_deployment, public_exposure, large_blast_radius, after_hours_deploy,
+    # repo_fragility, service_fragility, weak_rollback_readiness.
     require_platform_owner_for: tuple[str, ...] = ()
-    # Valid values: repo_criticality_high, service_criticality_high.
+    # Valid values: repo_criticality_high, service_criticality_high, repo_fragility, service_fragility,
+    # low_test_coverage, low_team_deploy_safety.
     require_service_owner_for: tuple[str, ...] = ()
-    # Valid values: historical_instability, flaky_service, production_deployment, after_hours_deploy, missing_oncall.
+    # Valid values: historical_instability, flaky_service, production_deployment, after_hours_deploy, missing_oncall,
+    # weak_rollback_readiness, service_fragility, low_team_deploy_safety.
     require_sre_owner_for: tuple[str, ...] = ()
-    # Valid values: sensitive_repo, public_exposure.
+    # Valid values: sensitive_repo, public_exposure, dependency_reputation_risk.
     require_security_owner_for: tuple[str, ...] = ()
     historical_instability_score_penalty: int = 0
     service_criticality_score_penalty: int = 0
@@ -39,6 +42,12 @@ class PolicyConfig:
     unowned_service_score_penalty: int = 0
     missing_oncall_score_penalty: int = 0
     cross_team_change_score_penalty: int = 0
+    repo_fragility_score_penalty: int = 0
+    service_fragility_score_penalty: int = 0
+    low_test_coverage_score_penalty: int = 0
+    weak_rollback_readiness_score_penalty: int = 0
+    dependency_reputation_risk_score_penalty: int = 0
+    low_team_deploy_safety_score_penalty: int = 0
 
 
 def parse_policy_yaml(text: str) -> PolicyConfig:
@@ -114,6 +123,12 @@ def _policy_from_mapping(parsed: dict[str, object]) -> PolicyConfig:
         unowned_service_score_penalty=_as_int(parsed.get("unowned_service_score_penalty"), default=0),
         missing_oncall_score_penalty=_as_int(parsed.get("missing_oncall_score_penalty"), default=0),
         cross_team_change_score_penalty=_as_int(parsed.get("cross_team_change_score_penalty"), default=0),
+        repo_fragility_score_penalty=_as_int(parsed.get("repo_fragility_score_penalty"), default=0),
+        service_fragility_score_penalty=_as_int(parsed.get("service_fragility_score_penalty"), default=0),
+        low_test_coverage_score_penalty=_as_int(parsed.get("low_test_coverage_score_penalty"), default=0),
+        weak_rollback_readiness_score_penalty=_as_int(parsed.get("weak_rollback_readiness_score_penalty"), default=0),
+        dependency_reputation_risk_score_penalty=_as_int(parsed.get("dependency_reputation_risk_score_penalty"), default=0),
+        low_team_deploy_safety_score_penalty=_as_int(parsed.get("low_team_deploy_safety_score_penalty"), default=0),
     )
 
 

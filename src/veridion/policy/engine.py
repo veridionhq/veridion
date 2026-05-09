@@ -319,6 +319,7 @@ def _trust_baseline_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
 def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
     historical = bundle.historical_signals
     ownership_present = _has_ownership_metadata(bundle)
+    trust_baseline = bundle.trust_baseline
 
     checks = {
         "repo_criticality_high": historical.repo_criticality in {"high", "critical"},
@@ -338,6 +339,12 @@ def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
         "unowned_service": ownership_present and not bundle.ownership_signals.service_owner,
         "missing_oncall": ownership_present and not bundle.ownership_signals.oncall_defined,
         "cross_team_change": ownership_present and bundle.ownership_signals.review_coverage == "cross_team",
+        "repo_fragility": trust_baseline.repo_stability in {"watch", "fragile"},
+        "service_fragility": trust_baseline.service_stability in {"watch", "fragile"},
+        "low_test_coverage": trust_baseline.test_coverage_level == "low",
+        "weak_rollback_readiness": trust_baseline.rollback_readiness in {"partial", "weak"},
+        "dependency_reputation_risk": trust_baseline.dependency_reputation_risk in {"medium", "high"},
+        "low_team_deploy_safety": trust_baseline.team_deploy_safety in {"low", "degrading"},
     }
     return checks.get(trigger, False) if trigger in VALID_POLICY_TRIGGERS else False
 
@@ -418,6 +425,36 @@ def _apply_policy_score_adjustments(
     if policy.cross_team_change_score_penalty and _trigger_matches("cross_team_change", bundle):
         adjusted_score -= policy.cross_team_change_score_penalty
         adjustments.append(f"cross-team change surface: -{policy.cross_team_change_score_penalty}")
+
+    if policy.repo_fragility_score_penalty and _trigger_matches("repo_fragility", bundle):
+        adjusted_score -= policy.repo_fragility_score_penalty
+        adjustments.append(f"repository fragility baseline: -{policy.repo_fragility_score_penalty}")
+
+    if policy.service_fragility_score_penalty and _trigger_matches("service_fragility", bundle):
+        adjusted_score -= policy.service_fragility_score_penalty
+        adjustments.append(f"service fragility baseline: -{policy.service_fragility_score_penalty}")
+
+    if policy.low_test_coverage_score_penalty and _trigger_matches("low_test_coverage", bundle):
+        adjusted_score -= policy.low_test_coverage_score_penalty
+        adjustments.append(f"low test coverage baseline: -{policy.low_test_coverage_score_penalty}")
+
+    if policy.weak_rollback_readiness_score_penalty and _trigger_matches("weak_rollback_readiness", bundle):
+        adjusted_score -= policy.weak_rollback_readiness_score_penalty
+        adjustments.append(f"weak rollback readiness baseline: -{policy.weak_rollback_readiness_score_penalty}")
+
+    if (
+        policy.dependency_reputation_risk_score_penalty
+        and _trigger_matches("dependency_reputation_risk", bundle)
+        and (bundle.summary.dependency_changes or bundle.summary.lockfile_changes)
+    ):
+        adjusted_score -= policy.dependency_reputation_risk_score_penalty
+        adjustments.append(
+            f"dependency reputation baseline: -{policy.dependency_reputation_risk_score_penalty}"
+        )
+
+    if policy.low_team_deploy_safety_score_penalty and _trigger_matches("low_team_deploy_safety", bundle):
+        adjusted_score -= policy.low_team_deploy_safety_score_penalty
+        adjustments.append(f"low team deploy safety baseline: -{policy.low_team_deploy_safety_score_penalty}")
 
     adjusted_score = max(0, min(100, adjusted_score))
 
