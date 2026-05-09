@@ -19,6 +19,9 @@ def test_parse_policy_yaml_builds_expected_config() -> None:
     assert policy.no_go_below_score == 60
     assert policy.conditional_go_below_score == 85
     assert policy.require_approval_for == ("production_iac", "dependency_changes")
+    assert policy.require_service_owner_for == ("repo_criticality_high", "service_criticality_high")
+    assert policy.require_sre_owner_for == ("historical_instability", "flaky_service")
+    assert policy.require_security_owner_for == ("sensitive_repo",)
 
 
 def test_evaluate_release_applies_required_approvals_and_recommendations() -> None:
@@ -79,10 +82,17 @@ def test_evaluate_release_adds_advisory_recommendations_for_historical_trust_sig
         ),
     )
 
-    decision = evaluate_release(bundle)
+    decision = evaluate_release(bundle, parse_policy_yaml(DEFAULT_POLICY_PATH.read_text()))
 
     assert decision.decision == "GO"
     assert decision.required_approvals == ("service_owner", "sre_owner", "security_owner")
+    assert "repository criticality is high" in decision.reasons
+    assert "service criticality is critical" in decision.reasons
+    assert "30d rollback rate is elevated at 18%" in decision.reasons
+    assert "30d change failure rate is elevated at 22%" in decision.reasons
+    assert "service recorded 4 incidents in the last 30 days" in decision.reasons
+    assert "service is marked flaky in operational metadata" in decision.reasons
+    assert "repository is marked sensitive in operational metadata" in decision.reasons
     assert decision.recommendations == (
         "Require approval from the service owner",
         "Require approval from the SRE owner",
@@ -93,6 +103,39 @@ def test_evaluate_release_adds_advisory_recommendations_for_historical_trust_sig
         "Verify rollback ownership and on-call coverage before deployment",
         "Schedule deployment during staffed hours with active operational monitoring",
     )
+
+
+def test_evaluate_release_only_requires_policy_configured_metadata_approvals() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        historical_signals=HistoricalSignals(
+            repo_criticality="high",
+            service_criticality="critical",
+            rollback_rate_30d=0.18,
+            incident_count_30d=4,
+            change_failure_rate_30d=0.22,
+            flaky_service=True,
+            sensitive_repo=True,
+        ),
+    )
+
+    decision = evaluate_release(
+        bundle,
+        parse_policy_yaml(
+            """
+allow_conditional: true
+require_service_owner_for:
+  - repo_criticality_high
+require_sre_owner_for: []
+require_security_owner_for: []
+"""
+        ),
+    )
+
+    assert decision.required_approvals == ("service_owner",)
+    assert "Require approval from the service owner" in decision.recommendations
 
 
 def _bundle_with_iac_and_dependency_risk():

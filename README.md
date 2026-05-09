@@ -103,3 +103,16 @@ The current `main` branch already includes:
 - Initial historical trust signals for criticality, rollback rate, incidents, and flaky services
 
 These metadata-driven AI and historical signals are currently non-scoring. They affect explanation, recommendations, and approval requirements before they affect score.
+
+The current policy surface can also drive metadata-based approvals, for example:
+
+```yaml
+require_service_owner_for:
+  - repo_criticality_high
+  - service_criticality_high
+require_sre_owner_for:
+  - historical_instability
+  - flaky_service
+require_security_owner_for:
+  - sensitive_repo
+```

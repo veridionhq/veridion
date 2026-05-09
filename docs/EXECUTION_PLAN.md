@@ -186,3 +186,4 @@ Proprietary core:
 Current implementation note:
 
 - AI-attribution and historical trust signals are non-scoring today. They influence reporting, recommendations, and approval requirements, not the numeric RDI score.
+- Metadata-driven approval rules are now policy-configurable, so operational governance can evolve through policy before it is baked into score semantics.
