@@ -31,6 +31,7 @@ def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None)
     risk = score_analysis_bundle(bundle)
 
     reasons = list(risk.reasons)
+    reasons.extend(_historical_context_reasons(bundle))
     decision = _apply_policy_decision(risk, bundle, resolved_policy, reasons)
     required_approvals = _required_approvals(bundle, resolved_policy)
     recommendations = _recommendations(bundle, risk, decision, required_approvals)
@@ -96,22 +97,13 @@ def _required_approvals(bundle: AnalysisBundle, policy: PolicyConfig) -> tuple[s
     ):
         approvals.append("security_owner")
 
-    if bundle.historical_signals.repo_criticality in {"high", "critical"}:
+    if _matches_policy_trigger(policy.require_service_owner_for, bundle):
         approvals.append("service_owner")
 
-    if bundle.historical_signals.service_criticality in {"high", "critical"}:
-        approvals.append("service_owner")
-
-    if (
-        bundle.historical_signals.rollback_rate_30d is not None
-        and bundle.historical_signals.rollback_rate_30d >= 0.10
-    ) or (
-        bundle.historical_signals.change_failure_rate_30d is not None
-        and bundle.historical_signals.change_failure_rate_30d >= 0.15
-    ) or bundle.historical_signals.incident_count_30d >= 3 or bundle.historical_signals.flaky_service:
+    if _matches_policy_trigger(policy.require_sre_owner_for, bundle):
         approvals.append("sre_owner")
 
-    if bundle.historical_signals.sensitive_repo:
+    if _matches_policy_trigger(policy.require_security_owner_for, bundle):
         approvals.append("security_owner")
 
     return tuple(dict.fromkeys(approvals))
@@ -175,3 +167,58 @@ def _approval_label(value: str) -> str:
         "sre_owner": "SRE owner",
     }
     return labels.get(value, value.replace("_", " "))
+
+
+def _historical_context_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
+    historical = bundle.historical_signals
+    reasons: list[str] = []
+
+    if historical.repo_criticality in {"high", "critical"}:
+        reasons.append(f"repository criticality is {historical.repo_criticality}")
+
+    if historical.service_criticality in {"high", "critical"}:
+        reasons.append(f"service criticality is {historical.service_criticality}")
+
+    if historical.rollback_rate_30d is not None and historical.rollback_rate_30d >= 0.10:
+        reasons.append(f"30d rollback rate is elevated at {historical.rollback_rate_30d:.0%}")
+
+    if historical.change_failure_rate_30d is not None and historical.change_failure_rate_30d >= 0.15:
+        reasons.append(f"30d change failure rate is elevated at {historical.change_failure_rate_30d:.0%}")
+
+    if historical.incident_count_30d >= 3:
+        reasons.append(f"service recorded {historical.incident_count_30d} incidents in the last 30 days")
+
+    if historical.flaky_service:
+        reasons.append("service is marked flaky in operational metadata")
+
+    if historical.sensitive_repo:
+        reasons.append("repository is marked sensitive in operational metadata")
+
+    return tuple(reasons)
+
+
+def _matches_policy_trigger(triggers: tuple[str, ...], bundle: AnalysisBundle) -> bool:
+    if not triggers:
+        return False
+
+    for trigger in triggers:
+        if _trigger_matches(trigger, bundle):
+            return True
+    return False
+
+
+def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
+    historical = bundle.historical_signals
+
+    checks = {
+        "repo_criticality_high": historical.repo_criticality in {"high", "critical"},
+        "service_criticality_high": historical.service_criticality in {"high", "critical"},
+        "historical_instability": (
+            (historical.rollback_rate_30d is not None and historical.rollback_rate_30d >= 0.10)
+            or (historical.change_failure_rate_30d is not None and historical.change_failure_rate_30d >= 0.15)
+            or historical.incident_count_30d >= 3
+        ),
+        "flaky_service": historical.flaky_service,
+        "sensitive_repo": historical.sensitive_repo,
+    }
+    return checks.get(trigger, False)
