@@ -33,6 +33,8 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert result.bundle.summary.ai_change_signals == 4
     assert result.bundle.summary.ai_authored_commits == 1
     assert result.bundle.summary.historical_risk_signals == 7
+    assert result.bundle.summary.runtime_risk_signals == 5
+    assert result.bundle.summary.ownership_risk_signals == 3
     assert result.decision.required_approvals == (
         "platform_owner",
         "security_owner",
@@ -45,6 +47,8 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert "**Decision:** NO GO" in result.comment_markdown
     assert "### AI Attribution" in result.comment_markdown
     assert "### Historical Trust Signals" in result.comment_markdown
+    assert "### Runtime Context" in result.comment_markdown
+    assert "### Ownership Context" in result.comment_markdown
     assert "- platform owner" in result.comment_markdown
     assert "- security owner" in result.comment_markdown
     assert "- service owner" in result.comment_markdown

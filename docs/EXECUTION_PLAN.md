@@ -187,4 +187,4 @@ Current implementation note:
 
 - AI-attribution and historical trust signals are non-scoring today. They influence reporting, recommendations, and approval requirements, not the numeric RDI score.
 - Metadata-driven approval rules are now policy-configurable, so operational governance can evolve through policy before it is baked into score semantics.
-- The first contextual scoring hooks are policy-controlled and opt-in. Default policy leaves the base RDI model unchanged, including AI-origin penalties unless explicitly configured.
+- The first contextual scoring hooks are policy-controlled and opt-in. Default policy leaves the base RDI model unchanged, including AI-origin, runtime, and ownership penalties unless explicitly configured.

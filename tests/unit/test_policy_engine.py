@@ -19,14 +19,24 @@ def test_parse_policy_yaml_builds_expected_config() -> None:
     assert policy.no_go_below_score == 60
     assert policy.conditional_go_below_score == 85
     assert policy.require_approval_for == ("production_iac", "dependency_changes")
-    assert policy.require_service_owner_for == ("repo_criticality_high", "service_criticality_high")
-    assert policy.require_sre_owner_for == ("historical_instability", "flaky_service")
-    assert policy.require_security_owner_for == ("sensitive_repo",)
+    assert policy.require_platform_owner_for == ("production_deployment", "large_blast_radius")
+    assert policy.require_service_owner_for == (
+        "repo_criticality_high",
+        "service_criticality_high",
+        "low_team_trust",
+        "unowned_service",
+    )
+    assert policy.require_sre_owner_for == ("historical_instability", "flaky_service", "after_hours_deploy", "missing_oncall")
+    assert policy.require_security_owner_for == ("sensitive_repo", "public_exposure")
     assert policy.historical_instability_score_penalty == 0
     assert policy.service_criticality_score_penalty == 0
     assert policy.sensitive_repo_score_penalty == 0
     assert policy.ai_signal_score_penalty == 0
     assert policy.ai_authored_commit_score_penalty == 0
+    assert policy.production_deployment_score_penalty == 0
+    assert policy.public_exposure_score_penalty == 0
+    assert policy.large_blast_radius_score_penalty == 0
+    assert policy.low_team_trust_score_penalty == 0
 
 
 def test_evaluate_release_applies_required_approvals_and_recommendations() -> None:
@@ -85,12 +95,26 @@ def test_evaluate_release_adds_advisory_recommendations_for_historical_trust_sig
             flaky_service=True,
             sensitive_repo=True,
         ),
+        runtime_signals=__import__("veridion.context", fromlist=["RuntimeSignals"]).RuntimeSignals(
+            environment="production",
+            deployment_window="after_hours",
+            public_exposure=True,
+            blast_radius="high",
+            rollout_strategy="direct",
+        ),
+        ownership_signals=__import__("veridion.context", fromlist=["OwnershipSignals"]).OwnershipSignals(
+            service_owner="",
+            owning_team="payments-platform",
+            review_coverage="cross_team",
+            team_trust_level="degrading",
+            oncall_defined=False,
+        ),
     )
 
     decision = evaluate_release(bundle, parse_policy_yaml(DEFAULT_POLICY_PATH.read_text()))
 
     assert decision.decision == "GO"
-    assert decision.required_approvals == ("service_owner", "sre_owner", "security_owner")
+    assert decision.required_approvals == ("platform_owner", "service_owner", "sre_owner", "security_owner")
     assert "repository criticality is high" in decision.reasons
     assert "service criticality is critical" in decision.reasons
     assert "30d rollback rate is elevated at 18%" in decision.reasons
@@ -98,8 +122,15 @@ def test_evaluate_release_adds_advisory_recommendations_for_historical_trust_sig
     assert "service recorded 4 incidents in the last 30 days" in decision.reasons
     assert "service is marked flaky in operational metadata" in decision.reasons
     assert "repository is marked sensitive in operational metadata" in decision.reasons
+    assert "deployment target is production" in decision.reasons
+    assert "service is publicly exposed" in decision.reasons
+    assert "blast radius is high" in decision.reasons
+    assert "change requires cross-team review coverage" in decision.reasons
+    assert "team trust level is degrading" in decision.reasons
+    assert "on-call coverage is not defined for this service" in decision.reasons
     assert decision.score_adjustments == ()
     assert decision.recommendations == (
+        "Require approval from the platform owner",
         "Require approval from the service owner",
         "Require approval from the SRE owner",
         "Require approval from the security owner",
@@ -210,6 +241,49 @@ ai_authored_commit_score_penalty: 6
     assert decision.score_adjustments == (
         "AI-origin signals: -4",
         "AI-attributed commits: -6",
+    )
+
+
+def test_evaluate_release_can_apply_runtime_and_team_score_penalties() -> None:
+    from veridion.context import OwnershipSignals, RuntimeSignals
+
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        runtime_signals=RuntimeSignals(
+            environment="production",
+            public_exposure=True,
+            blast_radius="high",
+        ),
+        ownership_signals=OwnershipSignals(
+            service_owner="payments-owner",
+            owning_team="payments-platform",
+            review_coverage="cross_team",
+            team_trust_level="degrading",
+            oncall_defined=True,
+        ),
+    )
+
+    decision = evaluate_release(
+        bundle,
+        parse_policy_yaml(
+            """
+allow_conditional: true
+production_deployment_score_penalty: 4
+public_exposure_score_penalty: 3
+large_blast_radius_score_penalty: 5
+low_team_trust_score_penalty: 6
+"""
+        ),
+    )
+
+    assert decision.score == 82
+    assert decision.score_adjustments == (
+        "production deployment: -4",
+        "public exposure: -3",
+        "large blast radius: -5",
+        "low team trust: -6",
     )
 
 

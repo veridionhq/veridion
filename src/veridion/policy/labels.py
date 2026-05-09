@@ -13,4 +13,12 @@ VALID_POLICY_TRIGGERS = (
     "historical_instability",
     "flaky_service",
     "sensitive_repo",
+    "production_deployment",
+    "public_exposure",
+    "large_blast_radius",
+    "after_hours_deploy",
+    "low_team_trust",
+    "unowned_service",
+    "missing_oncall",
+    "cross_team_change",
 )

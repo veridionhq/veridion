@@ -10,7 +10,7 @@ from pathlib import Path
 
 from veridion.analysis import AnalysisBundle, build_analysis_bundle
 from veridion.attribution import parse_pull_request_metadata
-from veridion.context import parse_historical_signals
+from veridion.context import parse_historical_signals, parse_ownership_signals, parse_runtime_signals
 from veridion.normalize import NormalizedFinding, normalize_report
 from veridion.policy import PolicyDecision, PolicyConfig, evaluate_release, parse_policy_yaml
 from veridion.report import render_pr_comment
@@ -55,6 +55,8 @@ def run_action(
     parsed_metadata = json.loads(metadata_text) if metadata_text else {}
     metadata = parse_pull_request_metadata(parsed_metadata) if metadata_text else None
     historical_signals = parse_historical_signals(parsed_metadata) if metadata_text else None
+    runtime_signals = parse_runtime_signals(parsed_metadata) if metadata_text else None
+    ownership_signals = parse_ownership_signals(parsed_metadata) if metadata_text else None
 
     bundle = build_analysis_bundle(
         current_findings=current_findings,
@@ -62,6 +64,8 @@ def run_action(
         change_context=change_context,
         metadata=metadata,
         historical_signals=historical_signals,
+        runtime_signals=runtime_signals,
+        ownership_signals=ownership_signals,
     )
     decision = evaluate_release(bundle, policy)
     comment_markdown = render_pr_comment(bundle, decision)

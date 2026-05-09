@@ -35,6 +35,8 @@ def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None)
 
     reasons = list(risk.reasons)
     reasons.extend(_historical_context_reasons(bundle))
+    reasons.extend(_runtime_context_reasons(bundle))
+    reasons.extend(_ownership_context_reasons(bundle))
     decision = _apply_policy_decision(risk, bundle, resolved_policy, reasons)
     required_approvals = _required_approvals(bundle, resolved_policy)
     recommendations = _recommendations(bundle, risk, decision, required_approvals)
@@ -100,6 +102,9 @@ def _required_approvals(bundle: AnalysisBundle, policy: PolicyConfig) -> tuple[s
         bundle.summary.dependency_changes or bundle.summary.lockfile_changes
     ):
         approvals.append("security_owner")
+
+    if _matches_policy_trigger(policy.require_platform_owner_for, bundle):
+        approvals.append("platform_owner")
 
     if _matches_policy_trigger(policy.require_service_owner_for, bundle):
         approvals.append("service_owner")
@@ -195,6 +200,42 @@ def _historical_context_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
     return tuple(reasons)
 
 
+def _runtime_context_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
+    runtime = bundle.runtime_signals
+    reasons: list[str] = []
+
+    if runtime.environment == "production":
+        reasons.append("deployment target is production")
+    if runtime.public_exposure:
+        reasons.append("service is publicly exposed")
+    if runtime.blast_radius in {"high", "critical"}:
+        reasons.append(f"blast radius is {runtime.blast_radius}")
+    if runtime.deployment_window == "after_hours":
+        reasons.append("deployment is planned for after-hours window")
+    if runtime.rollout_strategy in {"direct", "all_at_once"}:
+        reasons.append(f"rollout strategy is {runtime.rollout_strategy}")
+
+    return tuple(reasons)
+
+
+def _ownership_context_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
+    ownership = bundle.ownership_signals
+    if not _has_ownership_metadata(bundle):
+        return ()
+    reasons: list[str] = []
+
+    if not ownership.service_owner:
+        reasons.append("service ownership metadata is missing")
+    if ownership.review_coverage == "cross_team":
+        reasons.append("change requires cross-team review coverage")
+    if ownership.team_trust_level in {"low", "degrading"}:
+        reasons.append(f"team trust level is {ownership.team_trust_level}")
+    if not ownership.oncall_defined:
+        reasons.append("on-call coverage is not defined for this service")
+
+    return tuple(reasons)
+
+
 def _matches_policy_trigger(triggers: tuple[str, ...], bundle: AnalysisBundle) -> bool:
     if not triggers:
         return False
@@ -207,6 +248,7 @@ def _matches_policy_trigger(triggers: tuple[str, ...], bundle: AnalysisBundle) -
 
 def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
     historical = bundle.historical_signals
+    ownership_present = _has_ownership_metadata(bundle)
 
     checks = {
         "repo_criticality_high": historical.repo_criticality in {"high", "critical"},
@@ -218,8 +260,29 @@ def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
         ),
         "flaky_service": historical.flaky_service,
         "sensitive_repo": historical.sensitive_repo,
+        "production_deployment": bundle.runtime_signals.environment == "production",
+        "public_exposure": bundle.runtime_signals.public_exposure,
+        "large_blast_radius": bundle.runtime_signals.blast_radius in {"high", "critical"},
+        "after_hours_deploy": bundle.runtime_signals.deployment_window == "after_hours",
+        "low_team_trust": ownership_present and bundle.ownership_signals.team_trust_level in {"low", "degrading"},
+        "unowned_service": ownership_present and not bundle.ownership_signals.service_owner,
+        "missing_oncall": ownership_present and not bundle.ownership_signals.oncall_defined,
+        "cross_team_change": ownership_present and bundle.ownership_signals.review_coverage == "cross_team",
     }
     return checks.get(trigger, False) if trigger in VALID_POLICY_TRIGGERS else False
+
+
+def _has_ownership_metadata(bundle: AnalysisBundle) -> bool:
+    ownership = bundle.ownership_signals
+    return any(
+        (
+            ownership.service_owner,
+            ownership.owning_team,
+            ownership.review_coverage,
+            ownership.team_trust_level,
+            ownership.oncall_defined,
+        )
+    )
 
 
 def _apply_policy_score_adjustments(
@@ -254,7 +317,23 @@ def _apply_policy_score_adjustments(
         adjusted_score -= policy.ai_authored_commit_score_penalty
         adjustments.append(f"AI-attributed commits: -{policy.ai_authored_commit_score_penalty}")
 
-    adjusted_score = max(0, min(100, adjusted_score))
+    if policy.production_deployment_score_penalty and _trigger_matches("production_deployment", bundle):
+        adjusted_score -= policy.production_deployment_score_penalty
+        adjustments.append(f"production deployment: -{policy.production_deployment_score_penalty}")
+
+    if policy.public_exposure_score_penalty and _trigger_matches("public_exposure", bundle):
+        adjusted_score -= policy.public_exposure_score_penalty
+        adjustments.append(f"public exposure: -{policy.public_exposure_score_penalty}")
+
+    if policy.large_blast_radius_score_penalty and _trigger_matches("large_blast_radius", bundle):
+        adjusted_score -= policy.large_blast_radius_score_penalty
+        adjustments.append(f"large blast radius: -{policy.large_blast_radius_score_penalty}")
+
+    if policy.low_team_trust_score_penalty and _trigger_matches("low_team_trust", bundle):
+        adjusted_score -= policy.low_team_trust_score_penalty
+        adjustments.append(f"low team trust: -{policy.low_team_trust_score_penalty}")
+
+        adjusted_score = max(0, min(100, adjusted_score))
 
     return (
         RdiResult(

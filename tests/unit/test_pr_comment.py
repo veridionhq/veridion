@@ -1,7 +1,7 @@
 from veridion.analysis import build_analysis_bundle
 from veridion.attribution import PullRequestMetadata
 from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
-from veridion.context import HistoricalSignals
+from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.policy import PolicyConfig, evaluate_release
 from veridion.report import render_pr_comment
@@ -173,6 +173,38 @@ def test_render_pr_comment_includes_policy_score_adjustments_when_present() -> N
     assert "- historical instability: -7" in comment
     assert "- service criticality: -5" in comment
     assert "- sensitive repository: -3" in comment
+
+
+def test_render_pr_comment_includes_runtime_and_ownership_sections_when_present() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        runtime_signals=RuntimeSignals(
+            environment="production",
+            deployment_window="after_hours",
+            public_exposure=True,
+            blast_radius="high",
+            rollout_strategy="direct",
+        ),
+        ownership_signals=OwnershipSignals(
+            service_owner="",
+            owning_team="payments-platform",
+            review_coverage="cross_team",
+            team_trust_level="degrading",
+            oncall_defined=False,
+        ),
+    )
+    decision = evaluate_release(bundle)
+
+    comment = render_pr_comment(bundle, decision)
+
+    assert "### Runtime Context" in comment
+    assert "- deployment target: production" in comment
+    assert "- service is publicly exposed" in comment
+    assert "### Ownership Context" in comment
+    assert "- service owner missing" in comment
+    assert "- Owning team: payments-platform" in comment
 
 
 def _bundle_with_iac_and_dependency_risk():
