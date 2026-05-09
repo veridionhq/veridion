@@ -64,11 +64,11 @@ def run_action(
     trust_profile_payload = _parse_optional_json_text(trust_profile_text, label="trust profile")
     parsed_context = merge_metadata_with_trust_profile(metadata_payload, trust_profile_payload)
     metadata = parse_pull_request_metadata(metadata_payload) if metadata_payload else None
-    historical_signals = parse_historical_signals(parsed_context) if parsed_context else None
-    runtime_signals = parse_runtime_signals(parsed_context) if parsed_context else None
-    ownership_signals = parse_ownership_signals(parsed_context) if parsed_context else None
-    trust_profile_metadata = parse_trust_profile_metadata(parsed_context) if parsed_context else None
-    trust_baseline = parse_trust_baseline(parsed_context) if parsed_context else None
+    historical_signals = parse_historical_signals(parsed_context)
+    runtime_signals = parse_runtime_signals(parsed_context)
+    ownership_signals = parse_ownership_signals(parsed_context)
+    trust_profile_metadata = parse_trust_profile_metadata(parsed_context)
+    trust_baseline = parse_trust_baseline(parsed_context)
 
     bundle = build_analysis_bundle(
         current_findings=current_findings,
@@ -176,7 +176,10 @@ def _load_findings(report_paths: dict[str, str]) -> list[NormalizedFinding]:
 def _parse_optional_json_text(text: str | None, *, label: str) -> dict[str, object]:
     if not text:
         return {}
-    payload = json.loads(text)
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"{label} JSON is not valid JSON") from exc
     if not isinstance(payload, dict):
         raise RuntimeError(f"{label} JSON input must contain an object at the top level")
     return payload

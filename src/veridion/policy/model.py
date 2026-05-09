@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from veridion.normalize.common import SEVERITY_ORDER, as_string, normalize_severity
-from veridion.policy.labels import VALID_POLICY_TRIGGERS
+from veridion.policy.labels import VALID_POLICY_TRIGGERS, VALID_REQUIRE_APPROVAL_FOR
 
 
 @dataclass(frozen=True)
@@ -105,7 +105,7 @@ def _policy_from_mapping(parsed: dict[str, object]) -> PolicyConfig:
         allow_conditional=_as_bool(parsed.get("allow_conditional"), default=True),
         no_go_below_score=_as_int(parsed.get("no_go_below_score"), default=60),
         conditional_go_below_score=_as_int(parsed.get("conditional_go_below_score"), default=85),
-        require_approval_for=tuple(as_string(item, default="") for item in approval_values if as_string(item)),
+        require_approval_for=_approval_string_list(approval_values),
         require_platform_owner_for=_string_list(parsed.get("require_platform_owner_for"), "require_platform_owner_for"),
         require_service_owner_for=_string_list(parsed.get("require_service_owner_for"), "require_service_owner_for"),
         require_sre_owner_for=_string_list(parsed.get("require_sre_owner_for"), "require_sre_owner_for"),
@@ -141,6 +141,16 @@ def _string_list(value: object, field_name: str) -> tuple[str, ...]:
     invalid = tuple(item for item in values if item not in VALID_POLICY_TRIGGERS)
     if invalid:
         raise ValueError(f"{field_name} contains unsupported trigger(s): {', '.join(invalid)}")
+    return values
+
+
+def _approval_string_list(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ValueError("require_approval_for must be a list")
+    values = tuple(as_string(item, default="") for item in value if as_string(item))
+    invalid = tuple(item for item in values if item not in VALID_REQUIRE_APPROVAL_FOR)
+    if invalid:
+        raise ValueError(f"require_approval_for contains unsupported value(s): {', '.join(invalid)}")
     return values
 
 

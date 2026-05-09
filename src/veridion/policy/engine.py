@@ -274,13 +274,13 @@ def _ownership_context_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
         return ()
     reasons: list[str] = []
 
-    if not ownership.service_owner:
+    if ownership.service_owner_provided and not ownership.service_owner:
         reasons.append("service ownership metadata is missing")
     if ownership.review_coverage == "cross_team":
         reasons.append("change requires cross-team review coverage")
     if ownership.team_trust_level in {"low", "degrading"}:
         reasons.append(f"team trust level is {ownership.team_trust_level}")
-    if not ownership.oncall_defined:
+    if ownership.oncall_defined_provided and not ownership.oncall_defined:
         reasons.append("on-call coverage is not defined for this service")
 
     return tuple(reasons)
@@ -336,8 +336,16 @@ def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
         "large_blast_radius": bundle.runtime_signals.blast_radius in {"high", "critical"},
         "after_hours_deploy": bundle.runtime_signals.deployment_window == "after_hours",
         "low_team_trust": ownership_present and bundle.ownership_signals.team_trust_level in {"low", "degrading"},
-        "unowned_service": ownership_present and not bundle.ownership_signals.service_owner,
-        "missing_oncall": ownership_present and not bundle.ownership_signals.oncall_defined,
+        "unowned_service": (
+            ownership_present
+            and bundle.ownership_signals.service_owner_provided
+            and not bundle.ownership_signals.service_owner
+        ),
+        "missing_oncall": (
+            ownership_present
+            and bundle.ownership_signals.oncall_defined_provided
+            and not bundle.ownership_signals.oncall_defined
+        ),
         "cross_team_change": ownership_present and bundle.ownership_signals.review_coverage == "cross_team",
         "repo_fragility": trust_baseline.repo_stability in {"watch", "fragile"},
         "service_fragility": trust_baseline.service_stability in {"watch", "fragile"},
@@ -357,7 +365,8 @@ def _has_ownership_metadata(bundle: AnalysisBundle) -> bool:
             ownership.owning_team,
             ownership.review_coverage,
             ownership.team_trust_level,
-            ownership.oncall_defined,
+            ownership.service_owner_provided,
+            ownership.oncall_defined_provided,
         )
     )
 

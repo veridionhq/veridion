@@ -57,6 +57,16 @@ def test_parse_policy_yaml_builds_expected_config() -> None:
     assert policy.low_team_deploy_safety_score_penalty == 0
 
 
+def test_parse_policy_yaml_rejects_invalid_require_approval_for_values() -> None:
+    with __import__("pytest").raises(ValueError, match=r"require_approval_for contains unsupported value\(s\): production_lac"):
+        parse_policy_yaml(
+            """
+require_approval_for:
+  - production_lac
+"""
+        )
+
+
 def test_evaluate_release_applies_required_approvals_and_recommendations() -> None:
     bundle = _bundle_with_iac_and_dependency_risk()
     policy = parse_policy_yaml(DEFAULT_POLICY_PATH.read_text())
@@ -126,6 +136,8 @@ def test_evaluate_release_adds_advisory_recommendations_for_historical_trust_sig
             review_coverage="cross_team",
             team_trust_level="degrading",
             oncall_defined=False,
+            service_owner_provided=True,
+            oncall_defined_provided=True,
         ),
         trust_baseline=TrustBaseline(
             repo_stability="fragile",
@@ -348,6 +360,8 @@ def test_evaluate_release_can_apply_runtime_and_team_score_penalties() -> None:
             review_coverage="cross_team",
             team_trust_level="degrading",
             oncall_defined=False,
+            service_owner_provided=True,
+            oncall_defined_provided=True,
         ),
     )
 

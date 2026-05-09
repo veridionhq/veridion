@@ -193,6 +193,8 @@ def test_render_pr_comment_includes_runtime_and_ownership_sections_when_present(
             review_coverage="cross_team",
             team_trust_level="degrading",
             oncall_defined=False,
+            service_owner_provided=True,
+            oncall_defined_provided=True,
         ),
     )
     decision = evaluate_release(bundle)

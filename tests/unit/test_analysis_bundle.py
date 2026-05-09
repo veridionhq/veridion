@@ -159,6 +159,8 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "review_coverage": "",
             "team_trust_level": "",
             "oncall_defined": False,
+            "service_owner_provided": False,
+            "oncall_defined_provided": False,
         },
         "trust_profile_metadata": {
             "schema_version": 0,
@@ -265,6 +267,8 @@ def test_build_analysis_bundle_surfaces_runtime_and_ownership_summary() -> None:
             review_coverage="cross_team",
             team_trust_level="degrading",
             oncall_defined=False,
+            service_owner_provided=True,
+            oncall_defined_provided=True,
         ),
     )
 

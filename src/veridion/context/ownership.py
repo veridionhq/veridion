@@ -14,21 +14,32 @@ class OwnershipSignals:
     review_coverage: str = ""
     team_trust_level: str = ""
     oncall_defined: bool = False
+    service_owner_provided: bool = False
+    oncall_defined_provided: bool = False
 
     @property
     def elevated_signals(self) -> tuple[str, ...]:
-        if not any((self.service_owner, self.owning_team, self.review_coverage, self.team_trust_level, self.oncall_defined)):
+        if not any(
+            (
+                self.service_owner,
+                self.owning_team,
+                self.review_coverage,
+                self.team_trust_level,
+                self.service_owner_provided,
+                self.oncall_defined_provided,
+            )
+        ):
             return ()
 
         signals: list[str] = []
 
-        if not self.service_owner:
+        if self.service_owner_provided and not self.service_owner:
             signals.append("service owner missing")
         if self.review_coverage == "cross_team":
             signals.append("review coverage: cross team")
         if self.team_trust_level in {"low", "degrading"}:
             signals.append(f"team trust: {self.team_trust_level}")
-        if not self.oncall_defined:
+        if self.oncall_defined_provided and not self.oncall_defined:
             signals.append("on-call coverage missing")
 
         return tuple(signals)
@@ -47,6 +58,8 @@ def parse_ownership_signals(payload: dict[str, object]) -> OwnershipSignals:
         review_coverage=_normalize_value(raw.get("review_coverage"), {"single_team", "cross_team"}),
         team_trust_level=_normalize_value(raw.get("team_trust_level"), {"high", "medium", "low", "degrading"}),
         oncall_defined=_as_bool(raw.get("oncall_defined")),
+        service_owner_provided="service_owner" in raw,
+        oncall_defined_provided="oncall_defined" in raw,
     )
 
 

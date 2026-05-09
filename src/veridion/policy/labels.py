@@ -7,6 +7,11 @@ APPROVAL_LABELS = {
     "sre_owner": "SRE owner",
 }
 
+VALID_REQUIRE_APPROVAL_FOR = (
+    "production_iac",
+    "dependency_changes",
+)
+
 VALID_POLICY_TRIGGERS = (
     "repo_criticality_high",
     "service_criticality_high",

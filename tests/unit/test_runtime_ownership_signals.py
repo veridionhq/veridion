@@ -56,6 +56,8 @@ def test_parse_ownership_signals_extracts_elevated_team_context() -> None:
         review_coverage="cross_team",
         team_trust_level="degrading",
         oncall_defined=False,
+        service_owner_provided=True,
+        oncall_defined_provided=True,
     )
     assert signals.elevated_signals == (
         "service owner missing",
@@ -63,6 +65,25 @@ def test_parse_ownership_signals_extracts_elevated_team_context() -> None:
         "team trust: degrading",
         "on-call coverage missing",
     )
+
+
+def test_parse_ownership_signals_does_not_infer_missing_fields_from_absent_keys() -> None:
+    signals = parse_ownership_signals(
+        {
+            "ownership": {
+                "owning_team": "payments-platform",
+                "review_coverage": "cross_team",
+            }
+        }
+    )
+
+    assert signals == OwnershipSignals(
+        owning_team="payments-platform",
+        review_coverage="cross_team",
+        service_owner_provided=False,
+        oncall_defined_provided=False,
+    )
+    assert signals.elevated_signals == ("review coverage: cross team",)
 
 
 def test_parse_trust_baseline_extracts_elevated_posture_context() -> None:
