@@ -22,6 +22,11 @@ def test_parse_policy_yaml_builds_expected_config() -> None:
     assert policy.require_service_owner_for == ("repo_criticality_high", "service_criticality_high")
     assert policy.require_sre_owner_for == ("historical_instability", "flaky_service")
     assert policy.require_security_owner_for == ("sensitive_repo",)
+    assert policy.historical_instability_score_penalty == 0
+    assert policy.service_criticality_score_penalty == 0
+    assert policy.sensitive_repo_score_penalty == 0
+    assert policy.ai_signal_score_penalty == 0
+    assert policy.ai_authored_commit_score_penalty == 0
 
 
 def test_evaluate_release_applies_required_approvals_and_recommendations() -> None:
@@ -93,6 +98,7 @@ def test_evaluate_release_adds_advisory_recommendations_for_historical_trust_sig
     assert "service recorded 4 incidents in the last 30 days" in decision.reasons
     assert "service is marked flaky in operational metadata" in decision.reasons
     assert "repository is marked sensitive in operational metadata" in decision.reasons
+    assert decision.score_adjustments == ()
     assert decision.recommendations == (
         "Require approval from the service owner",
         "Require approval from the SRE owner",
@@ -136,6 +142,75 @@ require_security_owner_for: []
 
     assert decision.required_approvals == ("service_owner",)
     assert "Require approval from the service owner" in decision.recommendations
+
+
+def test_evaluate_release_can_apply_policy_controlled_score_penalties() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        historical_signals=HistoricalSignals(
+            service_criticality="critical",
+            rollback_rate_30d=0.18,
+            incident_count_30d=4,
+            change_failure_rate_30d=0.22,
+            sensitive_repo=True,
+        ),
+    )
+
+    decision = evaluate_release(
+        bundle,
+        parse_policy_yaml(
+            """
+allow_conditional: true
+historical_instability_score_penalty: 7
+service_criticality_score_penalty: 5
+sensitive_repo_score_penalty: 3
+"""
+        ),
+    )
+
+    assert decision.score == 85
+    assert decision.score_adjustments == (
+        "historical instability: -7",
+        "service criticality: -5",
+        "sensitive repository: -3",
+    )
+
+
+def test_evaluate_release_can_apply_policy_controlled_ai_score_penalties() -> None:
+    from veridion.attribution import PullRequestMetadata, CommitMetadata
+
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        metadata=PullRequestMetadata(
+            body="Prepared with Cursor.",
+            commits=(
+                CommitMetadata(
+                    message="feat: generated with Claude",
+                ),
+            ),
+        ),
+    )
+
+    decision = evaluate_release(
+        bundle,
+        parse_policy_yaml(
+            """
+allow_conditional: true
+ai_signal_score_penalty: 4
+ai_authored_commit_score_penalty: 6
+"""
+        ),
+    )
+
+    assert decision.score == 90
+    assert decision.score_adjustments == (
+        "AI-origin signals: -4",
+        "AI-attributed commits: -6",
+    )
 
 
 def _bundle_with_iac_and_dependency_risk():

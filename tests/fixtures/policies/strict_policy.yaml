@@ -8,3 +8,8 @@ require_service_owner_for:
   - repo_criticality_high
 require_sre_owner_for:
   - historical_instability
+historical_instability_score_penalty: 5
+service_criticality_score_penalty: 0
+sensitive_repo_score_penalty: 0
+ai_signal_score_penalty: 0
+ai_authored_commit_score_penalty: 0

@@ -13,3 +13,8 @@ require_sre_owner_for:
   - flaky_service
 require_security_owner_for:
   - sensitive_repo
+historical_instability_score_penalty: 0
+service_criticality_score_penalty: 0
+sensitive_repo_score_penalty: 0
+ai_signal_score_penalty: 0
+ai_authored_commit_score_penalty: 0

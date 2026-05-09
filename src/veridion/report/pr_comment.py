@@ -38,6 +38,9 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
 
     lines.extend(_section("Why", decision.reasons))
 
+    if decision.score_adjustments:
+        lines.extend(_section("Policy Score Adjustments", decision.score_adjustments))
+
     if decision.required_approvals:
         approvals = tuple(_format_approval(name) for name in decision.required_approvals)
         lines.extend(_section("Required Approvals", approvals))

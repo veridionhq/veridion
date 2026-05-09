@@ -63,6 +63,48 @@ def test_score_analysis_bundle_returns_go_for_clean_change() -> None:
     assert result.reasons == ("no introduced findings detected",)
 
 
+def test_score_analysis_bundle_returns_high_confidence_for_well_covered_clean_run() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.unattributed",
+                title="Unattributed issue",
+                severity="medium",
+                location=NormalizedLocation(path="docs/reference.py", start_line=4, end_line=4),
+            )
+        ],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="app/routes.py",
+                    change_type="modified",
+                    added_lines=3,
+                    removed_lines=1,
+                    signals=("application_code",),
+                    previous_path="app/routes.py",
+                ),
+                ParsedFileChange(
+                    path="README.md",
+                    change_type="modified",
+                    added_lines=2,
+                    removed_lines=1,
+                    signals=("application_code",),
+                    previous_path="README.md",
+                ),
+            )
+        ),
+    )
+
+    result = score_analysis_bundle(bundle)
+
+    assert result.score == 100
+    assert result.decision == "GO"
+    assert result.confidence == "high"
+
+
 def test_score_analysis_bundle_returns_no_go_for_critical_introduced_risk() -> None:
     bundle = build_analysis_bundle(
         current_findings=[

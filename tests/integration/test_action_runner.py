@@ -40,6 +40,7 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
         "sre_owner",
     )
     assert result.comment_identifier == "veridion:rdi"
+    assert result.decision.score_adjustments == ()
     assert "## Release Decision Intelligence" in result.comment_markdown
     assert "**Decision:** NO GO" in result.comment_markdown
     assert "### AI Attribution" in result.comment_markdown

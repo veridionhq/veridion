@@ -116,3 +116,13 @@ require_sre_owner_for:
 require_security_owner_for:
   - sensitive_repo
 ```
+
+The same policy can opt into contextual score penalties without changing the default model:
+
+```yaml
+historical_instability_score_penalty: 7
+service_criticality_score_penalty: 5
+sensitive_repo_score_penalty: 3
+ai_signal_score_penalty: 0
+ai_authored_commit_score_penalty: 0
+```

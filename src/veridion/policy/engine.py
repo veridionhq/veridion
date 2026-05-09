@@ -19,6 +19,7 @@ class PolicyDecision:
     decision: str
     confidence: str
     reasons: tuple[str, ...]
+    score_adjustments: tuple[str, ...]
     recommendations: tuple[str, ...]
     required_approvals: tuple[str, ...]
     policy: PolicyConfig
@@ -29,7 +30,8 @@ def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None)
     """Apply policy constraints and recommendations to the scored risk result."""
 
     resolved_policy = policy or PolicyConfig()
-    risk = score_analysis_bundle(bundle)
+    base_risk = score_analysis_bundle(bundle)
+    risk, score_adjustments = _apply_policy_score_adjustments(base_risk, bundle, resolved_policy)
 
     reasons = list(risk.reasons)
     reasons.extend(_historical_context_reasons(bundle))
@@ -42,6 +44,7 @@ def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None)
         decision=decision,
         confidence=risk.confidence,
         reasons=tuple(reasons),
+        score_adjustments=score_adjustments,
         recommendations=recommendations,
         required_approvals=required_approvals,
         policy=resolved_policy,
@@ -217,3 +220,49 @@ def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
         "sensitive_repo": historical.sensitive_repo,
     }
     return checks.get(trigger, False) if trigger in VALID_POLICY_TRIGGERS else False
+
+
+def _apply_policy_score_adjustments(
+    risk: RdiResult,
+    bundle: AnalysisBundle,
+    policy: PolicyConfig,
+) -> tuple[RdiResult, tuple[str, ...]]:
+    adjusted_score = risk.score
+    adjustments: list[str] = []
+
+    if policy.historical_instability_score_penalty and _trigger_matches("historical_instability", bundle):
+        adjusted_score -= policy.historical_instability_score_penalty
+        adjustments.append(
+            f"historical instability: -{policy.historical_instability_score_penalty}"
+        )
+
+    if policy.service_criticality_score_penalty and _trigger_matches("service_criticality_high", bundle):
+        adjusted_score -= policy.service_criticality_score_penalty
+        adjustments.append(
+            f"service criticality: -{policy.service_criticality_score_penalty}"
+        )
+
+    if policy.sensitive_repo_score_penalty and _trigger_matches("sensitive_repo", bundle):
+        adjusted_score -= policy.sensitive_repo_score_penalty
+        adjustments.append(f"sensitive repository: -{policy.sensitive_repo_score_penalty}")
+
+    if policy.ai_signal_score_penalty and bundle.summary.ai_change_signals:
+        adjusted_score -= policy.ai_signal_score_penalty
+        adjustments.append(f"AI-origin signals: -{policy.ai_signal_score_penalty}")
+
+    if policy.ai_authored_commit_score_penalty and bundle.summary.ai_authored_commits:
+        adjusted_score -= policy.ai_authored_commit_score_penalty
+        adjustments.append(f"AI-attributed commits: -{policy.ai_authored_commit_score_penalty}")
+
+    adjusted_score = max(0, min(100, adjusted_score))
+
+    return (
+        RdiResult(
+            score=adjusted_score,
+            decision=risk.decision,
+            confidence=risk.confidence,
+            reasons=risk.reasons,
+            features=risk.features,
+        ),
+        tuple(adjustments),
+    )

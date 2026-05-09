@@ -24,6 +24,11 @@ class PolicyConfig:
     require_sre_owner_for: tuple[str, ...] = ()
     # Valid values: sensitive_repo.
     require_security_owner_for: tuple[str, ...] = ()
+    historical_instability_score_penalty: int = 0
+    service_criticality_score_penalty: int = 0
+    sensitive_repo_score_penalty: int = 0
+    ai_signal_score_penalty: int = 0
+    ai_authored_commit_score_penalty: int = 0
 
 
 def parse_policy_yaml(text: str) -> PolicyConfig:
@@ -85,6 +90,11 @@ def _policy_from_mapping(parsed: dict[str, object]) -> PolicyConfig:
         require_service_owner_for=_string_list(parsed.get("require_service_owner_for"), "require_service_owner_for"),
         require_sre_owner_for=_string_list(parsed.get("require_sre_owner_for"), "require_sre_owner_for"),
         require_security_owner_for=_string_list(parsed.get("require_security_owner_for"), "require_security_owner_for"),
+        historical_instability_score_penalty=_as_int(parsed.get("historical_instability_score_penalty"), default=0),
+        service_criticality_score_penalty=_as_int(parsed.get("service_criticality_score_penalty"), default=0),
+        sensitive_repo_score_penalty=_as_int(parsed.get("sensitive_repo_score_penalty"), default=0),
+        ai_signal_score_penalty=_as_int(parsed.get("ai_signal_score_penalty"), default=0),
+        ai_authored_commit_score_penalty=_as_int(parsed.get("ai_authored_commit_score_penalty"), default=0),
     )
 
 

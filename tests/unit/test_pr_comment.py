@@ -145,6 +145,36 @@ def test_render_pr_comment_includes_historical_trust_signals_when_present() -> N
     assert "Service criticality: critical" not in comment
 
 
+def test_render_pr_comment_includes_policy_score_adjustments_when_present() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        historical_signals=HistoricalSignals(
+            service_criticality="critical",
+            rollback_rate_30d=0.18,
+            incident_count_30d=4,
+            change_failure_rate_30d=0.22,
+            sensitive_repo=True,
+        ),
+    )
+    decision = evaluate_release(
+        bundle,
+        PolicyConfig(
+            historical_instability_score_penalty=7,
+            service_criticality_score_penalty=5,
+            sensitive_repo_score_penalty=3,
+        ),
+    )
+
+    comment = render_pr_comment(bundle, decision)
+
+    assert "### Policy Score Adjustments" in comment
+    assert "- historical instability: -7" in comment
+    assert "- service criticality: -5" in comment
+    assert "- sensitive repository: -3" in comment
+
+
 def _bundle_with_iac_and_dependency_risk():
     baseline = [
         NormalizedFinding(
