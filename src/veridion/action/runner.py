@@ -9,8 +9,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from veridion.analysis import AnalysisBundle, build_analysis_bundle
-from veridion.attribution import parse_pull_request_metadata
-from veridion.context import parse_historical_signals, parse_ownership_signals, parse_runtime_signals, parse_trust_baseline
+from veridion.context import (
+    resolve_operational_context,
+)
 from veridion.normalize import NormalizedFinding, normalize_report
 from veridion.policy import PolicyDecision, PolicyConfig, evaluate_release, parse_policy_yaml
 from veridion.report import render_pr_comment
@@ -45,6 +46,7 @@ def run_action(
     baseline_reports: dict[str, str] | None = None,
     policy_text: str | None = None,
     metadata_text: str | None = None,
+    trust_profile_text: str | None = None,
 ) -> ActionResult:
     """Run the full RDI pipeline from file-backed action inputs."""
 
@@ -52,22 +54,24 @@ def run_action(
     baseline_findings = _load_findings(baseline_reports or {})
     change_context = parse_unified_diff(diff_text)
     policy = parse_policy_yaml(policy_text) if policy_text else PolicyConfig()
-    parsed_metadata = json.loads(metadata_text) if metadata_text else {}
-    metadata = parse_pull_request_metadata(parsed_metadata) if metadata_text else None
-    historical_signals = parse_historical_signals(parsed_metadata) if metadata_text else None
-    runtime_signals = parse_runtime_signals(parsed_metadata) if metadata_text else None
-    ownership_signals = parse_ownership_signals(parsed_metadata) if metadata_text else None
-    trust_baseline = parse_trust_baseline(parsed_metadata) if metadata_text else None
+    metadata_payload = _parse_optional_json_text(metadata_text, label="metadata")
+    trust_profile_payload = _parse_optional_json_text(trust_profile_text, label="trust profile")
+    resolved_context = resolve_operational_context(
+        change_context=change_context,
+        metadata_payload=metadata_payload,
+        trust_profile_payload=trust_profile_payload,
+    )
 
     bundle = build_analysis_bundle(
         current_findings=current_findings,
         baseline_findings=baseline_findings,
         change_context=change_context,
-        metadata=metadata,
-        historical_signals=historical_signals,
-        runtime_signals=runtime_signals,
-        ownership_signals=ownership_signals,
-        trust_baseline=trust_baseline,
+        metadata=resolved_context.metadata,
+        historical_signals=resolved_context.historical_signals,
+        runtime_signals=resolved_context.runtime_signals,
+        ownership_signals=resolved_context.ownership_signals,
+        trust_profile_metadata=resolved_context.trust_profile_metadata,
+        trust_baseline=resolved_context.trust_baseline,
     )
     decision = evaluate_release(bundle, policy)
     comment_markdown = render_pr_comment(bundle, decision)
@@ -90,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     baseline_reports = _parse_report_mappings(args.baseline_report)
     policy_text = Path(args.policy_path).read_text() if args.policy_path else None
     metadata_text = Path(args.metadata_path).read_text() if args.metadata_path else None
+    trust_profile_text = Path(args.trust_profile_path).read_text() if args.trust_profile_path else None
 
     result = run_action(
         diff_text=diff_text,
@@ -97,6 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         baseline_reports=baseline_reports,
         policy_text=policy_text,
         metadata_text=metadata_text,
+        trust_profile_text=trust_profile_text,
     )
 
     if args.comment_path:
@@ -129,6 +135,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--policy-path", help="Path to a policy YAML file")
     parser.add_argument("--metadata-path", help="Path to optional pull request metadata JSON")
+    parser.add_argument("--trust-profile-path", help="Path to optional trust profile JSON")
     parser.add_argument("--comment-path", help="Path to write rendered PR comment markdown")
     parser.add_argument("--json-output-path", help="Path to write structured JSON output")
     return parser
@@ -156,6 +163,18 @@ def _load_findings(report_paths: dict[str, str]) -> list[NormalizedFinding]:
             raise RuntimeError(f"failed to load {tool_name} report from {path}") from exc
         findings.extend(normalize_report(tool_name, report))
     return findings
+
+
+def _parse_optional_json_text(text: str | None, *, label: str) -> dict[str, object]:
+    if not text:
+        return {}
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"{label} JSON is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"{label} JSON input must contain an object at the top level")
+    return payload
 
 
 def _write_github_outputs(

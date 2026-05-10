@@ -40,7 +40,7 @@ def test_unified_diff_parses_into_change_context_signals() -> None:
             change_type="added",
             added_lines=2,
             removed_lines=0,
-            signals=("infrastructure",),
+            signals=("infrastructure", "production_surface"),
             previous_path="terraform/prod/main.tf",
         ),
         ParsedFileChange(

@@ -7,6 +7,11 @@ APPROVAL_LABELS = {
     "sre_owner": "SRE owner",
 }
 
+VALID_REQUIRE_APPROVAL_FOR = (
+    "production_iac",
+    "dependency_changes",
+)
+
 VALID_POLICY_TRIGGERS = (
     "repo_criticality_high",
     "service_criticality_high",
@@ -27,4 +32,9 @@ VALID_POLICY_TRIGGERS = (
     "weak_rollback_readiness",
     "dependency_reputation_risk",
     "low_team_deploy_safety",
+    "shared_platform_surface",
+    "database_migration_surface",
+    "payments_surface",
+    "auth_surface",
+    "data_surface",
 )

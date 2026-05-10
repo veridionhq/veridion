@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from veridion.change_context import ParsedChangeContext
+
 
 @dataclass(frozen=True)
 class RuntimeSignals:
@@ -47,6 +49,61 @@ def parse_runtime_signals(payload: dict[str, object]) -> RuntimeSignals:
         blast_radius=_normalize_value(raw.get("blast_radius"), {"low", "medium", "high", "critical"}),
         rollout_strategy=_normalize_value(raw.get("rollout_strategy"), {"rolling", "canary", "blue_green", "direct", "all_at_once"}),
     )
+
+
+def derive_runtime_signals(
+    change_context: ParsedChangeContext,
+    runtime_signals: RuntimeSignals | None = None,
+) -> RuntimeSignals:
+    """Augment runtime context using inferred blast-radius signals from the diff."""
+
+    runtime = runtime_signals or RuntimeSignals()
+    environment = runtime.environment or _derive_environment(change_context)
+    public_exposure = runtime.public_exposure or change_context.has_public_exposure_changes
+    blast_radius = runtime.blast_radius or _derive_blast_radius(change_context, environment, public_exposure)
+
+    return RuntimeSignals(
+        environment=environment,
+        deployment_window=runtime.deployment_window,
+        public_exposure=public_exposure,
+        blast_radius=blast_radius,
+        rollout_strategy=runtime.rollout_strategy,
+    )
+
+
+def _derive_environment(change_context: ParsedChangeContext) -> str:
+    if change_context.has_production_surface_changes:
+        return "production"
+    return ""
+
+
+def _derive_blast_radius(
+    change_context: ParsedChangeContext,
+    environment: str,
+    public_exposure: bool,
+) -> str:
+    high_conditions = (
+        change_context.has_shared_platform_changes,
+        change_context.has_database_migration_changes,
+        change_context.touches_payments_surface,
+        change_context.touches_auth_surface,
+        change_context.touches_data_surface,
+        environment == "production" and public_exposure,
+    )
+    if any(high_conditions):
+        return "high"
+
+    medium_conditions = (
+        change_context.has_iac_changes,
+        change_context.has_dependency_changes,
+        change_context.has_lockfile_changes,
+        environment == "production",
+        public_exposure,
+    )
+    if any(medium_conditions):
+        return "medium"
+
+    return ""
 
 
 def _normalize_value(value: object, allowed: set[str]) -> str:

@@ -74,6 +74,7 @@ Inputs:
 - IaC changes
 - Ownership metadata
 - Deployment target and service criticality
+- Dedicated trust-profile artifact for repo, service, and team posture
 
 Lightweight signals:
 
@@ -82,6 +83,13 @@ Lightweight signals:
 - Sensitive repository tags
 - Flaky service markers
 - Low-coverage or weak-rollback service baselines
+
+Trust-profile contract:
+
+- versioned with `schema_version`
+- scoped with stable `repo_id`, `service_id`, and `team_id`
+- provenance-carrying with `source` and `generated_at`
+- designed so a future external generator can emit it deterministically
 
 Exit criteria:
 

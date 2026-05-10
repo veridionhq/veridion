@@ -1,8 +1,9 @@
 from pathlib import Path
 
 from veridion.analysis import build_analysis_bundle
+from veridion.change_context import parse_unified_diff
 from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
-from veridion.context import HistoricalSignals, TrustBaseline
+from veridion.context import HistoricalSignals, TrustBaseline, derive_runtime_signals
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.policy import evaluate_release, parse_policy_yaml
 
@@ -19,13 +20,22 @@ def test_parse_policy_yaml_builds_expected_config() -> None:
     assert policy.no_go_below_score == 60
     assert policy.conditional_go_below_score == 85
     assert policy.require_approval_for == ("production_iac", "dependency_changes")
-    assert policy.require_platform_owner_for == ("production_deployment", "large_blast_radius", "weak_rollback_readiness")
+    assert policy.require_platform_owner_for == (
+        "production_deployment",
+        "large_blast_radius",
+        "weak_rollback_readiness",
+        "shared_platform_surface",
+        "database_migration_surface",
+    )
     assert policy.require_service_owner_for == (
         "repo_criticality_high",
         "service_criticality_high",
         "low_team_trust",
         "unowned_service",
         "low_test_coverage",
+        "payments_surface",
+        "auth_surface",
+        "data_surface",
     )
     assert policy.require_sre_owner_for == (
         "historical_instability",
@@ -34,8 +44,18 @@ def test_parse_policy_yaml_builds_expected_config() -> None:
         "missing_oncall",
         "service_fragility",
         "low_team_deploy_safety",
+        "shared_platform_surface",
+        "database_migration_surface",
+        "data_surface",
     )
-    assert policy.require_security_owner_for == ("sensitive_repo", "public_exposure", "dependency_reputation_risk")
+    assert policy.require_security_owner_for == (
+        "sensitive_repo",
+        "public_exposure",
+        "dependency_reputation_risk",
+        "payments_surface",
+        "auth_surface",
+        "data_surface",
+    )
     assert policy.historical_instability_score_penalty == 0
     assert policy.service_criticality_score_penalty == 0
     assert policy.sensitive_repo_score_penalty == 0
@@ -55,6 +75,21 @@ def test_parse_policy_yaml_builds_expected_config() -> None:
     assert policy.weak_rollback_readiness_score_penalty == 0
     assert policy.dependency_reputation_risk_score_penalty == 0
     assert policy.low_team_deploy_safety_score_penalty == 0
+    assert policy.shared_platform_surface_score_penalty == 0
+    assert policy.database_migration_surface_score_penalty == 0
+    assert policy.payments_surface_score_penalty == 0
+    assert policy.auth_surface_score_penalty == 0
+    assert policy.data_surface_score_penalty == 0
+
+
+def test_parse_policy_yaml_rejects_invalid_require_approval_for_values() -> None:
+    with __import__("pytest").raises(ValueError, match=r"require_approval_for contains unsupported value\(s\): production_lac"):
+        parse_policy_yaml(
+            """
+require_approval_for:
+  - production_lac
+"""
+        )
 
 
 def test_evaluate_release_applies_required_approvals_and_recommendations() -> None:
@@ -126,6 +161,8 @@ def test_evaluate_release_adds_advisory_recommendations_for_historical_trust_sig
             review_coverage="cross_team",
             team_trust_level="degrading",
             oncall_defined=False,
+            service_owner_provided=True,
+            oncall_defined_provided=True,
         ),
         trust_baseline=TrustBaseline(
             repo_stability="fragile",
@@ -216,6 +253,135 @@ require_security_owner_for: []
 
     assert decision.required_approvals == ("service_owner",)
     assert "Require approval from the service owner" in decision.recommendations
+
+
+def test_evaluate_release_uses_inferred_change_surface_for_runtime_and_guidance() -> None:
+    change_context = parse_unified_diff(
+        """\
+diff --git a/terraform/prod/payments/ingress.tf b/terraform/prod/payments/ingress.tf
+--- a/terraform/prod/payments/ingress.tf
++++ b/terraform/prod/payments/ingress.tf
+@@ -1 +1 @@
+-enabled = false
++enabled = true
+diff --git a/alembic/versions/20260508_add_index.py b/alembic/versions/20260508_add_index.py
+--- a/alembic/versions/20260508_add_index.py
++++ b/alembic/versions/20260508_add_index.py
+@@ -1 +1 @@
+-pass
++print("migrate")
+diff --git a/platform/shared/auth/gateway.py b/platform/shared/auth/gateway.py
+--- a/platform/shared/auth/gateway.py
++++ b/platform/shared/auth/gateway.py
+@@ -1 +1 @@
+-allow = false
++allow = true
+diff --git a/services/data/tenant_mapper.py b/services/data/tenant_mapper.py
+--- a/services/data/tenant_mapper.py
++++ b/services/data/tenant_mapper.py
+@@ -1 +1 @@
+-tenant = None
++tenant = "acme"
+"""
+    )
+
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=change_context,
+        runtime_signals=derive_runtime_signals(change_context),
+    )
+
+    decision = evaluate_release(bundle)
+
+    assert bundle.runtime_signals.environment == "production"
+    assert bundle.runtime_signals.public_exposure is True
+    assert bundle.runtime_signals.blast_radius == "high"
+    assert "change touches a shared platform surface" in decision.reasons
+    assert "change includes a database migration surface" in decision.reasons
+    assert "change touches a payments-sensitive surface" in decision.reasons
+    assert "change touches an authentication-sensitive surface" in decision.reasons
+    assert "Coordinate staged validation for this shared platform change surface before release" in decision.recommendations
+    assert "Validate migration safety and data rollback steps before deployment" in decision.recommendations
+    assert "Verify payment-impact monitoring and rollback safeguards before release" in decision.recommendations
+    assert "Run authentication and access-control regression checks before deployment" in decision.recommendations
+
+
+def test_evaluate_release_can_apply_policy_to_inferred_change_surfaces() -> None:
+    change_context = parse_unified_diff(
+        """\
+diff --git a/terraform/prod/payments/ingress.tf b/terraform/prod/payments/ingress.tf
+--- a/terraform/prod/payments/ingress.tf
++++ b/terraform/prod/payments/ingress.tf
+@@ -1 +1 @@
+-enabled = false
++enabled = true
+diff --git a/alembic/versions/20260508_add_index.py b/alembic/versions/20260508_add_index.py
+--- a/alembic/versions/20260508_add_index.py
++++ b/alembic/versions/20260508_add_index.py
+@@ -1 +1 @@
+-pass
++print("migrate")
+diff --git a/platform/shared/auth/gateway.py b/platform/shared/auth/gateway.py
+--- a/platform/shared/auth/gateway.py
++++ b/platform/shared/auth/gateway.py
+@@ -1 +1 @@
+-allow = false
++allow = true
+diff --git a/services/data/tenant_mapper.py b/services/data/tenant_mapper.py
+--- a/services/data/tenant_mapper.py
++++ b/services/data/tenant_mapper.py
+@@ -1 +1 @@
+-tenant = None
++tenant = "acme"
+"""
+    )
+
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=change_context,
+        runtime_signals=derive_runtime_signals(change_context),
+    )
+
+    decision = evaluate_release(
+        bundle,
+        parse_policy_yaml(
+            """
+allow_conditional: true
+require_platform_owner_for:
+  - shared_platform_surface
+  - database_migration_surface
+require_service_owner_for:
+  - payments_surface
+  - auth_surface
+require_sre_owner_for:
+  - data_surface
+require_security_owner_for:
+  - payments_surface
+  - auth_surface
+shared_platform_surface_score_penalty: 4
+database_migration_surface_score_penalty: 5
+payments_surface_score_penalty: 6
+auth_surface_score_penalty: 3
+data_surface_score_penalty: 2
+"""
+        ),
+    )
+
+    assert decision.required_approvals == (
+        "platform_owner",
+        "service_owner",
+        "sre_owner",
+        "security_owner",
+    )
+    assert decision.score_adjustments == (
+        "shared platform surface: -4",
+        "database migration surface: -5",
+        "payments-sensitive surface: -6",
+        "authentication-sensitive surface: -3",
+        "data-sensitive surface: -2",
+    )
 
 
 def test_evaluate_release_can_require_approvals_from_trust_baseline_triggers() -> None:
@@ -348,6 +514,8 @@ def test_evaluate_release_can_apply_runtime_and_team_score_penalties() -> None:
             review_coverage="cross_team",
             team_trust_level="degrading",
             oncall_defined=False,
+            service_owner_provided=True,
+            oncall_defined_provided=True,
         ),
     )
 

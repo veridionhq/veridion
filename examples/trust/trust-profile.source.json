@@ -1,0 +1,28 @@
+{
+  "scope": {
+    "repo_id": "acme/payments-platform",
+    "service_id": "payments/api",
+    "team_id": "platform-trust"
+  },
+  "provenance": {
+    "source": "repo-override-example"
+  },
+  "historical": {
+    "rollback_rate_30d": 0.12,
+    "incident_count_30d": 3,
+    "change_failure_rate_30d": 0.18,
+    "sensitive_repo": true
+  },
+  "runtime": {
+    "deployment_window": "after_hours",
+    "rollout_strategy": "canary"
+  },
+  "ownership": {
+    "service_owner": "payments-owner",
+    "owning_team": "payments-platform",
+    "oncall_defined": true
+  },
+  "trust_baseline": {
+    "dependency_reputation_risk": "medium"
+  }
+}

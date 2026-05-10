@@ -36,6 +36,7 @@ def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None)
     reasons = list(risk.reasons)
     reasons.extend(_historical_context_reasons(bundle))
     reasons.extend(_runtime_context_reasons(bundle))
+    reasons.extend(_change_surface_reasons(bundle))
     reasons.extend(_ownership_context_reasons(bundle))
     reasons.extend(_trust_baseline_reasons(bundle))
     decision = _apply_policy_decision(risk, bundle, resolved_policy, reasons)
@@ -130,6 +131,7 @@ def _recommendations(
     ownership = bundle.ownership_signals
     historical = bundle.historical_signals
     trust_baseline = bundle.trust_baseline
+    change_context = bundle.change_context
     ownership_present = _has_ownership_metadata(bundle)
 
     if decision == "NO GO":
@@ -141,11 +143,26 @@ def _recommendations(
     if bundle.summary.infrastructure_changes:
         recommendations.append("Run staging smoke tests for infrastructure-affecting changes")
 
+    if change_context.has_shared_platform_changes:
+        recommendations.append("Coordinate staged validation for this shared platform change surface before release")
+
+    if change_context.has_database_migration_changes:
+        recommendations.append("Validate migration safety and data rollback steps before deployment")
+
     if bundle.summary.dependency_changes or bundle.summary.lockfile_changes:
         recommendations.append("Review newly introduced dependencies and lockfile updates")
 
     if risk.features.introduced_high or risk.features.introduced_critical:
         recommendations.append("Prioritize remediation for introduced high-severity findings")
+
+    if change_context.touches_payments_surface:
+        recommendations.append("Verify payment-impact monitoring and rollback safeguards before release")
+
+    if change_context.touches_auth_surface:
+        recommendations.append("Run authentication and access-control regression checks before deployment")
+
+    if change_context.touches_data_surface:
+        recommendations.append("Validate data-handling and tenant-safety paths before deployment")
 
     if historical.repo_criticality in {"high", "critical"}:
         recommendations.append("Use heightened review for this high-criticality repository")
@@ -250,6 +267,24 @@ def _historical_context_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
     return tuple(reasons)
 
 
+def _change_surface_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
+    context = bundle.change_context
+    reasons: list[str] = []
+
+    if context.has_shared_platform_changes:
+        reasons.append("change touches a shared platform surface")
+    if context.has_database_migration_changes:
+        reasons.append("change includes a database migration surface")
+    if context.touches_payments_surface:
+        reasons.append("change touches a payments-sensitive surface")
+    if context.touches_auth_surface:
+        reasons.append("change touches an authentication-sensitive surface")
+    if context.touches_data_surface:
+        reasons.append("change touches a data-sensitive surface")
+
+    return tuple(reasons)
+
+
 def _runtime_context_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
     runtime = bundle.runtime_signals
     reasons: list[str] = []
@@ -274,13 +309,13 @@ def _ownership_context_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
         return ()
     reasons: list[str] = []
 
-    if not ownership.service_owner:
+    if ownership.service_owner_provided and not ownership.service_owner:
         reasons.append("service ownership metadata is missing")
     if ownership.review_coverage == "cross_team":
         reasons.append("change requires cross-team review coverage")
     if ownership.team_trust_level in {"low", "degrading"}:
         reasons.append(f"team trust level is {ownership.team_trust_level}")
-    if not ownership.oncall_defined:
+    if ownership.oncall_defined_provided and not ownership.oncall_defined:
         reasons.append("on-call coverage is not defined for this service")
 
     return tuple(reasons)
@@ -336,8 +371,16 @@ def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
         "large_blast_radius": bundle.runtime_signals.blast_radius in {"high", "critical"},
         "after_hours_deploy": bundle.runtime_signals.deployment_window == "after_hours",
         "low_team_trust": ownership_present and bundle.ownership_signals.team_trust_level in {"low", "degrading"},
-        "unowned_service": ownership_present and not bundle.ownership_signals.service_owner,
-        "missing_oncall": ownership_present and not bundle.ownership_signals.oncall_defined,
+        "unowned_service": (
+            ownership_present
+            and bundle.ownership_signals.service_owner_provided
+            and not bundle.ownership_signals.service_owner
+        ),
+        "missing_oncall": (
+            ownership_present
+            and bundle.ownership_signals.oncall_defined_provided
+            and not bundle.ownership_signals.oncall_defined
+        ),
         "cross_team_change": ownership_present and bundle.ownership_signals.review_coverage == "cross_team",
         "repo_fragility": trust_baseline.repo_stability in {"watch", "fragile"},
         "service_fragility": trust_baseline.service_stability in {"watch", "fragile"},
@@ -345,6 +388,11 @@ def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
         "weak_rollback_readiness": trust_baseline.rollback_readiness in {"partial", "weak"},
         "dependency_reputation_risk": trust_baseline.dependency_reputation_risk in {"medium", "high"},
         "low_team_deploy_safety": trust_baseline.team_deploy_safety in {"low", "degrading"},
+        "shared_platform_surface": bundle.change_context.has_shared_platform_changes,
+        "database_migration_surface": bundle.change_context.has_database_migration_changes,
+        "payments_surface": bundle.change_context.touches_payments_surface,
+        "auth_surface": bundle.change_context.touches_auth_surface,
+        "data_surface": bundle.change_context.touches_data_surface,
     }
     return checks.get(trigger, False) if trigger in VALID_POLICY_TRIGGERS else False
 
@@ -357,7 +405,8 @@ def _has_ownership_metadata(bundle: AnalysisBundle) -> bool:
             ownership.owning_team,
             ownership.review_coverage,
             ownership.team_trust_level,
-            ownership.oncall_defined,
+            ownership.service_owner_provided,
+            ownership.oncall_defined_provided,
         )
     )
 
@@ -455,6 +504,26 @@ def _apply_policy_score_adjustments(
     if policy.low_team_deploy_safety_score_penalty and _trigger_matches("low_team_deploy_safety", bundle):
         adjusted_score -= policy.low_team_deploy_safety_score_penalty
         adjustments.append(f"low team deploy safety baseline: -{policy.low_team_deploy_safety_score_penalty}")
+
+    if policy.shared_platform_surface_score_penalty and _trigger_matches("shared_platform_surface", bundle):
+        adjusted_score -= policy.shared_platform_surface_score_penalty
+        adjustments.append(f"shared platform surface: -{policy.shared_platform_surface_score_penalty}")
+
+    if policy.database_migration_surface_score_penalty and _trigger_matches("database_migration_surface", bundle):
+        adjusted_score -= policy.database_migration_surface_score_penalty
+        adjustments.append(f"database migration surface: -{policy.database_migration_surface_score_penalty}")
+
+    if policy.payments_surface_score_penalty and _trigger_matches("payments_surface", bundle):
+        adjusted_score -= policy.payments_surface_score_penalty
+        adjustments.append(f"payments-sensitive surface: -{policy.payments_surface_score_penalty}")
+
+    if policy.auth_surface_score_penalty and _trigger_matches("auth_surface", bundle):
+        adjusted_score -= policy.auth_surface_score_penalty
+        adjustments.append(f"authentication-sensitive surface: -{policy.auth_surface_score_penalty}")
+
+    if policy.data_surface_score_penalty and _trigger_matches("data_surface", bundle):
+        adjusted_score -= policy.data_surface_score_penalty
+        adjustments.append(f"data-sensitive surface: -{policy.data_surface_score_penalty}")
 
     adjusted_score = max(0, min(100, adjusted_score))
 

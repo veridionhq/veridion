@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from veridion.normalize.common import SEVERITY_ORDER, as_string, normalize_severity
-from veridion.policy.labels import VALID_POLICY_TRIGGERS
+from veridion.policy.labels import VALID_POLICY_TRIGGERS, VALID_REQUIRE_APPROVAL_FOR
 
 
 @dataclass(frozen=True)
@@ -19,15 +19,18 @@ class PolicyConfig:
     conditional_go_below_score: int = 85
     require_approval_for: tuple[str, ...] = ()
     # Valid values: production_deployment, public_exposure, large_blast_radius, after_hours_deploy,
-    # repo_fragility, service_fragility, weak_rollback_readiness.
+    # repo_fragility, service_fragility, weak_rollback_readiness, shared_platform_surface,
+    # database_migration_surface.
     require_platform_owner_for: tuple[str, ...] = ()
     # Valid values: repo_criticality_high, service_criticality_high, repo_fragility, service_fragility,
-    # low_test_coverage, low_team_deploy_safety.
+    # low_test_coverage, low_team_deploy_safety, payments_surface, auth_surface, data_surface.
     require_service_owner_for: tuple[str, ...] = ()
     # Valid values: historical_instability, flaky_service, production_deployment, after_hours_deploy, missing_oncall,
-    # weak_rollback_readiness, service_fragility, low_team_deploy_safety.
+    # weak_rollback_readiness, service_fragility, low_team_deploy_safety, shared_platform_surface,
+    # database_migration_surface, data_surface.
     require_sre_owner_for: tuple[str, ...] = ()
-    # Valid values: sensitive_repo, public_exposure, dependency_reputation_risk.
+    # Valid values: sensitive_repo, public_exposure, dependency_reputation_risk, payments_surface, auth_surface,
+    # data_surface.
     require_security_owner_for: tuple[str, ...] = ()
     historical_instability_score_penalty: int = 0
     service_criticality_score_penalty: int = 0
@@ -48,6 +51,11 @@ class PolicyConfig:
     weak_rollback_readiness_score_penalty: int = 0
     dependency_reputation_risk_score_penalty: int = 0
     low_team_deploy_safety_score_penalty: int = 0
+    shared_platform_surface_score_penalty: int = 0
+    database_migration_surface_score_penalty: int = 0
+    payments_surface_score_penalty: int = 0
+    auth_surface_score_penalty: int = 0
+    data_surface_score_penalty: int = 0
 
 
 def parse_policy_yaml(text: str) -> PolicyConfig:
@@ -105,7 +113,7 @@ def _policy_from_mapping(parsed: dict[str, object]) -> PolicyConfig:
         allow_conditional=_as_bool(parsed.get("allow_conditional"), default=True),
         no_go_below_score=_as_int(parsed.get("no_go_below_score"), default=60),
         conditional_go_below_score=_as_int(parsed.get("conditional_go_below_score"), default=85),
-        require_approval_for=tuple(as_string(item, default="") for item in approval_values if as_string(item)),
+        require_approval_for=_approval_string_list(approval_values),
         require_platform_owner_for=_string_list(parsed.get("require_platform_owner_for"), "require_platform_owner_for"),
         require_service_owner_for=_string_list(parsed.get("require_service_owner_for"), "require_service_owner_for"),
         require_sre_owner_for=_string_list(parsed.get("require_sre_owner_for"), "require_sre_owner_for"),
@@ -129,6 +137,11 @@ def _policy_from_mapping(parsed: dict[str, object]) -> PolicyConfig:
         weak_rollback_readiness_score_penalty=_as_int(parsed.get("weak_rollback_readiness_score_penalty"), default=0),
         dependency_reputation_risk_score_penalty=_as_int(parsed.get("dependency_reputation_risk_score_penalty"), default=0),
         low_team_deploy_safety_score_penalty=_as_int(parsed.get("low_team_deploy_safety_score_penalty"), default=0),
+        shared_platform_surface_score_penalty=_as_int(parsed.get("shared_platform_surface_score_penalty"), default=0),
+        database_migration_surface_score_penalty=_as_int(parsed.get("database_migration_surface_score_penalty"), default=0),
+        payments_surface_score_penalty=_as_int(parsed.get("payments_surface_score_penalty"), default=0),
+        auth_surface_score_penalty=_as_int(parsed.get("auth_surface_score_penalty"), default=0),
+        data_surface_score_penalty=_as_int(parsed.get("data_surface_score_penalty"), default=0),
     )
 
 
@@ -141,6 +154,16 @@ def _string_list(value: object, field_name: str) -> tuple[str, ...]:
     invalid = tuple(item for item in values if item not in VALID_POLICY_TRIGGERS)
     if invalid:
         raise ValueError(f"{field_name} contains unsupported trigger(s): {', '.join(invalid)}")
+    return values
+
+
+def _approval_string_list(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ValueError("require_approval_for must be a list")
+    values = tuple(as_string(item, default="") for item in value if as_string(item))
+    invalid = tuple(item for item in values if item not in VALID_REQUIRE_APPROVAL_FOR)
+    if invalid:
+        raise ValueError(f"require_approval_for contains unsupported value(s): {', '.join(invalid)}")
     return values
 
 
