@@ -30,7 +30,7 @@ def test_render_pr_comment_renders_policy_decision_for_high_risk_change() -> Non
 **RDI Score:** 38
 **Confidence:** HIGH
 
-**Summary:** Introduced findings: 2 | Existing findings: 1 | Unattributed findings: 0 | Changed files: 4
+**Summary:** Introduced findings: 2 | Existing findings: 1 | Unattributed findings: 0 | Suppressed findings: 0 | Changed files: 4
 
 ### Primary Drivers
 
@@ -85,7 +85,7 @@ def test_render_pr_comment_handles_clean_change_without_approvals() -> None:
     comment = render_pr_comment(bundle, decision)
 
     assert "**Decision:** GO" in comment
-    assert "**Summary:** Introduced findings: 0 | Existing findings: 0 | Unattributed findings: 0 | Changed files: 1" in comment
+    assert "**Summary:** Introduced findings: 0 | Existing findings: 0 | Unattributed findings: 0 | Suppressed findings: 0 | Changed files: 1" in comment
     assert "### Required Approvals" not in comment
     assert "- Proceed with normal review and deployment checks" in comment
     assert "### Introduced Severity" in comment

@@ -16,12 +16,15 @@ def test_build_bootstrap_files_scaffolds_expected_paths() -> None:
         ".veridion/policy.yaml",
         ".veridion/trust-profile.source.json",
         ".veridion/trust-catalog.source.json",
+        ".veridion/suppressions.json",
         ".github/workflows/veridion-rdi.yml",
     }
     assert "require_approval_for:" in files[".veridion/policy.yaml"]
     assert '"repo_id": "acme/payments-platform"' in files[".veridion/trust-profile.source.json"]
+    assert '"schema_version": 1' in files[".veridion/suppressions.json"]
     assert "uses: veridionhq/veridion@main" in files[".github/workflows/veridion-rdi.yml"]
     assert "policy-path: .veridion/policy.yaml" in files[".github/workflows/veridion-rdi.yml"]
+    assert "suppression-path: .veridion/suppressions.json" in files[".github/workflows/veridion-rdi.yml"]
 
 
 def test_build_bootstrap_files_rejects_unknown_preset() -> None:

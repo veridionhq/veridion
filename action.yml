@@ -36,6 +36,10 @@ inputs:
     description: "Path to optional trust profile JSON for repo, service, and team posture; ignored when operational-context-path is provided"
     required: false
     default: ""
+  suppression-path:
+    description: "Path to optional accepted-risk suppression JSON"
+    required: false
+    default: ""
   comment-path:
     description: "Path to write the rendered PR comment markdown"
     required: false
@@ -143,6 +147,7 @@ runs:
         INPUT_OPERATIONAL_CONTEXT_PATH: ${{ steps.prepare-context.outputs.operational_context_path }}
         INPUT_METADATA_PATH: ${{ inputs.metadata-path }}
         INPUT_TRUST_PROFILE_PATH: ${{ inputs.trust-profile-path }}
+        INPUT_SUPPRESSION_PATH: ${{ inputs.suppression-path }}
         INPUT_COMMENT_PATH: ${{ inputs.comment-path }}
         INPUT_JSON_OUTPUT_PATH: ${{ inputs.json-output-path }}
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
@@ -182,6 +187,10 @@ runs:
         if [[ -n "${INPUT_TRUST_PROFILE_PATH}" ]]; then
           trust_profile_args+=(--trust-profile-path "${INPUT_TRUST_PROFILE_PATH}")
         fi
+        suppression_args=()
+        if [[ -n "${INPUT_SUPPRESSION_PATH}" ]]; then
+          suppression_args+=(--suppression-path "${INPUT_SUPPRESSION_PATH}")
+        fi
         python3 -m veridion.action \
           --diff-path "${INPUT_DIFF_PATH}" \
           "${reports_args[@]}" \
@@ -190,6 +199,7 @@ runs:
           "${operational_context_args[@]}" \
           "${metadata_args[@]}" \
           "${trust_profile_args[@]}" \
+          "${suppression_args[@]}" \
           --comment-path "${INPUT_COMMENT_PATH}" \
           --json-output-path "${INPUT_JSON_OUTPUT_PATH}"
     - name: Post Veridion PR comment

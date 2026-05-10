@@ -46,6 +46,7 @@ This creates:
 - `.veridion/policy.yaml`
 - `.veridion/trust-profile.source.json`
 - `.veridion/trust-catalog.source.json`
+- `.veridion/suppressions.json`
 - `.github/workflows/veridion-rdi.yml`
 
 Use `--preset platform-team` or `--preset regulated-service` when those better match the repo.
@@ -74,7 +75,28 @@ You can start from:
 
 The bootstrap command already creates these files. Adjust them for your repo after the first scaffold.
 
-## 5. Add the workflow
+## 5. Add accepted-risk suppressions only when needed
+
+Use `.veridion/suppressions.json` for findings that are known and intentionally accepted for a limited period.
+
+Example:
+
+```json
+{
+  "schema_version": 1,
+  "suppressions": [
+    {
+      "rule_id": "CVE-2024-1234",
+      "package_name": "urllib3",
+      "package_version": "1.25.8",
+      "reason": "temporary exception until upstream vendor patch",
+      "expires_on": "2026-06-30"
+    }
+  ]
+}
+```
+
+## 6. Add the workflow
 
 Start from:
 
@@ -88,7 +110,7 @@ If you want to adapt the example manually, minimal edits are:
 - point `--config-path` and `--catalog-path` at your repo-local `.veridion/` files
 - keep `operational-context.json` as the action input
 
-## 6. Open a PR
+## 7. Open a PR
 
 The workflow will:
 
@@ -98,7 +120,7 @@ The workflow will:
 - run scanners on head and base
 - produce a Veridion decision and PR comment
 
-## 7. Tune only after first runs
+## 8. Tune only after first runs
 
 Do not customize everything up front.
 

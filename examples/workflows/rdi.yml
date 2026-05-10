@@ -123,6 +123,7 @@ jobs:
           policy-path: examples/policy-packs/application-team.yaml
           trust-profile-source-path: examples/trust/trust-profile.source.json
           trust-catalog-source-path: examples/trust/trust-catalog.source.json
+          suppression-path: .veridion/suppressions.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           post-comment: "true"

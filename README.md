@@ -166,6 +166,8 @@ veridion-bootstrap \
 
 The GitHub Action can build `operational-context.json` internally from repo-local trust source files, so external repos do not need to import Veridion Python modules inside their workflow before the action runs.
 
+Bootstrap also creates `.veridion/suppressions.json` so teams have a first-class accepted-risk feedback loop instead of ad hoc ignore behavior.
+
 For contributor/local development only, an editable install also works:
 
 ```bash

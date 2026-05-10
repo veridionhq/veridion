@@ -144,3 +144,56 @@ def test_run_action_accepts_versioned_operational_context_artifact() -> None:
     assert "- security owner" in result.comment_markdown
     assert "- service owner" in result.comment_markdown
     assert "- SRE owner" in result.comment_markdown
+
+
+def test_run_action_applies_accepted_risk_suppressions() -> None:
+    diff_text = Path("tests/fixtures/diffs/sample_pr.diff").read_text()
+    current_reports = {
+        "trivy": "tests/fixtures/scanners/trivy_report.json",
+        "semgrep": "tests/fixtures/scanners/semgrep_report.json",
+        "grype": "tests/fixtures/scanners/grype_report.json",
+        "syft": "tests/fixtures/scanners/syft_report.json",
+    }
+    baseline_reports = {
+        "semgrep": "tests/fixtures/scanners/semgrep_report.json",
+    }
+    policy_text = Path("tests/fixtures/policies/default_policy.yaml").read_text()
+
+    initial = run_action(
+        diff_text=diff_text,
+        current_reports=current_reports,
+        baseline_reports=baseline_reports,
+        policy_text=policy_text,
+    )
+
+    dependency_finding = next(
+        finding for finding in initial.bundle.baseline_comparison.introduced if finding.finding_type == "dependency"
+    )
+    suppression_text = json.dumps(
+        {
+            "schema_version": 1,
+            "suppressions": [
+                {
+                    "dedup_key": dependency_finding.dedup_key,
+                    "reason": "temporary vendor exception while upstream patch is pending",
+                    "expires_on": "2026-12-31",
+                }
+            ],
+        }
+    )
+
+    result = run_action(
+        diff_text=diff_text,
+        current_reports=current_reports,
+        baseline_reports=baseline_reports,
+        policy_text=policy_text,
+        suppression_text=suppression_text,
+    )
+
+    assert result.bundle.summary.suppressed_findings == 1
+    assert result.bundle.summary.introduced_findings == 1
+    assert result.bundle.summary.expired_suppressions == 0
+    assert result.decision.score > initial.decision.score
+    assert "### Accepted Risk" in result.comment_markdown
+    assert "- suppressed findings: 1" in result.comment_markdown
+    assert "temporary vendor exception while upstream patch is pending (1 finding(s)) (expires 2026-12-31)" in result.comment_markdown

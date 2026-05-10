@@ -93,6 +93,8 @@ def test_build_analysis_bundle_assembles_deterministic_summary_and_partitions() 
     assert bundle.summary.lockfile_changes is True
     assert bundle.summary.infrastructure_changes is False
     assert bundle.summary.inventory_packages == 1
+    assert bundle.summary.suppressed_findings == 0
+    assert bundle.summary.expired_suppressions == 0
     assert bundle.summary.ai_change_signals == 0
     assert bundle.summary.ai_authored_commits == 0
     assert bundle.summary.historical_risk_signals == 0
@@ -179,6 +181,11 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "rollback_readiness": "",
             "dependency_reputation_risk": "",
         },
+        "suppression_report": {
+            "suppressed_findings": [],
+            "suppressed_baseline_findings": 0,
+            "expired_rules": 0,
+        },
         "change_context": {"files": []},
         "baseline_comparison": {
             "introduced": [],
@@ -202,6 +209,8 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "auth_surface_changes": False,
             "data_surface_changes": False,
             "inventory_packages": 0,
+            "suppressed_findings": 0,
+            "expired_suppressions": 0,
             "ai_change_signals": 0,
             "ai_authored_commits": 0,
             "historical_risk_signals": 0,

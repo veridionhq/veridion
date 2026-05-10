@@ -9,6 +9,7 @@ from veridion.baseline import BaselineComparison, compare_findings_against_basel
 from veridion.change_context import ParsedChangeContext
 from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals, TrustBaseline, TrustProfileMetadata
 from veridion.normalize.models import NormalizedFinding
+from veridion.suppression import SuppressionReport, SuppressionRule, apply_suppressions
 from veridion.util import plain
 from veridion.analysis.dedup import deduplicate_findings
 
@@ -33,6 +34,8 @@ class AnalysisSummary:
     auth_surface_changes: bool
     data_surface_changes: bool
     inventory_packages: int
+    suppressed_findings: int
+    expired_suppressions: int
     ai_change_signals: int
     ai_authored_commits: int
     historical_risk_signals: int
@@ -59,6 +62,7 @@ class AnalysisBundle:
     ownership_signals: OwnershipSignals
     trust_profile_metadata: TrustProfileMetadata
     trust_baseline: TrustBaseline
+    suppression_report: SuppressionReport
     change_context: ParsedChangeContext
     baseline_comparison: BaselineComparison
     summary: AnalysisSummary
@@ -79,14 +83,20 @@ def build_analysis_bundle(
     ownership_signals: OwnershipSignals | None = None,
     trust_profile_metadata: TrustProfileMetadata | None = None,
     trust_baseline: TrustBaseline | None = None,
+    suppression_rules: tuple[SuppressionRule, ...] = (),
 ) -> AnalysisBundle:
     """Assemble the deterministic analysis object used by the decision engine."""
 
     current_inventory = [finding for finding in current_findings if finding.is_inventory_only]
     baseline_inventory = [finding for finding in baseline_findings if finding.is_inventory_only]
-    scored_current_findings = deduplicate_findings([finding for finding in current_findings if not finding.is_inventory_only])
-    scored_baseline_findings = deduplicate_findings(
+    deduped_current_findings = deduplicate_findings([finding for finding in current_findings if not finding.is_inventory_only])
+    deduped_baseline_findings = deduplicate_findings(
         [finding for finding in baseline_findings if not finding.is_inventory_only]
+    )
+    scored_current_findings, scored_baseline_findings, suppression_report = apply_suppressions(
+        current_findings=deduped_current_findings,
+        baseline_findings=deduped_baseline_findings,
+        rules=suppression_rules,
     )
 
     baseline_comparison = compare_findings_against_baseline(
@@ -110,6 +120,7 @@ def build_analysis_bundle(
         runtime_signals=resolved_runtime_signals,
         ownership_signals=resolved_ownership_signals,
         trust_baseline=resolved_trust_baseline,
+        suppression_report=suppression_report,
     )
 
     return AnalysisBundle(
@@ -123,6 +134,7 @@ def build_analysis_bundle(
         ownership_signals=resolved_ownership_signals,
         trust_profile_metadata=resolved_trust_profile_metadata,
         trust_baseline=resolved_trust_baseline,
+        suppression_report=suppression_report,
         change_context=change_context,
         baseline_comparison=baseline_comparison,
         summary=summary,
@@ -140,6 +152,7 @@ def _build_summary(
     runtime_signals: RuntimeSignals,
     ownership_signals: OwnershipSignals,
     trust_baseline: TrustBaseline,
+    suppression_report: SuppressionReport,
 ) -> AnalysisSummary:
     return AnalysisSummary(
         total_findings=len(current_findings),
@@ -158,6 +171,8 @@ def _build_summary(
         auth_surface_changes=change_context.touches_auth_surface,
         data_surface_changes=change_context.touches_data_surface,
         inventory_packages=len(current_inventory),
+        suppressed_findings=len(suppression_report.suppressed_findings),
+        expired_suppressions=suppression_report.expired_rules,
         ai_change_signals=ai_attribution.signal_count,
         ai_authored_commits=ai_attribution.ai_authored_commits,
         historical_risk_signals=len(historical_signals.elevated_signals),
