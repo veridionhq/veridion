@@ -7,7 +7,7 @@ This is the shortest path to a usable Veridion install in a GitHub repository.
 For a GitHub-hosted install:
 
 ```bash
-python3 -m pip install "git+https://github.com/veridionhq/veridion.git@develop"
+python3 -m pip install "git+https://github.com/veridionhq/veridion.git@main"
 ```
 
 Then the CLIs are available as:

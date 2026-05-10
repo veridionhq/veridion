@@ -134,6 +134,12 @@ The current `main` branch already includes:
 - A versioned `operational-context` contract for non-GitHub producers
 - Starter policy packs for application teams, platform teams, and regulated services
 
+The current MVP has also been validated in an external canary repository with:
+
+- a clean docs-only `GO`
+- a deliberately risky dependency/ingress/IAM `NO GO`
+- a middle-path `CONDITIONAL GO` scenario for product tuning
+
 ## Fastest Install Path
 
 For the shortest path to a first install:
@@ -141,7 +147,7 @@ For the shortest path to a first install:
 1. Install Veridion from GitHub in the repo where you want to bootstrap:
 
 ```bash
-python3 -m pip install "git+https://github.com/veridionhq/veridion.git@develop"
+python3 -m pip install "git+https://github.com/veridionhq/veridion.git@main"
 ```
 
 2. Run:
