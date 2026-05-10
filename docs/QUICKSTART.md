@@ -2,7 +2,28 @@
 
 This is the shortest path to a usable Veridion install in a GitHub repository.
 
-## 1. Choose a policy pack
+## 1. Bootstrap the repo
+
+Run:
+
+```bash
+python3 -m veridion.action.bootstrap \
+  --preset application-team \
+  --repo-id your-org/your-repo \
+  --service-id your-service \
+  --team-id your-team
+```
+
+This creates:
+
+- `.veridion/policy.yaml`
+- `.veridion/trust-profile.source.json`
+- `.veridion/trust-catalog.source.json`
+- `.github/workflows/veridion-rdi.yml`
+
+Use `--preset platform-team` or `--preset regulated-service` when those better match the repo.
+
+## 2. Choose or adjust the policy pack
 
 Start with one of these presets:
 
@@ -12,7 +33,7 @@ Start with one of these presets:
 
 If you are unsure, start with `application-team.yaml`.
 
-## 2. Add repo-local trust inputs
+## 3. Add repo-local trust inputs
 
 Create:
 
@@ -24,21 +45,23 @@ You can start from:
 - [trust-profile.source.json](../examples/trust/trust-profile.source.json)
 - [trust-catalog.source.json](../examples/trust/trust-catalog.source.json)
 
-The repo-local file should describe durable posture for the repo, service, and team. It is not PR-specific.
+The bootstrap command already creates these files. Adjust them for your repo after the first scaffold.
 
-## 3. Add the workflow
+## 4. Add the workflow
 
 Start from:
 
 - [examples/workflows/rdi.yml](../examples/workflows/rdi.yml)
 
-Minimal edits:
+The bootstrap command already creates `.github/workflows/veridion-rdi.yml`.
+
+If you want to adapt the example manually, minimal edits are:
 
 - point `policy-path` at your chosen policy pack
 - point `--config-path` and `--catalog-path` at your repo-local `.veridion/` files
 - keep `operational-context.json` as the action input
 
-## 4. Open a PR
+## 5. Open a PR
 
 The workflow will:
 
@@ -48,7 +71,7 @@ The workflow will:
 - run scanners on head and base
 - produce a Veridion decision and PR comment
 
-## 5. Tune only after first runs
+## 6. Tune only after first runs
 
 Do not customize everything up front.
 

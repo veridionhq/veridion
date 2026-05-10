@@ -138,9 +138,18 @@ The current `main` branch already includes:
 
 For the shortest path to a first install:
 
-1. Start with [docs/QUICKSTART.md](docs/QUICKSTART.md)
-2. Pick one starter pack from [examples/policy-packs](examples/policy-packs)
-3. Use [examples/workflows/rdi.yml](examples/workflows/rdi.yml)
+1. Run:
+
+```bash
+python3 -m veridion.action.bootstrap \
+  --preset application-team \
+  --repo-id your-org/your-repo \
+  --service-id your-service \
+  --team-id your-team
+```
+
+2. Start with [docs/QUICKSTART.md](docs/QUICKSTART.md)
+3. Pick a starter pack from [examples/policy-packs](examples/policy-packs) if `application-team` is not the right default
 4. Treat `operational-context.json` as the integration contract for future non-GitHub environments
 
 These metadata-driven AI, historical, and trust-baseline signals are currently non-scoring by default. They affect explanation, recommendations, and approval requirements before they affect score.
