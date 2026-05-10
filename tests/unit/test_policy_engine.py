@@ -1,8 +1,9 @@
 from pathlib import Path
 
 from veridion.analysis import build_analysis_bundle
+from veridion.change_context import parse_unified_diff
 from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
-from veridion.context import HistoricalSignals, TrustBaseline
+from veridion.context import HistoricalSignals, TrustBaseline, derive_runtime_signals
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.policy import evaluate_release, parse_policy_yaml
 
@@ -228,6 +229,52 @@ require_security_owner_for: []
 
     assert decision.required_approvals == ("service_owner",)
     assert "Require approval from the service owner" in decision.recommendations
+
+
+def test_evaluate_release_uses_inferred_change_surface_for_runtime_and_guidance() -> None:
+    change_context = parse_unified_diff(
+        """\
+diff --git a/terraform/prod/payments/ingress.tf b/terraform/prod/payments/ingress.tf
+--- a/terraform/prod/payments/ingress.tf
++++ b/terraform/prod/payments/ingress.tf
+@@ -1 +1 @@
+-enabled = false
++enabled = true
+diff --git a/alembic/versions/20260508_add_index.py b/alembic/versions/20260508_add_index.py
+--- a/alembic/versions/20260508_add_index.py
++++ b/alembic/versions/20260508_add_index.py
+@@ -1 +1 @@
+-pass
++print("migrate")
+diff --git a/platform/shared/auth/gateway.py b/platform/shared/auth/gateway.py
+--- a/platform/shared/auth/gateway.py
++++ b/platform/shared/auth/gateway.py
+@@ -1 +1 @@
+-allow = false
++allow = true
+"""
+    )
+
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=change_context,
+        runtime_signals=derive_runtime_signals(change_context),
+    )
+
+    decision = evaluate_release(bundle)
+
+    assert bundle.runtime_signals.environment == "production"
+    assert bundle.runtime_signals.public_exposure is True
+    assert bundle.runtime_signals.blast_radius == "high"
+    assert "change touches a shared platform surface" in decision.reasons
+    assert "change includes a database migration surface" in decision.reasons
+    assert "change touches a payments-sensitive surface" in decision.reasons
+    assert "change touches an authentication-sensitive surface" in decision.reasons
+    assert "Coordinate staged validation for this shared platform change surface before release" in decision.recommendations
+    assert "Validate migration safety and data rollback steps before deployment" in decision.recommendations
+    assert "Verify payment-impact monitoring and rollback safeguards before release" in decision.recommendations
+    assert "Run authentication and access-control regression checks before deployment" in decision.recommendations
 
 
 def test_evaluate_release_can_require_approvals_from_trust_baseline_triggers() -> None:

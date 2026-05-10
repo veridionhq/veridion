@@ -38,7 +38,7 @@ def test_unified_diff_handles_rename_delete_and_new_file_cases() -> None:
             change_type="added",
             added_lines=2,
             removed_lines=0,
-            signals=("infrastructure",),
+            signals=("infrastructure", "shared_platform_surface"),
             previous_path=None,
         ),
     )

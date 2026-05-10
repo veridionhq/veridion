@@ -33,6 +33,40 @@ IAC_PATH_HINTS = (
     "infrastructure/",
     ".github/workflows/",
 )
+PRODUCTION_PATH_HINTS = (
+    "prod/",
+    "production/",
+    "environments/prod/",
+    "environments/production/",
+)
+PUBLIC_EXPOSURE_HINTS = (
+    "ingress",
+    "gateway",
+    "public",
+    "edge",
+    "loadbalancer",
+    "load-balancer",
+    "api-gateway",
+)
+SHARED_PLATFORM_HINTS = (
+    ".github/workflows/",
+    "terraform/modules/",
+    "helm/charts/",
+    "k8s/base/",
+    "kubernetes/base/",
+    "platform/",
+    "shared/",
+)
+DATABASE_MIGRATION_HINTS = (
+    "migrations/",
+    "migration/",
+    "alembic/versions/",
+    "db/migrate/",
+    "schema/migrations/",
+)
+PAYMENTS_HINTS = ("payment", "payments", "billing", "checkout")
+AUTH_HINTS = ("auth", "identity", "oauth", "sso", "token")
+DATA_HINTS = ("tenant", "privacy", "pii", "database", "db/", "data/")
 
 
 @dataclass(frozen=True)
@@ -68,6 +102,34 @@ class ParsedChangeContext:
     @property
     def has_iac_changes(self) -> bool:
         return any("infrastructure" in file.signals for file in self.files)
+
+    @property
+    def has_production_surface_changes(self) -> bool:
+        return any("production_surface" in file.signals for file in self.files)
+
+    @property
+    def has_public_exposure_changes(self) -> bool:
+        return any("public_exposure_surface" in file.signals for file in self.files)
+
+    @property
+    def has_shared_platform_changes(self) -> bool:
+        return any("shared_platform_surface" in file.signals for file in self.files)
+
+    @property
+    def has_database_migration_changes(self) -> bool:
+        return any("database_migration_surface" in file.signals for file in self.files)
+
+    @property
+    def touches_payments_surface(self) -> bool:
+        return any("payments_surface" in file.signals for file in self.files)
+
+    @property
+    def touches_auth_surface(self) -> bool:
+        return any("auth_surface" in file.signals for file in self.files)
+
+    @property
+    def touches_data_surface(self) -> bool:
+        return any("data_surface" in file.signals for file in self.files)
 
 
 def parse_unified_diff(diff_text: str) -> ParsedChangeContext:
@@ -210,6 +272,7 @@ def _classify_path(path: str) -> tuple[str, ...]:
     signals: list[str] = []
     file_name = path.rsplit("/", maxsplit=1)[-1]
     is_dependency_surface = False
+    normalized_path = path.lower()
 
     if file_name in DEPENDENCY_MANIFEST_NAMES:
         signals.append("dependency_manifest")
@@ -222,10 +285,28 @@ def _classify_path(path: str) -> tuple[str, ...]:
     if _is_infrastructure_path(path, allow_suffix_match=not is_dependency_surface):
         signals.append("infrastructure")
 
+    if any(hint in normalized_path for hint in PRODUCTION_PATH_HINTS):
+        signals.append("production_surface")
+    if any(hint in normalized_path for hint in PUBLIC_EXPOSURE_HINTS):
+        signals.append("public_exposure_surface")
+    if any(hint in normalized_path for hint in SHARED_PLATFORM_HINTS):
+        signals.append("shared_platform_surface")
+    if any(hint in normalized_path for hint in DATABASE_MIGRATION_HINTS):
+        signals.append("database_migration_surface")
+    if any(hint in normalized_path for hint in PAYMENTS_HINTS):
+        signals.append("payments_surface")
+    if any(hint in normalized_path for hint in AUTH_HINTS):
+        signals.append("auth_surface")
+    if any(hint in normalized_path for hint in DATA_HINTS):
+        signals.append("data_surface")
+
     if not signals:
         signals.append("application_code")
 
-    return tuple(signals)
+    if "application_code" not in signals and not {"dependency_manifest", "lockfile", "infrastructure"} & set(signals):
+        signals.append("application_code")
+
+    return tuple(dict.fromkeys(signals))
 
 
 def _is_infrastructure_path(path: str, *, allow_suffix_match: bool) -> bool:

@@ -2,10 +2,12 @@ from veridion.context import (
     OwnershipSignals,
     RuntimeSignals,
     TrustBaseline,
+    derive_runtime_signals,
     parse_ownership_signals,
     parse_runtime_signals,
     parse_trust_baseline,
 )
+from veridion.change_context import parse_unified_diff
 
 
 def test_parse_runtime_signals_extracts_elevated_deployment_context() -> None:
@@ -34,6 +36,57 @@ def test_parse_runtime_signals_extracts_elevated_deployment_context() -> None:
         "blast radius: high",
         "deployment window: after hours",
         "rollout strategy: direct",
+    )
+
+
+def test_derive_runtime_signals_uses_change_surface_when_metadata_is_missing() -> None:
+    context = parse_unified_diff(
+        """\
+diff --git a/terraform/prod/payments/ingress.tf b/terraform/prod/payments/ingress.tf
+--- a/terraform/prod/payments/ingress.tf
++++ b/terraform/prod/payments/ingress.tf
+@@ -1 +1 @@
+-enabled = false
++enabled = true
+"""
+    )
+
+    signals = derive_runtime_signals(context)
+
+    assert signals == RuntimeSignals(
+        environment="production",
+        public_exposure=True,
+        blast_radius="high",
+    )
+
+
+def test_derive_runtime_signals_preserves_explicit_metadata_over_inference() -> None:
+    context = parse_unified_diff(
+        """\
+diff --git a/platform/shared/auth/gateway.py b/platform/shared/auth/gateway.py
+--- a/platform/shared/auth/gateway.py
++++ b/platform/shared/auth/gateway.py
+@@ -1 +1 @@
+-allow = false
++allow = true
+"""
+    )
+
+    signals = derive_runtime_signals(
+        context,
+        RuntimeSignals(
+            environment="staging",
+            public_exposure=False,
+            blast_radius="medium",
+            rollout_strategy="canary",
+        ),
+    )
+
+    assert signals == RuntimeSignals(
+        environment="staging",
+        public_exposure=True,
+        blast_radius="medium",
+        rollout_strategy="canary",
     )
 
 

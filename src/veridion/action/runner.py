@@ -12,6 +12,7 @@ from veridion.analysis import AnalysisBundle, build_analysis_bundle
 from veridion.attribution import parse_pull_request_metadata
 from veridion.action.trust_profile import merge_metadata_with_trust_profile
 from veridion.context import (
+    derive_runtime_signals,
     parse_historical_signals,
     parse_ownership_signals,
     parse_runtime_signals,
@@ -65,7 +66,7 @@ def run_action(
     parsed_context = merge_metadata_with_trust_profile(metadata_payload, trust_profile_payload)
     metadata = parse_pull_request_metadata(metadata_payload) if metadata_payload else None
     historical_signals = parse_historical_signals(parsed_context)
-    runtime_signals = parse_runtime_signals(parsed_context)
+    runtime_signals = derive_runtime_signals(change_context, parse_runtime_signals(parsed_context))
     ownership_signals = parse_ownership_signals(parsed_context)
     trust_profile_metadata = parse_trust_profile_metadata(parsed_context)
     trust_baseline = parse_trust_baseline(parsed_context)

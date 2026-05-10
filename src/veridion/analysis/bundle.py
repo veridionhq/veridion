@@ -25,6 +25,13 @@ class AnalysisSummary:
     dependency_changes: bool
     lockfile_changes: bool
     infrastructure_changes: bool
+    production_surface_changes: bool
+    public_exposure_surface_changes: bool
+    shared_platform_changes: bool
+    database_migration_changes: bool
+    payments_surface_changes: bool
+    auth_surface_changes: bool
+    data_surface_changes: bool
     inventory_packages: int
     ai_change_signals: int
     ai_authored_commits: int
@@ -143,6 +150,13 @@ def _build_summary(
         dependency_changes=change_context.has_dependency_changes,
         lockfile_changes=change_context.has_lockfile_changes,
         infrastructure_changes=change_context.has_iac_changes,
+        production_surface_changes=change_context.has_production_surface_changes,
+        public_exposure_surface_changes=change_context.has_public_exposure_changes,
+        shared_platform_changes=change_context.has_shared_platform_changes,
+        database_migration_changes=change_context.has_database_migration_changes,
+        payments_surface_changes=change_context.touches_payments_surface,
+        auth_surface_changes=change_context.touches_auth_surface,
+        data_surface_changes=change_context.touches_data_surface,
         inventory_packages=len(current_inventory),
         ai_change_signals=ai_attribution.signal_count,
         ai_authored_commits=ai_attribution.ai_authored_commits,

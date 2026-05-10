@@ -36,6 +36,7 @@ def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None)
     reasons = list(risk.reasons)
     reasons.extend(_historical_context_reasons(bundle))
     reasons.extend(_runtime_context_reasons(bundle))
+    reasons.extend(_change_surface_reasons(bundle))
     reasons.extend(_ownership_context_reasons(bundle))
     reasons.extend(_trust_baseline_reasons(bundle))
     decision = _apply_policy_decision(risk, bundle, resolved_policy, reasons)
@@ -130,6 +131,7 @@ def _recommendations(
     ownership = bundle.ownership_signals
     historical = bundle.historical_signals
     trust_baseline = bundle.trust_baseline
+    change_context = bundle.change_context
     ownership_present = _has_ownership_metadata(bundle)
 
     if decision == "NO GO":
@@ -141,11 +143,26 @@ def _recommendations(
     if bundle.summary.infrastructure_changes:
         recommendations.append("Run staging smoke tests for infrastructure-affecting changes")
 
+    if change_context.has_shared_platform_changes:
+        recommendations.append("Coordinate staged validation for this shared platform change surface before release")
+
+    if change_context.has_database_migration_changes:
+        recommendations.append("Validate migration safety and data rollback steps before deployment")
+
     if bundle.summary.dependency_changes or bundle.summary.lockfile_changes:
         recommendations.append("Review newly introduced dependencies and lockfile updates")
 
     if risk.features.introduced_high or risk.features.introduced_critical:
         recommendations.append("Prioritize remediation for introduced high-severity findings")
+
+    if change_context.touches_payments_surface:
+        recommendations.append("Verify payment-impact monitoring and rollback safeguards before release")
+
+    if change_context.touches_auth_surface:
+        recommendations.append("Run authentication and access-control regression checks before deployment")
+
+    if change_context.touches_data_surface:
+        recommendations.append("Validate data-handling and tenant-safety paths before deployment")
 
     if historical.repo_criticality in {"high", "critical"}:
         recommendations.append("Use heightened review for this high-criticality repository")
@@ -246,6 +263,24 @@ def _historical_context_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
 
     if historical.sensitive_repo:
         reasons.append("repository is marked sensitive in operational metadata")
+
+    return tuple(reasons)
+
+
+def _change_surface_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
+    context = bundle.change_context
+    reasons: list[str] = []
+
+    if context.has_shared_platform_changes:
+        reasons.append("change touches a shared platform surface")
+    if context.has_database_migration_changes:
+        reasons.append("change includes a database migration surface")
+    if context.touches_payments_surface:
+        reasons.append("change touches a payments-sensitive surface")
+    if context.touches_auth_surface:
+        reasons.append("change touches an authentication-sensitive surface")
+    if context.touches_data_surface:
+        reasons.append("change touches a data-sensitive surface")
 
     return tuple(reasons)
 
