@@ -101,6 +101,8 @@ GitHub PR
 
 ## Repo Docs
 
+- [Quickstart](docs/QUICKSTART.md)
+- [Operational Context Contract](docs/OPERATIONAL_CONTEXT.md)
 - [Execution Plan](docs/EXECUTION_PLAN.md)
 - [Milestones](docs/roadmap/MILESTONES.md)
 - [Testing Strategy](docs/TESTING_STRATEGY.md)
@@ -129,6 +131,17 @@ The current `main` branch already includes:
 - Initial AI-attribution signals from PR title, body, labels, and commit metadata
 - Initial historical trust signals for criticality, rollback rate, incidents, and flaky services
 - Initial trust-baseline signals for repo fragility, service stability, rollback readiness, and dependency reputation
+- A versioned `operational-context` contract for non-GitHub producers
+- Starter policy packs for application teams, platform teams, and regulated services
+
+## Fastest Install Path
+
+For the shortest path to a first install:
+
+1. Start with [docs/QUICKSTART.md](docs/QUICKSTART.md)
+2. Pick one starter pack from [examples/policy-packs](examples/policy-packs)
+3. Use [examples/workflows/rdi.yml](examples/workflows/rdi.yml)
+4. Treat `operational-context.json` as the integration contract for future non-GitHub environments
 
 These metadata-driven AI, historical, and trust-baseline signals are currently non-scoring by default. They affect explanation, recommendations, and approval requirements before they affect score.
 

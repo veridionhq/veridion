@@ -155,7 +155,7 @@ jobs:
             semgrep=artifacts/baseline-semgrep.json
             grype=artifacts/baseline-grype.json
             syft=artifacts/baseline-syft.json
-          policy-path: examples/policy/veridion-policy.yaml
+          policy-path: examples/policy-packs/application-team.yaml
           operational-context-path: operational-context.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
