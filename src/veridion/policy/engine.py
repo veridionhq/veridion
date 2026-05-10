@@ -388,6 +388,11 @@ def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
         "weak_rollback_readiness": trust_baseline.rollback_readiness in {"partial", "weak"},
         "dependency_reputation_risk": trust_baseline.dependency_reputation_risk in {"medium", "high"},
         "low_team_deploy_safety": trust_baseline.team_deploy_safety in {"low", "degrading"},
+        "shared_platform_surface": bundle.change_context.has_shared_platform_changes,
+        "database_migration_surface": bundle.change_context.has_database_migration_changes,
+        "payments_surface": bundle.change_context.touches_payments_surface,
+        "auth_surface": bundle.change_context.touches_auth_surface,
+        "data_surface": bundle.change_context.touches_data_surface,
     }
     return checks.get(trigger, False) if trigger in VALID_POLICY_TRIGGERS else False
 
@@ -499,6 +504,26 @@ def _apply_policy_score_adjustments(
     if policy.low_team_deploy_safety_score_penalty and _trigger_matches("low_team_deploy_safety", bundle):
         adjusted_score -= policy.low_team_deploy_safety_score_penalty
         adjustments.append(f"low team deploy safety baseline: -{policy.low_team_deploy_safety_score_penalty}")
+
+    if policy.shared_platform_surface_score_penalty and _trigger_matches("shared_platform_surface", bundle):
+        adjusted_score -= policy.shared_platform_surface_score_penalty
+        adjustments.append(f"shared platform surface: -{policy.shared_platform_surface_score_penalty}")
+
+    if policy.database_migration_surface_score_penalty and _trigger_matches("database_migration_surface", bundle):
+        adjusted_score -= policy.database_migration_surface_score_penalty
+        adjustments.append(f"database migration surface: -{policy.database_migration_surface_score_penalty}")
+
+    if policy.payments_surface_score_penalty and _trigger_matches("payments_surface", bundle):
+        adjusted_score -= policy.payments_surface_score_penalty
+        adjustments.append(f"payments-sensitive surface: -{policy.payments_surface_score_penalty}")
+
+    if policy.auth_surface_score_penalty and _trigger_matches("auth_surface", bundle):
+        adjusted_score -= policy.auth_surface_score_penalty
+        adjustments.append(f"authentication-sensitive surface: -{policy.auth_surface_score_penalty}")
+
+    if policy.data_surface_score_penalty and _trigger_matches("data_surface", bundle):
+        adjusted_score -= policy.data_surface_score_penalty
+        adjustments.append(f"data-sensitive surface: -{policy.data_surface_score_penalty}")
 
     adjusted_score = max(0, min(100, adjusted_score))
 

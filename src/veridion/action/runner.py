@@ -9,15 +9,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from veridion.analysis import AnalysisBundle, build_analysis_bundle
-from veridion.attribution import parse_pull_request_metadata
-from veridion.action.trust_profile import merge_metadata_with_trust_profile
 from veridion.context import (
-    derive_runtime_signals,
-    parse_historical_signals,
-    parse_ownership_signals,
-    parse_runtime_signals,
-    parse_trust_baseline,
-    parse_trust_profile_metadata,
+    resolve_operational_context,
 )
 from veridion.normalize import NormalizedFinding, normalize_report
 from veridion.policy import PolicyDecision, PolicyConfig, evaluate_release, parse_policy_yaml
@@ -63,24 +56,22 @@ def run_action(
     policy = parse_policy_yaml(policy_text) if policy_text else PolicyConfig()
     metadata_payload = _parse_optional_json_text(metadata_text, label="metadata")
     trust_profile_payload = _parse_optional_json_text(trust_profile_text, label="trust profile")
-    parsed_context = merge_metadata_with_trust_profile(metadata_payload, trust_profile_payload)
-    metadata = parse_pull_request_metadata(metadata_payload) if metadata_payload else None
-    historical_signals = parse_historical_signals(parsed_context)
-    runtime_signals = derive_runtime_signals(change_context, parse_runtime_signals(parsed_context))
-    ownership_signals = parse_ownership_signals(parsed_context)
-    trust_profile_metadata = parse_trust_profile_metadata(parsed_context)
-    trust_baseline = parse_trust_baseline(parsed_context)
+    resolved_context = resolve_operational_context(
+        change_context=change_context,
+        metadata_payload=metadata_payload,
+        trust_profile_payload=trust_profile_payload,
+    )
 
     bundle = build_analysis_bundle(
         current_findings=current_findings,
         baseline_findings=baseline_findings,
         change_context=change_context,
-        metadata=metadata,
-        historical_signals=historical_signals,
-        runtime_signals=runtime_signals,
-        ownership_signals=ownership_signals,
-        trust_profile_metadata=trust_profile_metadata,
-        trust_baseline=trust_baseline,
+        metadata=resolved_context.metadata,
+        historical_signals=resolved_context.historical_signals,
+        runtime_signals=resolved_context.runtime_signals,
+        ownership_signals=resolved_context.ownership_signals,
+        trust_profile_metadata=resolved_context.trust_profile_metadata,
+        trust_baseline=resolved_context.trust_baseline,
     )
     decision = evaluate_release(bundle, policy)
     comment_markdown = render_pr_comment(bundle, decision)

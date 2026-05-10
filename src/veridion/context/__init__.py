@@ -1,5 +1,6 @@
 """Operational context models beyond scanner findings."""
 
+from veridion.context.adapter import ResolvedOperationalContext, resolve_operational_context
 from veridion.context.history import HistoricalSignals, parse_historical_signals
 from veridion.context.ownership import OwnershipSignals, parse_ownership_signals
 from veridion.context.runtime import RuntimeSignals, derive_runtime_signals, parse_runtime_signals
@@ -8,6 +9,7 @@ from veridion.context.trust import TrustBaseline, TrustProfileMetadata, parse_tr
 __all__ = [
     "HistoricalSignals",
     "OwnershipSignals",
+    "ResolvedOperationalContext",
     "RuntimeSignals",
     "TrustBaseline",
     "TrustProfileMetadata",
@@ -17,4 +19,5 @@ __all__ = [
     "parse_runtime_signals",
     "parse_trust_baseline",
     "parse_trust_profile_metadata",
+    "resolve_operational_context",
 ]

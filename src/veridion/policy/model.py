@@ -19,15 +19,18 @@ class PolicyConfig:
     conditional_go_below_score: int = 85
     require_approval_for: tuple[str, ...] = ()
     # Valid values: production_deployment, public_exposure, large_blast_radius, after_hours_deploy,
-    # repo_fragility, service_fragility, weak_rollback_readiness.
+    # repo_fragility, service_fragility, weak_rollback_readiness, shared_platform_surface,
+    # database_migration_surface.
     require_platform_owner_for: tuple[str, ...] = ()
     # Valid values: repo_criticality_high, service_criticality_high, repo_fragility, service_fragility,
-    # low_test_coverage, low_team_deploy_safety.
+    # low_test_coverage, low_team_deploy_safety, payments_surface, auth_surface, data_surface.
     require_service_owner_for: tuple[str, ...] = ()
     # Valid values: historical_instability, flaky_service, production_deployment, after_hours_deploy, missing_oncall,
-    # weak_rollback_readiness, service_fragility, low_team_deploy_safety.
+    # weak_rollback_readiness, service_fragility, low_team_deploy_safety, shared_platform_surface,
+    # database_migration_surface, data_surface.
     require_sre_owner_for: tuple[str, ...] = ()
-    # Valid values: sensitive_repo, public_exposure, dependency_reputation_risk.
+    # Valid values: sensitive_repo, public_exposure, dependency_reputation_risk, payments_surface, auth_surface,
+    # data_surface.
     require_security_owner_for: tuple[str, ...] = ()
     historical_instability_score_penalty: int = 0
     service_criticality_score_penalty: int = 0
@@ -48,6 +51,11 @@ class PolicyConfig:
     weak_rollback_readiness_score_penalty: int = 0
     dependency_reputation_risk_score_penalty: int = 0
     low_team_deploy_safety_score_penalty: int = 0
+    shared_platform_surface_score_penalty: int = 0
+    database_migration_surface_score_penalty: int = 0
+    payments_surface_score_penalty: int = 0
+    auth_surface_score_penalty: int = 0
+    data_surface_score_penalty: int = 0
 
 
 def parse_policy_yaml(text: str) -> PolicyConfig:
@@ -129,6 +137,11 @@ def _policy_from_mapping(parsed: dict[str, object]) -> PolicyConfig:
         weak_rollback_readiness_score_penalty=_as_int(parsed.get("weak_rollback_readiness_score_penalty"), default=0),
         dependency_reputation_risk_score_penalty=_as_int(parsed.get("dependency_reputation_risk_score_penalty"), default=0),
         low_team_deploy_safety_score_penalty=_as_int(parsed.get("low_team_deploy_safety_score_penalty"), default=0),
+        shared_platform_surface_score_penalty=_as_int(parsed.get("shared_platform_surface_score_penalty"), default=0),
+        database_migration_surface_score_penalty=_as_int(parsed.get("database_migration_surface_score_penalty"), default=0),
+        payments_surface_score_penalty=_as_int(parsed.get("payments_surface_score_penalty"), default=0),
+        auth_surface_score_penalty=_as_int(parsed.get("auth_surface_score_penalty"), default=0),
+        data_surface_score_penalty=_as_int(parsed.get("data_surface_score_penalty"), default=0),
     )
 
 
