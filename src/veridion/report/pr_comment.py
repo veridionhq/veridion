@@ -13,6 +13,18 @@ MAX_PRIMARY_DRIVER_ITEMS = 6
 MAX_CONTEXTUAL_RISK_ITEMS = 5
 MAX_REQUIRED_NEXT_STEP_ITEMS = 6
 MAX_ADVISORY_GUIDANCE_ITEMS = 6
+REQUIRED_NEXT_STEP_PREFIXES = (
+    "Block release",
+    "Run staging smoke tests",
+    "Prioritize remediation",
+    "Review newly introduced dependencies",
+    "Verify rollback ownership and on-call coverage",
+    "Require and verify a rollback path",
+    "Define a service owner",
+    "Validate migration safety",
+    "Verify payment-impact",
+    "Run authentication and access-control",
+)
 
 
 def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
@@ -303,13 +315,4 @@ def _split_recommendations(recommendations: tuple[str, ...]) -> tuple[tuple[str,
 
 
 def _is_required_next_step(recommendation: str) -> bool:
-    required_markers = (
-        "Block release",
-        "Run staging smoke tests",
-        "Prioritize remediation",
-        "Review newly introduced dependencies",
-        "Verify rollback ownership and on-call coverage",
-        "Require and verify a rollback path",
-        "Define a service owner",
-    )
-    return recommendation.startswith(required_markers)
+    return recommendation.startswith(REQUIRED_NEXT_STEP_PREFIXES)

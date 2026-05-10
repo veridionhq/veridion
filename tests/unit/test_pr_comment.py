@@ -5,6 +5,7 @@ from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.policy import PolicyConfig, evaluate_release
 from veridion.report import render_pr_comment
+from veridion.report.pr_comment import _is_required_next_step
 
 
 def test_render_pr_comment_renders_policy_decision_for_high_risk_change() -> None:
@@ -279,6 +280,14 @@ def test_render_pr_comment_truncates_verbose_sections() -> None:
     assert "- ... " in comment
     assert "more contextual risks" in comment
     assert "more guidance items" in comment
+
+
+def test_required_next_step_classification_keeps_high_consequence_surface_checks_required() -> None:
+    assert _is_required_next_step("Block release until introduced risk is remediated or policy is adjusted") is True
+    assert _is_required_next_step("Validate migration safety and data rollback steps before deployment") is True
+    assert _is_required_next_step("Verify payment-impact monitoring and rollback safeguards before release") is True
+    assert _is_required_next_step("Run authentication and access-control regression checks before deployment") is True
+    assert _is_required_next_step("Use heightened review for this high-criticality repository") is False
 
 
 def _bundle_with_iac_and_dependency_risk():

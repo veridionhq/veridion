@@ -16,6 +16,10 @@ inputs:
     description: "Path to policy YAML"
     required: false
     default: ""
+  operational-context-path:
+    description: "Path to optional versioned operational-context JSON"
+    required: false
+    default: ""
   metadata-path:
     description: "Path to optional pull request metadata JSON for AI attribution"
     required: false
@@ -87,6 +91,7 @@ runs:
         INPUT_REPORTS: ${{ inputs.reports }}
         INPUT_BASELINE_REPORTS: ${{ inputs.baseline-reports }}
         INPUT_POLICY_PATH: ${{ inputs.policy-path }}
+        INPUT_OPERATIONAL_CONTEXT_PATH: ${{ inputs.operational-context-path }}
         INPUT_METADATA_PATH: ${{ inputs.metadata-path }}
         INPUT_TRUST_PROFILE_PATH: ${{ inputs.trust-profile-path }}
         INPUT_COMMENT_PATH: ${{ inputs.comment-path }}
@@ -116,6 +121,10 @@ runs:
         if [[ -n "${INPUT_POLICY_PATH}" ]]; then
           policy_args+=(--policy-path "${INPUT_POLICY_PATH}")
         fi
+        operational_context_args=()
+        if [[ -n "${INPUT_OPERATIONAL_CONTEXT_PATH}" ]]; then
+          operational_context_args+=(--operational-context-path "${INPUT_OPERATIONAL_CONTEXT_PATH}")
+        fi
         metadata_args=()
         if [[ -n "${INPUT_METADATA_PATH}" ]]; then
           metadata_args+=(--metadata-path "${INPUT_METADATA_PATH}")
@@ -129,6 +138,7 @@ runs:
           "${reports_args[@]}" \
           "${baseline_args[@]}" \
           "${policy_args[@]}" \
+          "${operational_context_args[@]}" \
           "${metadata_args[@]}" \
           "${trust_profile_args[@]}" \
           --comment-path "${INPUT_COMMENT_PATH}" \

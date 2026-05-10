@@ -33,29 +33,32 @@ Core responsibilities:
 - Produce an RDI score and release decision
 - Explain the decision in a PR comment with recommended actions
 
-The action can now consume two separate context artifacts:
+The action can now consume a versioned operational-context artifact as its primary context contract. That artifact can be produced by GitHub workflows today, and later by other CI/CD or platform integrations without changing the decision engine.
+
+The current GitHub path still builds from two source inputs:
 
 - PR metadata for request-scoped signals like title, body, labels, and commit history
 - trust profile JSON for repo, service, and team posture that should persist across PRs
 
-Trust-profile artifacts are versioned and scoped. The current contract is:
+Those are merged into one versioned operational-context artifact:
 
 ```json
 {
   "schema_version": 1,
-  "scope": {
-    "repo_id": "acme/payments-platform",
-    "service_id": "payments/api",
-    "team_id": "platform-trust"
-  },
   "provenance": {
-    "source": "manual-example",
-    "generated_at": "2026-05-08T00:00:00Z"
-  }
+    "source": "veridion-github-builder",
+    "generated_at": "2026-05-10T00:00:00Z"
+  },
+  "metadata": {},
+  "historical": {},
+  "runtime": {},
+  "ownership": {},
+  "trust_baseline": {},
+  "trust_profile_metadata": {}
 }
 ```
 
-The repo-local source example lives at [examples/trust/trust-profile.source.json](/Users/lseino/repos/veridion/examples/trust/trust-profile.source.json:1). A shared catalog baseline can also be layered in from [examples/trust/trust-catalog.source.json](/Users/lseino/repos/veridion/examples/trust/trust-catalog.source.json:1), and the workflow builds the versioned artifact from those sources before running Veridion.
+The repo-local source example lives at [examples/trust/trust-profile.source.json](/Users/lseino/repos/veridion/examples/trust/trust-profile.source.json:1). A shared catalog baseline can also be layered in from [examples/trust/trust-catalog.source.json](/Users/lseino/repos/veridion/examples/trust/trust-catalog.source.json:1), and the workflow now builds `operational-context.json` before running Veridion. That is the integration point other products should target.
 
 Example output:
 

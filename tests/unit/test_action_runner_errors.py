@@ -67,3 +67,42 @@ def test_run_action_rejects_unsupported_trust_profile_schema_version() -> None:
             policy_text=None,
             trust_profile_text='{"schema_version": 2}',
         )
+
+
+def test_run_action_rejects_non_object_operational_context_json() -> None:
+    diff_text = Path("tests/fixtures/diffs/sample_pr.diff").read_text()
+
+    with pytest.raises(RuntimeError, match=r"operational context JSON input must contain an object at the top level"):
+        run_action(
+            diff_text=diff_text,
+            current_reports={},
+            baseline_reports={},
+            policy_text=None,
+            operational_context_text="[]",
+        )
+
+
+def test_run_action_rejects_invalid_operational_context_json() -> None:
+    diff_text = Path("tests/fixtures/diffs/sample_pr.diff").read_text()
+
+    with pytest.raises(RuntimeError, match=r"operational context JSON is not valid JSON"):
+        run_action(
+            diff_text=diff_text,
+            current_reports={},
+            baseline_reports={},
+            policy_text=None,
+            operational_context_text="{",
+        )
+
+
+def test_run_action_rejects_unsupported_operational_context_schema_version() -> None:
+    diff_text = Path("tests/fixtures/diffs/sample_pr.diff").read_text()
+
+    with pytest.raises(RuntimeError, match=r"operational context schema_version must be 1"):
+        run_action(
+            diff_text=diff_text,
+            current_reports={},
+            baseline_reports={},
+            policy_text=None,
+            operational_context_text='{"schema_version": 2}',
+        )
