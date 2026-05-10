@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 
 from veridion.action.metadata_builder import build_pr_metadata, collect_commit_metadata
-from veridion.action.trust_profile import load_json_file
 from veridion.context import build_operational_context_artifact
+from veridion.context.trust_profile_artifact import load_json_file
 
 
 def main(argv: list[str] | None = None) -> int:

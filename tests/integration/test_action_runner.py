@@ -119,6 +119,28 @@ def test_run_action_accepts_versioned_operational_context_artifact() -> None:
     )
 
     assert result.decision.decision == "NO GO"
+    assert result.decision.score < 60
     assert result.bundle.summary.ai_change_signals == 4
+    assert result.bundle.summary.historical_risk_signals == 7
+    assert result.bundle.summary.runtime_risk_signals == 5
+    assert result.bundle.summary.ownership_risk_signals == 3
+    assert result.bundle.summary.trust_baseline_risk_signals == 6
     assert result.bundle.runtime_signals.environment == "production"
     assert result.bundle.trust_profile_metadata.repo_id == "veridionhq/veridion"
+    assert result.decision.required_approvals == (
+        "platform_owner",
+        "security_owner",
+        "service_owner",
+        "sre_owner",
+    )
+    assert "### Historical Trust Signals" in result.comment_markdown
+    assert "### Runtime Context" in result.comment_markdown
+    assert "### Operational Baseline" in result.comment_markdown
+    assert "### Required Next Steps" in result.comment_markdown
+    assert "### Advisory Guidance" in result.comment_markdown
+    assert "### Primary Drivers" in result.comment_markdown
+    assert "### Contextual Risk" in result.comment_markdown
+    assert "- platform owner" in result.comment_markdown
+    assert "- security owner" in result.comment_markdown
+    assert "- service owner" in result.comment_markdown
+    assert "- SRE owner" in result.comment_markdown

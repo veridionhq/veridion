@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -59,6 +60,11 @@ def run_action(
     operational_context_payload = _parse_optional_json_text(operational_context_text, label="operational context")
 
     if operational_context_payload:
+        if metadata_text or trust_profile_text:
+            print(
+                "warning: operational-context-path provided; metadata-path and trust-profile-path are ignored",
+                file=sys.stderr,
+            )
         resolved_context = resolve_operational_context_artifact(
             change_context=change_context,
             operational_context_payload=operational_context_payload,

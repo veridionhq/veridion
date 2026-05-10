@@ -17,15 +17,15 @@ inputs:
     required: false
     default: ""
   operational-context-path:
-    description: "Path to optional versioned operational-context JSON"
+    description: "Path to optional versioned operational-context JSON; when provided, metadata-path and trust-profile-path are ignored"
     required: false
     default: ""
   metadata-path:
-    description: "Path to optional pull request metadata JSON for AI attribution"
+    description: "Path to optional pull request metadata JSON for AI attribution; ignored when operational-context-path is provided"
     required: false
     default: ""
   trust-profile-path:
-    description: "Path to optional trust profile JSON for repo, service, and team posture"
+    description: "Path to optional trust profile JSON for repo, service, and team posture; ignored when operational-context-path is provided"
     required: false
     default: ""
   comment-path:
