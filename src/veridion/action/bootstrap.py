@@ -298,6 +298,7 @@ jobs:
           policy-path: .veridion/policy.yaml
           trust-profile-source-path: .veridion/trust-profile.source.json
           trust-catalog-source-path: .veridion/trust-catalog.source.json
+          suppression-path: .veridion/suppressions.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           post-comment: "true"
@@ -347,11 +348,16 @@ def build_bootstrap_files(
         "ownership": {},
         "trust_baseline": {},
     }
+    suppressions = {
+        "schema_version": 1,
+        "suppressions": [],
+    }
 
     return {
         ".veridion/policy.yaml": POLICY_PACKS[preset],
         ".veridion/trust-profile.source.json": json.dumps(trust_profile, indent=2) + "\n",
         ".veridion/trust-catalog.source.json": json.dumps(trust_catalog, indent=2) + "\n",
+        ".veridion/suppressions.json": json.dumps(suppressions, indent=2) + "\n",
         ".github/workflows/veridion-rdi.yml": WORKFLOW_TEMPLATE.format(action_ref=action_ref),
     }
 

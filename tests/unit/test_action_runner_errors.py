@@ -96,6 +96,32 @@ def test_run_action_rejects_invalid_operational_context_json() -> None:
         )
 
 
+def test_run_action_rejects_invalid_suppressions_json() -> None:
+    diff_text = Path("tests/fixtures/diffs/sample_pr.diff").read_text()
+
+    with pytest.raises(RuntimeError, match=r"suppressions JSON is not valid JSON"):
+        run_action(
+            diff_text=diff_text,
+            current_reports={},
+            baseline_reports={},
+            policy_text=None,
+            suppression_text="{",
+        )
+
+
+def test_run_action_rejects_invalid_suppressions_schema_version() -> None:
+    diff_text = Path("tests/fixtures/diffs/sample_pr.diff").read_text()
+
+    with pytest.raises(ValueError, match=r"unsupported suppression schema_version: 2"):
+        run_action(
+            diff_text=diff_text,
+            current_reports={},
+            baseline_reports={},
+            policy_text=None,
+            suppression_text='{"schema_version": 2, "suppressions": []}',
+        )
+
+
 def test_run_action_rejects_unsupported_operational_context_schema_version() -> None:
     diff_text = Path("tests/fixtures/diffs/sample_pr.diff").read_text()
 

@@ -229,6 +229,9 @@ def _recommendations(
     if trust_baseline.team_deploy_safety in {"low", "degrading"}:
         recommendations.append("Use an operator-assisted release path for this low-safety team baseline")
 
+    if bundle.summary.expired_suppressions:
+        recommendations.append("Remove or renew expired accepted-risk suppressions before release")
+
     if not recommendations:
         recommendations.append("Proceed with normal review and deployment checks")
 

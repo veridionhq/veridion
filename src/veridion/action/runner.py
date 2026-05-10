@@ -17,6 +17,7 @@ from veridion.context import (
 from veridion.normalize import NormalizedFinding, normalize_report
 from veridion.policy import PolicyDecision, PolicyConfig, evaluate_release, parse_policy_yaml
 from veridion.report import render_pr_comment
+from veridion.suppression import parse_suppressions_payload
 from veridion.change_context import parse_unified_diff
 from veridion.util import plain
 
@@ -50,6 +51,7 @@ def run_action(
     operational_context_text: str | None = None,
     metadata_text: str | None = None,
     trust_profile_text: str | None = None,
+    suppression_text: str | None = None,
 ) -> ActionResult:
     """Run the full RDI pipeline from file-backed action inputs."""
 
@@ -58,6 +60,8 @@ def run_action(
     change_context = parse_unified_diff(diff_text)
     policy = parse_policy_yaml(policy_text) if policy_text else PolicyConfig()
     operational_context_payload = _parse_optional_json_text(operational_context_text, label="operational context")
+    suppressions_payload = _parse_optional_json_text(suppression_text, label="suppressions")
+    suppression_rules = parse_suppressions_payload(suppressions_payload)
 
     if operational_context_payload:
         if metadata_text or trust_profile_text:
@@ -88,6 +92,7 @@ def run_action(
         ownership_signals=resolved_context.ownership_signals,
         trust_profile_metadata=resolved_context.trust_profile_metadata,
         trust_baseline=resolved_context.trust_baseline,
+        suppression_rules=suppression_rules,
     )
     decision = evaluate_release(bundle, policy)
     comment_markdown = render_pr_comment(bundle, decision)
@@ -112,6 +117,7 @@ def main(argv: list[str] | None = None) -> int:
     operational_context_text = Path(args.operational_context_path).read_text() if args.operational_context_path else None
     metadata_text = Path(args.metadata_path).read_text() if args.metadata_path else None
     trust_profile_text = Path(args.trust_profile_path).read_text() if args.trust_profile_path else None
+    suppression_text = Path(args.suppression_path).read_text() if args.suppression_path else None
 
     result = run_action(
         diff_text=diff_text,
@@ -121,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         operational_context_text=operational_context_text,
         metadata_text=metadata_text,
         trust_profile_text=trust_profile_text,
+        suppression_text=suppression_text,
     )
 
     if args.comment_path:
@@ -155,6 +162,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--operational-context-path", help="Path to optional versioned operational-context JSON")
     parser.add_argument("--metadata-path", help="Path to optional pull request metadata JSON")
     parser.add_argument("--trust-profile-path", help="Path to optional trust profile JSON")
+    parser.add_argument("--suppression-path", help="Path to optional accepted-risk suppression JSON")
     parser.add_argument("--comment-path", help="Path to write rendered PR comment markdown")
     parser.add_argument("--json-output-path", help="Path to write structured JSON output")
     return parser

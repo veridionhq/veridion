@@ -43,6 +43,7 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
         f"Introduced findings: {bundle.summary.introduced_findings}",
         f"Existing findings: {bundle.summary.existing_findings}",
         f"Unattributed findings: {bundle.summary.unattributed_findings}",
+        f"Suppressed findings: {bundle.summary.suppressed_findings}",
         f"Changed files: {bundle.summary.changed_files}",
     ]
     lines.append("**Summary:** " + " | ".join(summary_parts))
@@ -58,6 +59,8 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
         lines.extend(_section("Ownership Context", _format_ownership_signals(bundle)))
     if bundle.trust_baseline.elevated_signals:
         lines.extend(_section("Operational Baseline", _format_trust_baseline(bundle)))
+    if bundle.summary.suppressed_findings or bundle.summary.expired_suppressions:
+        lines.extend(_section("Accepted Risk", _format_suppressions(bundle)))
 
     primary_drivers, contextual_risk = _split_reasons(decision.reasons)
     lines.extend(_section("Primary Drivers", _truncate_items(primary_drivers, MAX_PRIMARY_DRIVER_ITEMS, "driver")))
@@ -120,6 +123,29 @@ def _format_approval(value: str) -> str:
 
 def _format_counts(counts: dict[str, int]) -> tuple[str, ...]:
     return tuple(f"{key}: {value}" for key, value in counts.items())
+
+
+def _format_suppressions(bundle: AnalysisBundle) -> tuple[str, ...]:
+    items: list[str] = []
+    if bundle.summary.suppressed_findings:
+        items.append(f"suppressed findings: {bundle.summary.suppressed_findings}")
+        items.extend(_aggregate_suppression_reasons(bundle))
+    if bundle.summary.expired_suppressions:
+        items.append(f"expired suppression rules: {bundle.summary.expired_suppressions}")
+    return tuple(items)
+
+
+def _aggregate_suppression_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
+    counts: dict[tuple[str, str | None], int] = {}
+    for suppressed in bundle.suppression_report.suppressed_findings:
+        key = (suppressed.reason, suppressed.expires_on)
+        counts[key] = counts.get(key, 0) + 1
+
+    items: list[str] = []
+    for (reason, expires_on), count in counts.items():
+        suffix = f" (expires {expires_on})" if expires_on else ""
+        items.append(f"{reason} ({count} finding(s)){suffix}")
+    return tuple(items)
 
 
 def _truncate_items(items: tuple[str, ...], limit: int, noun: str) -> tuple[str, ...]:
