@@ -30,37 +30,6 @@ jobs:
             : > pr.diff
           fi
 
-      - name: Build PR metadata artifact
-        shell: bash
-        env:
-          PYTHONPATH: src
-        run: |
-          python3 -m veridion.action.metadata_builder \
-            --event-path "${GITHUB_EVENT_PATH}" \
-            --base-ref "${{ github.base_ref }}" \
-            --output-path pr-metadata.json
-
-      - name: Build trust profile artifact
-        shell: bash
-        env:
-          PYTHONPATH: src
-        run: |
-          python3 -m veridion.action.trust_profile_builder \
-            --catalog-path examples/trust/trust-catalog.source.json \
-            --config-path examples/trust/trust-profile.source.json \
-            --output-path trust-profile.json
-
-      - name: Build operational context artifact
-        shell: bash
-        env:
-          PYTHONPATH: src
-        run: |
-          python3 -m veridion.action.operational_context_builder \
-            --event-path "${GITHUB_EVENT_PATH}" \
-            --base-ref "${{ github.base_ref }}" \
-            --trust-profile-path trust-profile.json \
-            --output-path operational-context.json
-
       - name: Prepare baseline worktree
         shell: bash
         run: |
@@ -152,7 +121,8 @@ jobs:
             grype=artifacts/baseline-grype.json
             syft=artifacts/baseline-syft.json
           policy-path: examples/policy-packs/application-team.yaml
-          operational-context-path: operational-context.json
+          trust-profile-source-path: examples/trust/trust-profile.source.json
+          trust-catalog-source-path: examples/trust/trust-catalog.source.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           post-comment: "true"
@@ -185,6 +155,3 @@ jobs:
           path: |
             veridion-pr-comment.md
             veridion-result.json
-            pr-metadata.json
-            trust-profile.json
-            operational-context.json

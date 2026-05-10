@@ -20,6 +20,14 @@ inputs:
     description: "Path to optional versioned operational-context JSON; when provided, metadata-path and trust-profile-path are ignored"
     required: false
     default: ""
+  trust-profile-source-path:
+    description: "Path to repo-local trust-profile source JSON used to build trust-profile and operational-context artifacts inside the action"
+    required: false
+    default: ""
+  trust-catalog-source-path:
+    description: "Path to optional shared trust catalog source JSON layered under trust-profile-source-path inside the action"
+    required: false
+    default: ""
   metadata-path:
     description: "Path to optional pull request metadata JSON for AI attribution; ignored when operational-context-path is provided"
     required: false
@@ -83,6 +91,47 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: Prepare Veridion context
+      id: prepare-context
+      shell: bash
+      env:
+        INPUT_OPERATIONAL_CONTEXT_PATH: ${{ inputs.operational-context-path }}
+        INPUT_TRUST_PROFILE_SOURCE_PATH: ${{ inputs.trust-profile-source-path }}
+        INPUT_TRUST_CATALOG_SOURCE_PATH: ${{ inputs.trust-catalog-source-path }}
+        GITHUB_EVENT_PATH: ${{ github.event_path }}
+        GITHUB_BASE_REF: ${{ github.base_ref }}
+        PYTHONPATH: ${{ github.action_path }}/src
+      run: |
+        set -euo pipefail
+        if [[ -n "${INPUT_OPERATIONAL_CONTEXT_PATH}" ]]; then
+          echo "operational_context_path=${INPUT_OPERATIONAL_CONTEXT_PATH}" >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+        if [[ -z "${INPUT_TRUST_PROFILE_SOURCE_PATH}" ]]; then
+          echo "operational_context_path=" >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+        temp_dir="$(mktemp -d)"
+        trust_profile_path="${temp_dir}/trust-profile.json"
+        operational_context_path="${temp_dir}/operational-context.json"
+        trust_catalog_args=()
+        if [[ -n "${INPUT_TRUST_CATALOG_SOURCE_PATH}" ]]; then
+          trust_catalog_args+=(--catalog-path "${INPUT_TRUST_CATALOG_SOURCE_PATH}")
+        fi
+        python3 -m veridion.action.trust_profile_builder \
+          "${trust_catalog_args[@]}" \
+          --config-path "${INPUT_TRUST_PROFILE_SOURCE_PATH}" \
+          --output-path "${trust_profile_path}"
+        operational_context_args=(
+          --event-path "${GITHUB_EVENT_PATH}"
+          --trust-profile-path "${trust_profile_path}"
+          --output-path "${operational_context_path}"
+        )
+        if [[ -n "${GITHUB_BASE_REF}" ]]; then
+          operational_context_args+=(--base-ref "${GITHUB_BASE_REF}")
+        fi
+        python3 -m veridion.action.operational_context_builder "${operational_context_args[@]}"
+        echo "operational_context_path=${operational_context_path}" >> "${GITHUB_OUTPUT}"
     - name: Run Veridion RDI
       id: run-rdi
       shell: bash
@@ -91,7 +140,7 @@ runs:
         INPUT_REPORTS: ${{ inputs.reports }}
         INPUT_BASELINE_REPORTS: ${{ inputs.baseline-reports }}
         INPUT_POLICY_PATH: ${{ inputs.policy-path }}
-        INPUT_OPERATIONAL_CONTEXT_PATH: ${{ inputs.operational-context-path }}
+        INPUT_OPERATIONAL_CONTEXT_PATH: ${{ steps.prepare-context.outputs.operational_context_path }}
         INPUT_METADATA_PATH: ${{ inputs.metadata-path }}
         INPUT_TRUST_PROFILE_PATH: ${{ inputs.trust-profile-path }}
         INPUT_COMMENT_PATH: ${{ inputs.comment-path }}

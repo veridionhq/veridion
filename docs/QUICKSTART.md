@@ -2,12 +2,39 @@
 
 This is the shortest path to a usable Veridion install in a GitHub repository.
 
-## 1. Bootstrap the repo
+## 1. Install Veridion
+
+For a GitHub-hosted install:
+
+```bash
+python3 -m pip install "git+https://github.com/veridionhq/veridion.git@develop"
+```
+
+Then the CLIs are available as:
+
+```bash
+veridion-bootstrap --help
+veridion-rdi --help
+```
+
+If you prefer module execution after install, this also works:
+
+```bash
+python3 -m veridion.action.bootstrap --help
+```
+
+For contributor/local development only:
+
+```bash
+python3 -m pip install -e /path/to/veridion
+```
+
+## 2. Bootstrap the repo
 
 Run:
 
 ```bash
-python3 -m veridion.action.bootstrap \
+veridion-bootstrap \
   --preset application-team \
   --repo-id your-org/your-repo \
   --service-id your-service \
@@ -23,7 +50,7 @@ This creates:
 
 Use `--preset platform-team` or `--preset regulated-service` when those better match the repo.
 
-## 2. Choose or adjust the policy pack
+## 3. Choose or adjust the policy pack
 
 Start with one of these presets:
 
@@ -33,7 +60,7 @@ Start with one of these presets:
 
 If you are unsure, start with `application-team.yaml`.
 
-## 3. Add repo-local trust inputs
+## 4. Add repo-local trust inputs
 
 Create:
 
@@ -47,7 +74,7 @@ You can start from:
 
 The bootstrap command already creates these files. Adjust them for your repo after the first scaffold.
 
-## 4. Add the workflow
+## 5. Add the workflow
 
 Start from:
 
@@ -61,7 +88,7 @@ If you want to adapt the example manually, minimal edits are:
 - point `--config-path` and `--catalog-path` at your repo-local `.veridion/` files
 - keep `operational-context.json` as the action input
 
-## 5. Open a PR
+## 6. Open a PR
 
 The workflow will:
 
@@ -71,7 +98,7 @@ The workflow will:
 - run scanners on head and base
 - produce a Veridion decision and PR comment
 
-## 6. Tune only after first runs
+## 7. Tune only after first runs
 
 Do not customize everything up front.
 
@@ -92,4 +119,5 @@ Then tune:
 
 - `operational-context.json` is the portable integration contract. Other CI/CD systems should emit that same artifact instead of duplicating Veridion internals.
 - GitHub is currently the reference producer, not the only intended environment.
+- The composite action can build operational context internally from `.veridion/trust-profile.source.json` and `.veridion/trust-catalog.source.json`. External repos do not need local Veridion Python modules in CI.
 - If you want the lowest-friction first install, do not edit the scoring model yet. Start with approvals and recommendations first.

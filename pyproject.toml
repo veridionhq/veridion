@@ -18,6 +18,12 @@ dev = [
   "pytest>=8.0",
 ]
 
+[project.scripts]
+veridion-bootstrap = "veridion.action.bootstrap:main"
+veridion-rdi = "veridion.action.runner:main"
+veridion-build-trust-profile = "veridion.action.trust_profile_builder:main"
+veridion-build-operational-context = "veridion.action.operational_context_builder:main"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

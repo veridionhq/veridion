@@ -211,27 +211,6 @@ jobs:
           git diff --no-ext-diff --unified=0 \
             "${{{{ github.event.pull_request.base.sha }}}}...${{{{ github.event.pull_request.head.sha }}}}" > pr.diff
 
-      - name: Build trust profile artifact
-        shell: bash
-        env:
-          PYTHONPATH: src
-        run: |
-          python3 -m veridion.action.trust_profile_builder \
-            --catalog-path .veridion/trust-catalog.source.json \
-            --config-path .veridion/trust-profile.source.json \
-            --output-path trust-profile.json
-
-      - name: Build operational context artifact
-        shell: bash
-        env:
-          PYTHONPATH: src
-        run: |
-          python3 -m veridion.action.operational_context_builder \
-            --event-path "${{{{ github.event_path }}}}" \
-            --base-ref "${{{{ github.base_ref }}}}" \
-            --trust-profile-path trust-profile.json \
-            --output-path operational-context.json
-
       - name: Prepare baseline worktree
         shell: bash
         run: |
@@ -317,7 +296,8 @@ jobs:
             grype=artifacts/baseline-grype.json
             syft=artifacts/baseline-syft.json
           policy-path: .veridion/policy.yaml
-          operational-context-path: operational-context.json
+          trust-profile-source-path: .veridion/trust-profile.source.json
+          trust-catalog-source-path: .veridion/trust-catalog.source.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           post-comment: "true"
@@ -333,8 +313,6 @@ jobs:
           path: |
             veridion-pr-comment.md
             veridion-result.json
-            trust-profile.json
-            operational-context.json
 """
 
 

@@ -138,19 +138,33 @@ The current `main` branch already includes:
 
 For the shortest path to a first install:
 
-1. Run:
+1. Install Veridion from GitHub in the repo where you want to bootstrap:
 
 ```bash
-python3 -m veridion.action.bootstrap \
+python3 -m pip install "git+https://github.com/veridionhq/veridion.git@develop"
+```
+
+2. Run:
+
+```bash
+veridion-bootstrap \
   --preset application-team \
   --repo-id your-org/your-repo \
   --service-id your-service \
   --team-id your-team
 ```
 
-2. Start with [docs/QUICKSTART.md](docs/QUICKSTART.md)
-3. Pick a starter pack from [examples/policy-packs](examples/policy-packs) if `application-team` is not the right default
-4. Treat `operational-context.json` as the integration contract for future non-GitHub environments
+3. Start with [docs/QUICKSTART.md](docs/QUICKSTART.md)
+4. Pick a starter pack from [examples/policy-packs](examples/policy-packs) if `application-team` is not the right default
+5. Treat `operational-context.json` as the integration contract for future non-GitHub environments
+
+The GitHub Action can build `operational-context.json` internally from repo-local trust source files, so external repos do not need to import Veridion Python modules inside their workflow before the action runs.
+
+For contributor/local development only, an editable install also works:
+
+```bash
+python3 -m pip install -e /path/to/veridion
+```
 
 These metadata-driven AI, historical, and trust-baseline signals are currently non-scoring by default. They affect explanation, recommendations, and approval requirements before they affect score.
 
