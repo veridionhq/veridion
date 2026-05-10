@@ -98,6 +98,12 @@ Exit criteria:
 - Avoids flooding users with pre-existing debt
 - Has a measurable false-positive review loop
 
+Current MVP packaging note:
+
+- the portable engine contract is now a versioned `operational-context` artifact
+- GitHub is the current reference producer, not the only intended environment
+- starter policy packs now exist for application teams, platform teams, and regulated services
+
 ### Phase 2: Product-Market Fit
 
 Objective:

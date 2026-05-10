@@ -1,0 +1,62 @@
+max_severity: critical
+allow_conditional: false
+no_go_below_score: 70
+conditional_go_below_score: 90
+require_approval_for:
+  - production_iac
+  - dependency_changes
+require_platform_owner_for:
+  - production_deployment
+  - large_blast_radius
+  - weak_rollback_readiness
+  - shared_platform_surface
+  - database_migration_surface
+require_service_owner_for:
+  - repo_criticality_high
+  - service_criticality_high
+  - low_team_trust
+  - low_test_coverage
+  - payments_surface
+  - auth_surface
+  - data_surface
+require_sre_owner_for:
+  - historical_instability
+  - flaky_service
+  - after_hours_deploy
+  - missing_oncall
+  - service_fragility
+  - low_team_deploy_safety
+  - shared_platform_surface
+  - database_migration_surface
+  - data_surface
+require_security_owner_for:
+  - sensitive_repo
+  - public_exposure
+  - dependency_reputation_risk
+  - payments_surface
+  - auth_surface
+  - data_surface
+historical_instability_score_penalty: 5
+service_criticality_score_penalty: 4
+sensitive_repo_score_penalty: 4
+ai_signal_score_penalty: 0
+ai_authored_commit_score_penalty: 0
+production_deployment_score_penalty: 4
+after_hours_deploy_score_penalty: 3
+public_exposure_score_penalty: 3
+large_blast_radius_score_penalty: 4
+low_team_trust_score_penalty: 2
+unowned_service_score_penalty: 2
+missing_oncall_score_penalty: 3
+cross_team_change_score_penalty: 1
+repo_fragility_score_penalty: 2
+service_fragility_score_penalty: 3
+low_test_coverage_score_penalty: 2
+weak_rollback_readiness_score_penalty: 3
+dependency_reputation_risk_score_penalty: 2
+low_team_deploy_safety_score_penalty: 2
+shared_platform_surface_score_penalty: 4
+database_migration_surface_score_penalty: 5
+payments_surface_score_penalty: 5
+auth_surface_score_penalty: 4
+data_surface_score_penalty: 4

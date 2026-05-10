@@ -5,12 +5,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from veridion.analysis import AnalysisBundle, build_analysis_bundle
 from veridion.context import (
     resolve_operational_context,
+    resolve_operational_context_artifact,
 )
 from veridion.normalize import NormalizedFinding, normalize_report
 from veridion.policy import PolicyDecision, PolicyConfig, evaluate_release, parse_policy_yaml
@@ -45,6 +47,7 @@ def run_action(
     current_reports: dict[str, str],
     baseline_reports: dict[str, str] | None = None,
     policy_text: str | None = None,
+    operational_context_text: str | None = None,
     metadata_text: str | None = None,
     trust_profile_text: str | None = None,
 ) -> ActionResult:
@@ -54,13 +57,26 @@ def run_action(
     baseline_findings = _load_findings(baseline_reports or {})
     change_context = parse_unified_diff(diff_text)
     policy = parse_policy_yaml(policy_text) if policy_text else PolicyConfig()
-    metadata_payload = _parse_optional_json_text(metadata_text, label="metadata")
-    trust_profile_payload = _parse_optional_json_text(trust_profile_text, label="trust profile")
-    resolved_context = resolve_operational_context(
-        change_context=change_context,
-        metadata_payload=metadata_payload,
-        trust_profile_payload=trust_profile_payload,
-    )
+    operational_context_payload = _parse_optional_json_text(operational_context_text, label="operational context")
+
+    if operational_context_payload:
+        if metadata_text or trust_profile_text:
+            print(
+                "warning: operational-context-path provided; metadata-path and trust-profile-path are ignored",
+                file=sys.stderr,
+            )
+        resolved_context = resolve_operational_context_artifact(
+            change_context=change_context,
+            operational_context_payload=operational_context_payload,
+        )
+    else:
+        metadata_payload = _parse_optional_json_text(metadata_text, label="metadata")
+        trust_profile_payload = _parse_optional_json_text(trust_profile_text, label="trust profile")
+        resolved_context = resolve_operational_context(
+            change_context=change_context,
+            metadata_payload=metadata_payload,
+            trust_profile_payload=trust_profile_payload,
+        )
 
     bundle = build_analysis_bundle(
         current_findings=current_findings,
@@ -93,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     current_reports = _parse_report_mappings(args.report)
     baseline_reports = _parse_report_mappings(args.baseline_report)
     policy_text = Path(args.policy_path).read_text() if args.policy_path else None
+    operational_context_text = Path(args.operational_context_path).read_text() if args.operational_context_path else None
     metadata_text = Path(args.metadata_path).read_text() if args.metadata_path else None
     trust_profile_text = Path(args.trust_profile_path).read_text() if args.trust_profile_path else None
 
@@ -101,6 +118,7 @@ def main(argv: list[str] | None = None) -> int:
         current_reports=current_reports,
         baseline_reports=baseline_reports,
         policy_text=policy_text,
+        operational_context_text=operational_context_text,
         metadata_text=metadata_text,
         trust_profile_text=trust_profile_text,
     )
@@ -134,6 +152,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Baseline scanner report mapping, repeatable",
     )
     parser.add_argument("--policy-path", help="Path to a policy YAML file")
+    parser.add_argument("--operational-context-path", help="Path to optional versioned operational-context JSON")
     parser.add_argument("--metadata-path", help="Path to optional pull request metadata JSON")
     parser.add_argument("--trust-profile-path", help="Path to optional trust profile JSON")
     parser.add_argument("--comment-path", help="Path to write rendered PR comment markdown")

@@ -50,6 +50,17 @@ jobs:
             --config-path examples/trust/trust-profile.source.json \
             --output-path trust-profile.json
 
+      - name: Build operational context artifact
+        shell: bash
+        env:
+          PYTHONPATH: src
+        run: |
+          python3 -m veridion.action.operational_context_builder \
+            --event-path "${GITHUB_EVENT_PATH}" \
+            --base-ref "${{ github.base_ref }}" \
+            --trust-profile-path trust-profile.json \
+            --output-path operational-context.json
+
       - name: Prepare baseline worktree
         shell: bash
         run: |
@@ -140,9 +151,8 @@ jobs:
             semgrep=artifacts/baseline-semgrep.json
             grype=artifacts/baseline-grype.json
             syft=artifacts/baseline-syft.json
-          policy-path: examples/policy/veridion-policy.yaml
-          metadata-path: pr-metadata.json
-          trust-profile-path: trust-profile.json
+          policy-path: examples/policy-packs/application-team.yaml
+          operational-context-path: operational-context.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           post-comment: "true"
@@ -177,3 +187,4 @@ jobs:
             veridion-result.json
             pr-metadata.json
             trust-profile.json
+            operational-context.json

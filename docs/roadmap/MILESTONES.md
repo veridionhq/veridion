@@ -129,7 +129,8 @@ Exit criteria:
 
 Status:
 
-- Complete on `main` for composite action execution, explicit outputs, smoke workflow validation, PR comment posting, and artifact upload
+- Complete on `main` for composite action execution, explicit outputs, smoke workflow validation, PR comment posting, artifact upload, and the versioned `operational-context` integration contract
+- Complete for starter policy packs and first-install quickstart docs
 - Follow-up remains around broader runner compatibility and live install validation outside the repo itself
 
 ## M6: Trust Loop
