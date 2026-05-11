@@ -118,6 +118,7 @@ GitHub PR
 - [Contributing](CONTRIBUTING.md)
 - [Security Policy](SECURITY.md)
 - [License](LICENSE)
+- [Releasing](RELEASING.md)
 
 ## Current Focus
 
