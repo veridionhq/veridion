@@ -61,7 +61,7 @@ Those are merged into one versioned operational-context artifact:
 }
 ```
 
-The repo-local source example lives at [examples/trust/trust-profile.source.json](/Users/lseino/repos/veridion/examples/trust/trust-profile.source.json:1). A shared catalog baseline can also be layered in from [examples/trust/trust-catalog.source.json](/Users/lseino/repos/veridion/examples/trust/trust-catalog.source.json:1), and the workflow now builds `operational-context.json` before running Veridion. That is the integration point other products should target.
+The repo-local source example lives at [examples/trust/trust-profile.source.json](examples/trust/trust-profile.source.json). A shared catalog baseline can also be layered in from [examples/trust/trust-catalog.source.json](examples/trust/trust-catalog.source.json), and the workflow now builds `operational-context.json` before running Veridion. That is the integration point other products should target.
 
 Example output:
 
@@ -111,10 +111,7 @@ GitHub PR
 - [Evaluation Checklist](docs/EVALUATION_CHECKLIST.md)
 - [Design Partner Guide](docs/DESIGN_PARTNER.md)
 - [One-Pager](docs/ONE_PAGER.md)
-- [Deck Outline](docs/DECK_OUTLINE.md)
-- [Screenshot Guide](docs/SCREENSHOT_GUIDE.md)
 - [Operational Context Contract](docs/OPERATIONAL_CONTEXT.md)
-- [Execution Plan](docs/EXECUTION_PLAN.md)
 - [Milestones](docs/roadmap/MILESTONES.md)
 - [Testing Strategy](docs/TESTING_STRATEGY.md)
 - [Support](SUPPORT.md)
