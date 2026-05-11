@@ -2,6 +2,9 @@
 
 Veridion is operational trust infrastructure for autonomous engineering systems.
 
+Website: `https://getveridion.com`
+Docs: `https://getveridion.com/docs/`
+
 The product is not "AI for DevOps" and it is not another scanner wrapper. The wedge is Release Decision Intelligence (RDI): a system that determines whether a software change is safe to reach production, explains why, and recommends the next action.
 
 ## Category
@@ -58,7 +61,7 @@ Those are merged into one versioned operational-context artifact:
 }
 ```
 
-The repo-local source example lives at [examples/trust/trust-profile.source.json](/Users/lseino/repos/veridion/examples/trust/trust-profile.source.json:1). A shared catalog baseline can also be layered in from [examples/trust/trust-catalog.source.json](/Users/lseino/repos/veridion/examples/trust/trust-catalog.source.json:1), and the workflow now builds `operational-context.json` before running Veridion. That is the integration point other products should target.
+The repo-local source example lives at [examples/trust/trust-profile.source.json](examples/trust/trust-profile.source.json). A shared catalog baseline can also be layered in from [examples/trust/trust-catalog.source.json](examples/trust/trust-catalog.source.json), and the workflow now builds `operational-context.json` before running Veridion. That is the integration point other products should target.
 
 Example output:
 
@@ -101,13 +104,20 @@ GitHub PR
 
 ## Repo Docs
 
+- [Website](https://getveridion.com)
+- [Docs Home](https://getveridion.com/docs/)
 - [Quickstart](docs/QUICKSTART.md)
 - [Evaluation Guide](docs/EVALUATION_GUIDE.md)
+- [Evaluation Checklist](docs/EVALUATION_CHECKLIST.md)
 - [Design Partner Guide](docs/DESIGN_PARTNER.md)
+- [One-Pager](docs/ONE_PAGER.md)
 - [Operational Context Contract](docs/OPERATIONAL_CONTEXT.md)
-- [Execution Plan](docs/EXECUTION_PLAN.md)
 - [Milestones](docs/roadmap/MILESTONES.md)
 - [Testing Strategy](docs/TESTING_STRATEGY.md)
+- [Support](SUPPORT.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security Policy](SECURITY.md)
+- [License](LICENSE)
 
 ## Current Focus
 

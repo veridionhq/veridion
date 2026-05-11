@@ -1,0 +1,59 @@
+[build]
+  publish = "site"
+
+# Security headers applied to all pages
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'"
+
+# Docs redirects (301 = permanent, cacheable)
+[[redirects]]
+  from = "/docs/quickstart"
+  to = "https://github.com/veridionhq/veridion/blob/main/docs/QUICKSTART.md"
+  status = 301
+
+[[redirects]]
+  from = "/docs/evaluation"
+  to = "https://github.com/veridionhq/veridion/blob/main/docs/EVALUATION_GUIDE.md"
+  status = 301
+
+[[redirects]]
+  from = "/docs/checklist"
+  to = "https://github.com/veridionhq/veridion/blob/main/docs/EVALUATION_CHECKLIST.md"
+  status = 301
+
+[[redirects]]
+  from = "/docs/design-partner"
+  to = "https://github.com/veridionhq/veridion/blob/main/docs/DESIGN_PARTNER.md"
+  status = 301
+
+[[redirects]]
+  from = "/docs/one-pager"
+  to = "https://github.com/veridionhq/veridion/blob/main/docs/ONE_PAGER.md"
+  status = 301
+
+[[redirects]]
+  from = "/docs/deck"
+  to = "https://github.com/veridionhq/veridion/blob/main/docs/DECK_OUTLINE.md"
+  status = 301
+
+[[redirects]]
+  from = "/docs/screenshots"
+  to = "https://github.com/veridionhq/veridion/blob/main/docs/SCREENSHOT_GUIDE.md"
+  status = 301
+
+[[redirects]]
+  from = "/docs/operational-context"
+  to = "https://github.com/veridionhq/veridion/blob/main/docs/OPERATIONAL_CONTEXT.md"
+  status = 301
+
+# Catch-all: unknown /docs/* paths fall back to GitHub repo docs folder
+[[redirects]]
+  from = "/docs/*"
+  to = "https://github.com/veridionhq/veridion/tree/main/docs"
+  status = 302

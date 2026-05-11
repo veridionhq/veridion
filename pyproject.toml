@@ -8,10 +8,29 @@ version = "0.1.0"
 description = "Operational trust infrastructure for autonomous engineering systems."
 readme = "README.md"
 requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
 authors = [
   { name = "Veridion" }
 ]
+keywords = ["release-decision", "devsecops", "security", "github-actions", "ci", "policy"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Quality Assurance",
+  "Topic :: Security",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://getveridion.com"
+Documentation = "https://getveridion.com/docs/"
+Repository = "https://github.com/veridionhq/veridion"
+"Bug Tracker" = "https://github.com/veridionhq/veridion/issues"
 
 [project.optional-dependencies]
 dev = [
