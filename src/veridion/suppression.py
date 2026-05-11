@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from veridion.normalize import NormalizedFinding
+from veridion.util import optional_string, strict_string
 
 SUPPORTED_SUPPRESSION_SCHEMA_VERSION = 1
 
@@ -67,9 +68,6 @@ class SuppressionRule:
             if not location_path.startswith(self.path_prefix):
                 return False
 
-        if selectors == 0:
-            raise ValueError("suppression rule must contain at least one match selector")
-
         return True
 
 
@@ -100,7 +98,9 @@ def parse_suppressions_payload(payload: dict[str, object]) -> tuple[SuppressionR
     if not payload:
         return ()
 
-    schema_version = payload.get("schema_version", SUPPORTED_SUPPRESSION_SCHEMA_VERSION)
+    if "schema_version" not in payload:
+        raise ValueError("suppression schema_version must be 1")
+    schema_version = payload.get("schema_version")
     if schema_version != SUPPORTED_SUPPRESSION_SCHEMA_VERSION:
         raise ValueError(f"unsupported suppression schema_version: {schema_version}")
 
@@ -112,22 +112,33 @@ def parse_suppressions_payload(payload: dict[str, object]) -> tuple[SuppressionR
     for raw_rule in suppressions:
         if not isinstance(raw_rule, dict):
             raise ValueError("each suppression rule must be an object")
-        reason = _as_string(raw_rule.get("reason"))
+        reason = strict_string(raw_rule.get("reason"))
         if not reason:
             raise ValueError("suppression rule reason is required")
-        rules.append(
-            SuppressionRule(
-                reason=reason,
-                fingerprint=_optional_string(raw_rule.get("fingerprint")),
-                dedup_key=_optional_string(raw_rule.get("dedup_key")),
-                rule_id=_optional_string(raw_rule.get("rule_id")),
-                package_name=_optional_string(raw_rule.get("package_name")),
-                package_version=_optional_string(raw_rule.get("package_version")),
-                finding_type=_optional_string(raw_rule.get("finding_type")),
-                path_prefix=_optional_string(raw_rule.get("path_prefix")),
-                expires_on=_optional_string(raw_rule.get("expires_on")),
-            )
+        rule = SuppressionRule(
+            reason=reason,
+            fingerprint=optional_string(raw_rule.get("fingerprint")),
+            dedup_key=optional_string(raw_rule.get("dedup_key")),
+            rule_id=optional_string(raw_rule.get("rule_id")),
+            package_name=optional_string(raw_rule.get("package_name")),
+            package_version=optional_string(raw_rule.get("package_version")),
+            finding_type=optional_string(raw_rule.get("finding_type")),
+            path_prefix=optional_string(raw_rule.get("path_prefix")),
+            expires_on=optional_string(raw_rule.get("expires_on")),
         )
+        if not any(
+            (
+                rule.fingerprint,
+                rule.dedup_key,
+                rule.rule_id,
+                rule.package_name,
+                rule.package_version,
+                rule.finding_type,
+                rule.path_prefix,
+            )
+        ):
+            raise ValueError("suppression rule must contain at least one match selector")
+        rules.append(rule)
 
     return tuple(rules)
 
@@ -188,16 +199,3 @@ def _match_rule(finding: NormalizedFinding, rules: list[SuppressionRule]) -> Sup
         if rule.matches(finding):
             return rule
     return None
-
-
-def _as_string(value: object) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value.strip()
-    raise ValueError(f"expected string value, got: {value!r}")
-
-
-def _optional_string(value: object) -> str | None:
-    text = _as_string(value)
-    return text or None

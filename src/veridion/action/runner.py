@@ -63,7 +63,7 @@ def run_action(
     suppressions_payload = _parse_optional_json_text(suppression_text, label="suppressions")
     suppression_rules = parse_suppressions_payload(suppressions_payload)
 
-    if operational_context_payload:
+    if operational_context_text:
         if metadata_text or trust_profile_text:
             print(
                 "warning: operational-context-path provided; metadata-path and trust-profile-path are ignored",
