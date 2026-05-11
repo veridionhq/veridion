@@ -51,22 +51,19 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert result.decision.score_adjustments == ()
     assert "## Release Decision Intelligence" in result.comment_markdown
     assert "**Decision:** NO GO" in result.comment_markdown
-    assert "### AI Attribution" in result.comment_markdown
-    assert "### Historical Trust Signals" in result.comment_markdown
-    assert "### Runtime Context" in result.comment_markdown
-    assert "### Ownership Context" in result.comment_markdown
-    assert "### Operational Baseline" in result.comment_markdown
-    assert "### Primary Drivers" in result.comment_markdown
-    assert "### Contextual Risk" in result.comment_markdown
+    assert "### AI Signals" in result.comment_markdown
+    assert "### Key Context" in result.comment_markdown
+    assert "### Why this is blocked" in result.comment_markdown
+    assert "### Why this matters" in result.comment_markdown
     assert "- platform owner" in result.comment_markdown
     assert "- security owner" in result.comment_markdown
     assert "- service owner" in result.comment_markdown
     assert "- SRE owner" in result.comment_markdown
-    assert "- Trust profile: veridionhq/veridion | veridion/rdi-engine | platform-trust" in result.comment_markdown
+    assert "- ownership: owner: payments-owner | team: payments-platform | review: cross team | team trust: degrading" in result.comment_markdown
     assert "Block release until introduced risk is remediated or policy is adjusted" in result.comment_markdown
     assert "Run staging smoke tests for infrastructure-affecting changes" in result.comment_markdown
-    assert "### Required Next Steps" in result.comment_markdown
-    assert "### Advisory Guidance" in result.comment_markdown
+    assert "### What must happen next" in result.comment_markdown
+    assert "### Recommended rollout" in result.comment_markdown
     assert "... " in result.comment_markdown
     assert "more contextual risks" in result.comment_markdown or "more contextual risk" in result.comment_markdown
     assert "more guidance items" in result.comment_markdown or "more guidance item" in result.comment_markdown
@@ -133,13 +130,11 @@ def test_run_action_accepts_versioned_operational_context_artifact() -> None:
         "service_owner",
         "sre_owner",
     )
-    assert "### Historical Trust Signals" in result.comment_markdown
-    assert "### Runtime Context" in result.comment_markdown
-    assert "### Operational Baseline" in result.comment_markdown
-    assert "### Required Next Steps" in result.comment_markdown
-    assert "### Advisory Guidance" in result.comment_markdown
-    assert "### Primary Drivers" in result.comment_markdown
-    assert "### Contextual Risk" in result.comment_markdown
+    assert "### Key Context" in result.comment_markdown
+    assert "### What must happen next" in result.comment_markdown
+    assert "### Recommended rollout" in result.comment_markdown
+    assert "### Why this is blocked" in result.comment_markdown
+    assert "### Why this matters" in result.comment_markdown
     assert "- platform owner" in result.comment_markdown
     assert "- security owner" in result.comment_markdown
     assert "- service owner" in result.comment_markdown
