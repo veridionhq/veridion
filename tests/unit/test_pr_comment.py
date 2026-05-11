@@ -80,7 +80,10 @@ def test_render_pr_comment_handles_clean_change_without_approvals() -> None:
             )
         ),
     )
-    decision = evaluate_release(bundle)
+    decision = evaluate_release(
+        bundle,
+        PolicyConfig(service_criticality_score_penalty=1),
+    )
 
     comment = render_pr_comment(bundle, decision)
 
@@ -129,7 +132,10 @@ def test_render_pr_comment_includes_historical_trust_signals_when_present() -> N
             sensitive_repo=True,
         ),
     )
-    decision = evaluate_release(bundle)
+    decision = evaluate_release(
+        bundle,
+        PolicyConfig(service_criticality_score_penalty=1),
+    )
 
     comment = render_pr_comment(bundle, decision)
 
@@ -267,7 +273,10 @@ def test_render_pr_comment_truncates_verbose_sections() -> None:
             dependency_reputation_risk="medium",
         ),
     )
-    decision = evaluate_release(bundle)
+    decision = evaluate_release(
+        bundle,
+        PolicyConfig(service_criticality_score_penalty=1),
+    )
 
     comment = render_pr_comment(bundle, decision)
 
@@ -280,6 +289,62 @@ def test_render_pr_comment_truncates_verbose_sections() -> None:
     assert "- ... " in comment
     assert "more contextual risks" in comment
     assert "more guidance items" in comment
+
+
+def test_render_pr_comment_compacts_clean_context_heavy_change() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        historical_signals=HistoricalSignals(
+            repo_criticality="high",
+            service_criticality="critical",
+            rollback_rate_30d=0.12,
+            incident_count_30d=3,
+            change_failure_rate_30d=0.18,
+            flaky_service=True,
+            sensitive_repo=True,
+        ),
+        runtime_signals=RuntimeSignals(
+            environment="production",
+            deployment_window="after_hours",
+            public_exposure=True,
+            blast_radius="high",
+            rollout_strategy="canary",
+        ),
+        ownership_signals=OwnershipSignals(
+            service_owner="payments-owner",
+            owning_team="payments-platform",
+            review_coverage="cross_team",
+            team_trust_level="degrading",
+            oncall_defined=True,
+            service_owner_provided=True,
+            oncall_defined_provided=True,
+        ),
+        trust_baseline=TrustBaseline(
+            repo_stability="watch",
+            service_stability="fragile",
+            team_deploy_safety="degrading",
+            test_coverage_level="low",
+            rollback_readiness="partial",
+            dependency_reputation_risk="medium",
+        ),
+    )
+    decision = evaluate_release(bundle)
+
+    comment = render_pr_comment(bundle, decision)
+
+    assert "### Release Context" in comment
+    assert "- historical: repo criticality: high | service criticality: critical | rollback rate: 12%" in comment
+    assert "- runtime: target: production | public exposure | blast radius: high" in comment
+    assert "### Historical Trust Signals" not in comment
+    assert "### Runtime Context" not in comment
+    assert "### Ownership Context" not in comment
+    assert "### Operational Baseline" not in comment
+    assert "### Contextual Risk" not in comment
+    assert "### Advisory Guidance" not in comment
+    assert "### Required Next Steps" in comment
+    assert "- Verify rollback ownership and on-call coverage before deployment" in comment
 
 
 def test_required_next_step_classification_keeps_high_consequence_surface_checks_required() -> None:
