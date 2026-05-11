@@ -1,0 +1,202 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, for example 0.1.0"
+        required: true
+      ref:
+        description: "Git ref to release from. Use main for official releases."
+        required: false
+        default: "main"
+
+permissions:
+  contents: read
+
+jobs:
+  create-tag:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out release ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate version metadata
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import tomllib
+          import os
+
+          version = os.environ["INPUT_VERSION"]
+          ref = os.environ["INPUT_REF"]
+          pyproject = tomllib.loads(Path("pyproject.toml").read_text())
+          project_version = pyproject["project"]["version"]
+          init_text = Path("src/veridion/__init__.py").read_text()
+          match = re.search(r'__version__\s*=\s*"([^"]+)"', init_text)
+          if not match:
+              raise SystemExit("src/veridion/__init__.py is missing __version__")
+          init_version = match.group(1)
+          if version != project_version or version != init_version:
+              raise SystemExit(
+                  f"Version mismatch: input={version}, pyproject={project_version}, __init__={init_version}"
+              )
+          if "-" not in version and ref != "main":
+              raise SystemExit(
+                  f"Official releases must be cut from main, got ref={ref!r} for version {version}"
+              )
+          print(f"Validated release version {version}")
+          PY
+
+      - name: Run test suite
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -e .[dev]
+          python3 -m pytest -q
+
+      - name: Create and push tag
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${INPUT_VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${tag}"
+          git push origin "refs/tags/${tag}"
+
+  release-from-tag:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out release ref
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Determine version
+        id: version
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          tag="${GITHUB_REF_NAME}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Validate version metadata
+        env:
+          INPUT_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import tomllib
+          import os
+
+          version = os.environ["INPUT_VERSION"]
+          pyproject = tomllib.loads(Path("pyproject.toml").read_text())
+          project_version = pyproject["project"]["version"]
+          init_text = Path("src/veridion/__init__.py").read_text()
+          match = re.search(r'__version__\s*=\s*"([^"]+)"', init_text)
+          if not match:
+              raise SystemExit("src/veridion/__init__.py is missing __version__")
+          init_version = match.group(1)
+          if version != project_version or version != init_version:
+              raise SystemExit(
+                  f"Version mismatch: release={version}, pyproject={project_version}, __init__={init_version}"
+              )
+          print(f"Validated release version {version}")
+          PY
+
+      - name: Run test suite
+        run: |
+          set -euo pipefail
+          python3 -m pip install -e .[dev]
+          python3 -m pytest -q
+
+      - name: Build distribution artifacts
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip build
+          python3 -m build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: veridion-dist-${{ steps.version.outputs.tag }}
+          path: dist/*
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            dist/*
+
+  release-from-dispatch:
+    if: github.event_name == 'workflow_dispatch'
+    needs: create-tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out created tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: refs/tags/v${{ inputs.version }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build distribution artifacts
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip build
+          python3 -m build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: veridion-dist-v${{ inputs.version }}
+          path: dist/*
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          generate_release_notes: true
+          files: |
+            dist/*

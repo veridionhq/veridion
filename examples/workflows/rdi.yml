@@ -44,7 +44,7 @@ jobs:
 
       - name: Install Semgrep CLI
         shell: bash
-        run: python3 -m pip install semgrep
+        run: python3 -m pip install "semgrep>=1,<2"
 
       - name: Run Semgrep on current workspace
         shell: bash
@@ -78,7 +78,7 @@ jobs:
           skip-setup-trivy: true
 
       - name: Run Grype on current workspace
-        uses: anchore/scan-action@v7
+        uses: anchore/scan-action@v7.4.0
         with:
           path: .
           output-format: json
@@ -86,7 +86,7 @@ jobs:
           fail-build: false
 
       - name: Run Grype on baseline workspace
-        uses: anchore/scan-action@v7
+        uses: anchore/scan-action@v7.4.0
         with:
           path: ../veridion-base
           output-format: json
@@ -94,7 +94,7 @@ jobs:
           fail-build: false
 
       - name: Install Syft CLI
-        uses: anchore/sbom-action/download-syft@v0
+        uses: anchore/sbom-action/download-syft@v0.24.0
         id: syft
 
       - name: Run Syft on current workspace

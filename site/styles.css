@@ -85,10 +85,6 @@ h1 {
   letter-spacing: -0.035em;
   color: var(--dark-ink);
 }
-h1 em {
-  font-style: normal;
-  color: var(--accent);
-}
 h2 {
   font-size: clamp(2rem, 3.5vw, 3.1rem);
   font-weight: 700;

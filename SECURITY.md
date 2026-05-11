@@ -2,7 +2,7 @@
 
 If you believe you have found a security issue in Veridion itself, please do not open a public issue with exploit details.
 
-For now, report security concerns privately to the maintainers through a direct channel you already have. If a dedicated security contact is published later, this file should be updated to point to it.
+Use GitHub private vulnerability reporting for this repository when it is enabled. If that path is unavailable for any reason, contact the maintainers privately instead of opening a public issue.
 
 When reporting, include:
 

@@ -49,22 +49,29 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
     lines.append("**Summary:** " + " | ".join(summary_parts))
     lines.append("")
 
-    if bundle.ai_attribution.detected:
+    primary_drivers, contextual_risk = _split_reasons(decision.reasons)
+    compact_render = _should_use_compact_render(bundle, decision, primary_drivers, contextual_risk)
+
+    if bundle.ai_attribution.detected and not compact_render:
         lines.extend(_section("AI Attribution", _truncate_items(_format_ai_attribution(bundle), MAX_AI_ITEMS, "detail")))
-    if bundle.historical_signals.elevated_signals:
-        lines.extend(_section("Historical Trust Signals", _format_historical_signals(bundle)))
-    if bundle.runtime_signals.elevated_signals:
-        lines.extend(_section("Runtime Context", _format_runtime_signals(bundle)))
-    if bundle.ownership_signals.elevated_signals:
-        lines.extend(_section("Ownership Context", _format_ownership_signals(bundle)))
-    if bundle.trust_baseline.elevated_signals:
-        lines.extend(_section("Operational Baseline", _format_trust_baseline(bundle)))
+    if compact_render:
+        release_context = _format_release_context(bundle)
+        if release_context:
+            lines.extend(_section("Release Context", release_context))
+    else:
+        if bundle.historical_signals.elevated_signals:
+            lines.extend(_section("Historical Trust Signals", _format_historical_signals(bundle)))
+        if bundle.runtime_signals.elevated_signals:
+            lines.extend(_section("Runtime Context", _format_runtime_signals(bundle)))
+        if bundle.ownership_signals.elevated_signals:
+            lines.extend(_section("Ownership Context", _format_ownership_signals(bundle)))
+        if bundle.trust_baseline.elevated_signals:
+            lines.extend(_section("Operational Baseline", _format_trust_baseline(bundle)))
     if bundle.summary.suppressed_findings or bundle.summary.expired_suppressions:
         lines.extend(_section("Accepted Risk", _format_suppressions(bundle)))
 
-    primary_drivers, contextual_risk = _split_reasons(decision.reasons)
     lines.extend(_section("Primary Drivers", _truncate_items(primary_drivers, MAX_PRIMARY_DRIVER_ITEMS, "driver")))
-    if contextual_risk:
+    if contextual_risk and not compact_render:
         lines.extend(
             _section(
                 "Contextual Risk",
@@ -88,7 +95,7 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
             _truncate_items(required_next_steps, MAX_REQUIRED_NEXT_STEP_ITEMS, "required step"),
         )
     )
-    if advisory_guidance:
+    if advisory_guidance and not compact_render:
         lines.extend(
             _section(
                 "Advisory Guidance",
@@ -123,6 +130,81 @@ def _format_approval(value: str) -> str:
 
 def _format_counts(counts: dict[str, int]) -> tuple[str, ...]:
     return tuple(f"{key}: {value}" for key, value in counts.items())
+
+
+def _should_use_compact_render(
+    bundle: AnalysisBundle,
+    decision: PolicyDecision,
+    primary_drivers: tuple[str, ...],
+    contextual_risk: tuple[str, ...],
+) -> bool:
+    contextual_domains = sum(
+        (
+            bool(bundle.historical_signals.elevated_signals),
+            bool(bundle.runtime_signals.elevated_signals),
+            bool(bundle.ownership_signals.elevated_signals),
+            bool(bundle.trust_baseline.elevated_signals),
+        )
+    )
+    return all(
+        (
+            bundle.summary.introduced_findings == 0,
+            bundle.summary.suppressed_findings == 0,
+            bundle.summary.expired_suppressions == 0,
+            not decision.score_adjustments,
+            primary_drivers == ("no introduced findings detected",),
+            contextual_domains >= 3,
+            len(contextual_risk) >= 5,
+        )
+    )
+
+
+def _format_release_context(bundle: AnalysisBundle) -> tuple[str, ...]:
+    items: list[str] = []
+
+    historical_parts: list[str] = []
+    if bundle.historical_signals.repo_criticality:
+        historical_parts.append(f"repo criticality: {bundle.historical_signals.repo_criticality}")
+    if bundle.historical_signals.service_criticality:
+        historical_parts.append(f"service criticality: {bundle.historical_signals.service_criticality}")
+    if bundle.historical_signals.rollback_rate_30d is not None:
+        historical_parts.append(f"rollback rate: {bundle.historical_signals.rollback_rate_30d:.0%}")
+    if historical_parts:
+        items.append("historical: " + " | ".join(historical_parts))
+
+    runtime_parts: list[str] = []
+    if bundle.runtime_signals.environment:
+        runtime_parts.append(f"target: {bundle.runtime_signals.environment}")
+    if bundle.runtime_signals.public_exposure:
+        runtime_parts.append("public exposure")
+    if bundle.runtime_signals.blast_radius:
+        runtime_parts.append(f"blast radius: {bundle.runtime_signals.blast_radius}")
+    if runtime_parts:
+        items.append("runtime: " + " | ".join(runtime_parts))
+
+    ownership_parts: list[str] = []
+    if bundle.ownership_signals.service_owner:
+        ownership_parts.append(f"service owner: {bundle.ownership_signals.service_owner}")
+    if bundle.ownership_signals.owning_team:
+        ownership_parts.append(f"team: {bundle.ownership_signals.owning_team}")
+    if bundle.ownership_signals.review_coverage:
+        ownership_parts.append(
+            "review coverage: " + bundle.ownership_signals.review_coverage.replace("_", " ")
+        )
+    if ownership_parts:
+        items.append("ownership: " + " | ".join(ownership_parts))
+
+    baseline_parts: list[str] = []
+    if bundle.trust_baseline.service_stability:
+        baseline_parts.append(f"service stability: {bundle.trust_baseline.service_stability}")
+    if bundle.trust_baseline.rollback_readiness:
+        baseline_parts.append(f"rollback readiness: {bundle.trust_baseline.rollback_readiness}")
+    if bundle.trust_baseline.test_coverage_level:
+        baseline_parts.append(f"test coverage: {bundle.trust_baseline.test_coverage_level}")
+    if baseline_parts:
+        items.append("baseline: " + " | ".join(baseline_parts))
+
+    return tuple(items)
 
 
 def _format_suppressions(bundle: AnalysisBundle) -> tuple[str, ...]:
