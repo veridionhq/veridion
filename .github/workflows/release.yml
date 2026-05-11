@@ -15,12 +15,14 @@ on:
         default: "main"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   create-tag:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Check out release ref
         uses: actions/checkout@v4
@@ -36,6 +38,7 @@ jobs:
       - name: Validate version metadata
         env:
           INPUT_VERSION: ${{ inputs.version }}
+          INPUT_REF: ${{ inputs.ref }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -45,6 +48,7 @@ jobs:
           import os
 
           version = os.environ["INPUT_VERSION"]
+          ref = os.environ["INPUT_REF"]
           pyproject = tomllib.loads(Path("pyproject.toml").read_text())
           project_version = pyproject["project"]["version"]
           init_text = Path("src/veridion/__init__.py").read_text()
@@ -55,6 +59,10 @@ jobs:
           if version != project_version or version != init_version:
               raise SystemExit(
                   f"Version mismatch: input={version}, pyproject={project_version}, __init__={init_version}"
+              )
+          if "-" not in version and ref != "main":
+              raise SystemExit(
+                  f"Official releases must be cut from main, got ref={ref!r} for version {version}"
               )
           print(f"Validated release version {version}")
           PY
@@ -80,6 +88,8 @@ jobs:
   release-from-tag:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Check out release ref
         uses: actions/checkout@v4
@@ -127,12 +137,16 @@ jobs:
           print(f"Validated release version {version}")
           PY
 
+      - name: Run test suite
+        run: |
+          set -euo pipefail
+          python3 -m pip install -e .[dev]
+          python3 -m pytest -q
+
       - name: Build distribution artifacts
         run: |
           set -euo pipefail
           python3 -m pip install --upgrade pip build
-          python3 -m pip install -e .[dev]
-          python3 -m pytest -q
           python3 -m build
 
       - name: Upload build artifacts
@@ -153,6 +167,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     needs: create-tag
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Check out created tag
         uses: actions/checkout@v4
@@ -169,8 +185,6 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m pip install --upgrade pip build
-          python3 -m pip install -e .[dev]
-          python3 -m pytest -q
           python3 -m build
 
       - name: Upload build artifacts
