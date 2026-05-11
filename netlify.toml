@@ -1,0 +1,42 @@
+[build]
+  publish = "site"
+
+[[redirects]]
+  from = "/docs/quickstart"
+  to = "https://github.com/veridionhq/veridion/blob/main/docs/QUICKSTART.md"
+  status = 302
+
+[[redirects]]
+  from = "/docs/evaluation"
+  to = "https://github.com/veridionhq/veridion/blob/main/docs/EVALUATION_GUIDE.md"
+  status = 302
+
+[[redirects]]
+  from = "/docs/checklist"
+  to = "https://github.com/veridionhq/veridion/blob/main/docs/EVALUATION_CHECKLIST.md"
+  status = 302
+
+[[redirects]]
+  from = "/docs/design-partner"
+  to = "https://github.com/veridionhq/veridion/blob/main/docs/DESIGN_PARTNER.md"
+  status = 302
+
+[[redirects]]
+  from = "/docs/one-pager"
+  to = "https://github.com/veridionhq/veridion/blob/main/docs/ONE_PAGER.md"
+  status = 302
+
+[[redirects]]
+  from = "/docs/deck"
+  to = "https://github.com/veridionhq/veridion/blob/main/docs/DECK_OUTLINE.md"
+  status = 302
+
+[[redirects]]
+  from = "/docs/screenshots"
+  to = "https://github.com/veridionhq/veridion/blob/main/docs/SCREENSHOT_GUIDE.md"
+  status = 302
+
+[[redirects]]
+  from = "/docs/operational-context"
+  to = "https://github.com/veridionhq/veridion/blob/main/docs/OPERATIONAL_CONTEXT.md"
+  status = 302

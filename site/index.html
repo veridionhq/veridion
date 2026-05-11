@@ -1,171 +1,422 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Veridion | Operational Trust For Software Delivery</title>
-    <meta
-      name="description"
-      content="Veridion is the operational trust layer for autonomous software delivery. It determines whether a change should safely ship."
-    />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;700&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <div class="page-shell">
-      <header class="hero">
-        <div class="hero-copy">
-          <p class="eyebrow">Operational Trust Infrastructure</p>
-          <h1>AI increases software velocity. Veridion governs operational trust.</h1>
-          <p class="hero-text">
-            Veridion is the release decision system for increasingly autonomous engineering teams.
-            It answers one question clearly: <strong>should this change ship?</strong>
-          </p>
-          <div class="hero-actions">
-            <a href="../README.md" class="button button-primary">Read the README</a>
-            <a href="../docs/QUICKSTART.md" class="button button-secondary">Try the Quickstart</a>
-          </div>
-        </div>
-        <div class="hero-panel">
-          <p class="panel-label">Current proof</p>
-          <ul class="panel-list">
-            <li><span>GO</span><small>Docs-only change</small></li>
-            <li><span>CONDITIONAL GO</span><small>Introduced code risk</small></li>
-            <li><span>NO GO</span><small>Risky dependency + ingress + IAM</small></li>
-            <li><span>CONDITIONAL GO</span><small>Accepted-risk exception handling</small></li>
-          </ul>
-        </div>
-      </header>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Veridion | The Operational Trust Layer For Software Delivery</title>
+  <meta name="description" content="Veridion is the operational trust layer for autonomous software delivery. It determines whether a software change should safely ship." />
+  <meta property="og:title" content="Veridion | The Operational Trust Layer For Software Delivery" />
+  <meta property="og:description" content="AI increases software velocity. Veridion governs operational trust." />
+  <meta property="og:type" content="website" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
 
-      <main>
-        <section class="section">
-          <div class="section-heading">
-            <p class="eyebrow">The wedge</p>
-            <h2>Veridion is not another scanner wrapper.</h2>
-          </div>
-          <div class="grid three-up">
-            <article class="card">
-              <h3>What changed?</h3>
-              <p>
-                Veridion understands application code, dependencies, Dockerfiles, Terraform,
-                Kubernetes, Helm, GitHub Actions, IAM policy, network changes, and migrations.
-              </p>
-            </article>
-            <article class="card">
-              <h3>What risk was introduced?</h3>
-              <p>
-                The system isolates new risk from pre-existing backlog so teams can reason about
-                the current pull request instead of drowning in legacy noise.
-              </p>
-            </article>
-            <article class="card">
-              <h3>What should happen next?</h3>
-              <p>
-                Veridion produces a decision, confidence level, approvals, and next steps rather
-                than a raw pile of findings.
-              </p>
-            </article>
-          </div>
-        </section>
-
-        <section class="section statement-band">
-          <p>
-            Most tools stop at <em>finding problems</em>. Veridion is built to
-            <strong>govern what can safely reach production.</strong>
-          </p>
-        </section>
-
-        <section class="section">
-          <div class="section-heading">
-            <p class="eyebrow">Why now</p>
-            <h2>The control layer is the missing layer.</h2>
-          </div>
-          <div class="grid two-up">
-            <article class="card">
-              <h3>AI is accelerating delivery faster than trust systems can keep up.</h3>
-              <ul class="plain-list">
-                <li>More generated code</li>
-                <li>More autonomous remediation</li>
-                <li>More infrastructure change</li>
-                <li>More deployment frequency</li>
-              </ul>
-            </article>
-            <article class="card">
-              <h3>That creates a control problem, not just a productivity problem.</h3>
-              <ul class="plain-list">
-                <li>What changed?</li>
-                <li>What did it introduce?</li>
-                <li>What is the blast radius?</li>
-                <li>Should this ship?</li>
-              </ul>
-            </article>
-          </div>
-        </section>
-
-        <section class="section">
-          <div class="section-heading">
-            <p class="eyebrow">Current product</p>
-            <h2>What the MVP already does</h2>
-          </div>
-          <div class="grid three-up">
-            <article class="card">
-              <h3>Introduced-only release decisions</h3>
-              <p>
-                Multi-scanner normalization, deduplication, baseline comparison, and deterministic
-                release decisioning.
-              </p>
-            </article>
-            <article class="card">
-              <h3>Blast-radius and policy intelligence</h3>
-              <p>
-                Change-surface inference, operational context, approvals, score adjustments, and
-                accepted-risk suppression governance.
-              </p>
-            </article>
-            <article class="card">
-              <h3>Portable integration contract</h3>
-              <p>
-                GitHub is the current wedge, but the engine already accepts a versioned
-                operational-context artifact for future environments.
-              </p>
-            </article>
-          </div>
-        </section>
-
-        <section class="section">
-          <div class="section-heading">
-            <p class="eyebrow">Evaluate</p>
-            <h2>How to judge whether Veridion is working</h2>
-          </div>
-          <div class="grid two-up">
-            <article class="card">
-              <h3>Good output should feel like a decision memo</h3>
-              <p>
-                Primary drivers, contextual risk, approvals, and required next steps should be
-                scannable without opening raw scanner logs.
-              </p>
-            </article>
-            <article class="card">
-              <h3>Accepted risk should stay visible</h3>
-              <p>
-                A suppression should never erase the truth. It should downgrade cleanly, remain
-                visible, and preserve accountability.
-              </p>
-            </article>
-          </div>
-          <div class="link-grid">
-            <a href="../docs/EVALUATION_GUIDE.md" class="link-card">Evaluation Guide</a>
-            <a href="../docs/DESIGN_PARTNER.md" class="link-card">Design Partner Guide</a>
-            <a href="../docs/OPERATIONAL_CONTEXT.md" class="link-card">Operational Context Contract</a>
-            <a href="../docs/QUICKSTART.md" class="link-card">Quickstart</a>
-          </div>
-        </section>
-      </main>
+<!-- NAV -->
+<nav class="nav" id="nav">
+  <div class="nav-inner">
+    <a href="/" class="nav-brand">
+      <span class="nav-logo" aria-hidden="true">V</span>
+      Veridion
+    </a>
+    <div class="nav-right">
+      <a href="https://github.com/veridionhq/veridion" class="nav-link" target="_blank" rel="noopener noreferrer">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        GitHub
+      </a>
+      <a href="/docs/quickstart" class="nav-cta">Get started</a>
     </div>
-  </body>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-glow" aria-hidden="true"></div>
+  <div class="hero-grid-overlay" aria-hidden="true"></div>
+  <div class="hero-inner">
+    <div class="hero-copy">
+      <div class="hero-badge">
+        <span class="badge-dot" aria-hidden="true"></span>
+        PR-Level Release Decision Intelligence
+      </div>
+      <h1>AI increases software velocity.<br><em>Veridion</em> governs operational trust.</h1>
+      <p class="hero-sub">
+        Veridion is the release decision system for increasingly autonomous engineering teams.
+        It determines whether a software change should safely ship, explains why, and prescribes what happens next.
+      </p>
+      <div class="hero-actions">
+        <a href="/docs/evaluation" class="btn btn--primary">
+          Evaluate Veridion
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2.5 7h9M8 3.5 11.5 7 8 10.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <a href="/docs/quickstart" class="btn btn--ghost">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+          Read the quickstart
+        </a>
+      </div>
+    </div>
+
+    <div class="hero-terminal" id="hero-terminal" aria-label="Example Veridion RDI output for a pull request">
+      <div class="terminal-bar">
+        <div class="terminal-dots" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <span class="terminal-title">veridion &mdash; PR #247 &mdash; feat/add-payments-endpoint</span>
+        <span class="terminal-badge terminal-badge--conditional">CONDITIONAL GO</span>
+      </div>
+      <div class="terminal-body" id="terminal-body" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
+<!-- SCANNER BAR -->
+<div class="scanner-bar" aria-label="Supported scanners">
+  <span class="scanner-label">Ingests</span>
+  <ul class="scanner-list" role="list">
+    <li>Semgrep</li>
+    <li>Trivy</li>
+    <li>Grype</li>
+    <li>Syft</li>
+    <li>GitHub Actions</li>
+  </ul>
+</div>
+
+<!-- MAIN CONTENT -->
+<main>
+
+  <!-- THE WEDGE -->
+  <section class="content-section reveal" aria-labelledby="wedge-heading">
+    <div class="section-meta">
+      <p class="eyebrow">The wedge</p>
+      <h2 id="wedge-heading">The control layer,<br>not the scanner layer.</h2>
+      <p class="section-intro">Most tools return findings and leave the decision to humans. Veridion closes that gap.</p>
+    </div>
+    <div class="cards-3">
+      <article class="card reveal-child">
+        <p class="card-num" aria-hidden="true">01</p>
+        <h3>What changed?</h3>
+        <p>Application code, dependencies, Dockerfiles, Terraform, Kubernetes, Helm, GitHub Actions, IAM policy, network exposure, and database migrations — all classified directly from the diff.</p>
+      </article>
+      <article class="card reveal-child">
+        <p class="card-num" aria-hidden="true">02</p>
+        <h3>What risk was introduced?</h3>
+        <p>Veridion isolates risk introduced <em>in this PR</em> from pre-existing backlog. Teams reason about the current change, not the entire historical scanner backlog.</p>
+      </article>
+      <article class="card reveal-child">
+        <p class="card-num" aria-hidden="true">03</p>
+        <h3>What should happen next?</h3>
+        <p>A scored decision, confidence level, explicit approvals, and required next steps. A release decision memo posted to the PR, not a raw finding dump.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- STATEMENT BAND -->
+  <div class="statement reveal">
+    <p>Most tools stop at <em>finding problems.</em><br>Veridion governs <strong>what can safely reach production.</strong></p>
+  </div>
+
+  <!-- WHY NOW -->
+  <section class="content-section reveal" aria-labelledby="why-heading">
+    <div class="section-meta">
+      <p class="eyebrow">Why now</p>
+      <h2 id="why-heading">AI is accelerating delivery.<br>Trust is not keeping up.</h2>
+    </div>
+    <div class="cards-2">
+      <article class="tension-card tension-card--accel reveal-child">
+        <p class="tension-label">The acceleration</p>
+        <ul role="list">
+          <li>AI-generated code at higher volume and velocity</li>
+          <li>Autonomous dependency upgrades and remediation</li>
+          <li>Infrastructure changes from non-infrastructure engineers</li>
+          <li>Deploy frequency outpacing manual review capacity</li>
+        </ul>
+      </article>
+      <article class="tension-card tension-card--control reveal-child">
+        <p class="tension-label">The control problem</p>
+        <ul role="list">
+          <li>What exactly changed and what does it touch?</li>
+          <li>What new risk did this PR actually introduce?</li>
+          <li>What is the blast radius if this goes wrong?</li>
+          <li>Should this ship, and who needs to approve it?</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="content-section reveal" aria-labelledby="how-heading">
+    <div class="section-meta">
+      <p class="eyebrow">How it works</p>
+      <h2 id="how-heading">One action.<br>One decision.</h2>
+    </div>
+    <ol class="steps" role="list">
+      <li class="step reveal-child">
+        <div class="step-num" aria-hidden="true">1</div>
+        <div class="step-body">
+          <h3>Scan on every PR</h3>
+          <p>Semgrep, Trivy, Grype, and Syft run against both head and baseline. One bootstrap command generates the workflow with policy, trust inputs, and accepted-risk support.</p>
+        </div>
+      </li>
+      <li class="step reveal-child">
+        <div class="step-num" aria-hidden="true">2</div>
+        <div class="step-body">
+          <h3>Normalize, deduplicate, attribute</h3>
+          <p>Scanner output is unified into one schema. Cross-scanner duplicates collapse. Each finding is attributed as introduced or pre-existing against the baseline.</p>
+        </div>
+      </li>
+      <li class="step reveal-child">
+        <div class="step-num" aria-hidden="true">3</div>
+        <div class="step-body">
+          <h3>Score against your policy</h3>
+          <p>Change surface, blast radius, operational context, accepted risk, and policy are weighed to produce a deterministic 0-100 score and release verdict.</p>
+        </div>
+      </li>
+      <li class="step reveal-child">
+        <div class="step-num" aria-hidden="true">4</div>
+        <div class="step-body">
+          <h3>Decision posted to the PR</h3>
+          <p>GO, CONDITIONAL GO, or NO GO — with primary drivers, required approvals, and next steps. A decision memo, not a raw scanner log.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- DECISION EXAMPLES -->
+  <section class="content-section reveal" aria-labelledby="decisions-heading">
+    <div class="section-meta">
+      <p class="eyebrow">Decision examples</p>
+      <h2 id="decisions-heading">Every decision<br>is explainable.</h2>
+    </div>
+    <div class="decisions">
+      <article class="decision-card decision-card--go reveal-child">
+        <div class="decision-top">
+          <span class="decision-verdict decision-verdict--go">GO</span>
+          <span class="decision-score" aria-label="Score 94">94</span>
+        </div>
+        <p class="decision-scenario">Docs-only change</p>
+        <p class="decision-body">No introduced findings. Low-friction approval path. High-confidence release decision.</p>
+      </article>
+      <article class="decision-card decision-card--conditional reveal-child">
+        <div class="decision-top">
+          <span class="decision-verdict decision-verdict--conditional">CONDITIONAL GO</span>
+          <span class="decision-score" aria-label="Score 74">74</span>
+        </div>
+        <p class="decision-scenario">Code risk introduced</p>
+        <p class="decision-body">Introduced code risk pushes the change into a controlled release path instead of an automatic block.</p>
+      </article>
+      <article class="decision-card decision-card--nogo reveal-child">
+        <div class="decision-top">
+          <span class="decision-verdict decision-verdict--nogo">NO GO</span>
+          <span class="decision-score" aria-label="Score 38">38</span>
+        </div>
+        <p class="decision-scenario">Dependency + IAM + ingress</p>
+        <p class="decision-body">Critical dependency risk plus IAM and ingress exposure. Release blocked pending remediation and review.</p>
+      </article>
+      <article class="decision-card decision-card--conditional reveal-child">
+        <div class="decision-top">
+          <span class="decision-verdict decision-verdict--conditional">CONDITIONAL GO</span>
+          <span class="decision-score" aria-label="Score 81">81</span>
+        </div>
+        <p class="decision-scenario">Accepted-risk suppression</p>
+        <p class="decision-body">Known risk accepted temporarily with reason and expiry. Visibility stays intact and the release posture remains cautious.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- MVP FEATURES -->
+  <section class="content-section reveal" aria-labelledby="mvp-heading">
+    <div class="section-meta">
+      <p class="eyebrow">Current product</p>
+      <h2 id="mvp-heading">What the MVP<br>already proves.</h2>
+    </div>
+    <div class="cards-3">
+      <article class="card reveal-child">
+        <h3>Introduced-only intelligence</h3>
+        <p>Multi-scanner normalization, deduplication, baseline comparison, and deterministic release decisioning. Legacy debt stays separate from current change risk.</p>
+      </article>
+      <article class="card reveal-child">
+        <h3>Blast-radius and policy intelligence</h3>
+        <p>Change-surface inference across multiple risk domains. Configurable approvals, score adjustments, and accepted-risk exception handling with expiry governance.</p>
+      </article>
+      <article class="card reveal-child">
+        <h3>Portable integration contract</h3>
+        <p>GitHub Actions is the current wedge. The engine already accepts a versioned operational-context artifact designed for future CI systems, deployment pipelines, and autonomous delivery paths.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- EVALUATE -->
+  <section class="content-section reveal" aria-labelledby="eval-heading">
+    <div class="section-meta section-meta--centered">
+      <p class="eyebrow">Evaluate</p>
+      <h2 id="eval-heading">How to judge<br>whether it is working.</h2>
+    </div>
+    <div class="cards-2">
+      <article class="card reveal-child">
+        <h3>Output should feel like a decision memo</h3>
+        <p>Primary drivers, contextual risk, required approvals, and next steps should be scannable without opening a single raw scanner log.</p>
+      </article>
+      <article class="card reveal-child">
+        <h3>Accepted risk should stay visible</h3>
+        <p>A suppression should never erase the truth. It should downgrade cleanly, stay visible in the PR comment, and preserve accountability with an expiry date.</p>
+      </article>
+    </div>
+    <div class="doc-links reveal-child" role="list">
+      <a href="/docs/quickstart" class="doc-link" role="listitem">
+        Quickstart
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2.5 7h9M8 3.5 11.5 7 8 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a href="/docs/evaluation" class="doc-link" role="listitem">
+        Evaluation Guide
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2.5 7h9M8 3.5 11.5 7 8 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a href="/docs/design-partner" class="doc-link" role="listitem">
+        Design Partner Guide
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2.5 7h9M8 3.5 11.5 7 8 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a href="/docs/operational-context" class="doc-link" role="listitem">
+        Operational Context
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2.5 7h9M8 3.5 11.5 7 8 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section reveal" id="quickstart" aria-labelledby="cta-heading">
+    <div class="cta-inner">
+      <div class="cta-glow" aria-hidden="true"></div>
+      <h2 id="cta-heading">Start with evaluation.<br>Move to live install when it earns it.</h2>
+      <p>Read the evaluation guide if you want to test the wedge with real PR scenarios. Use the bootstrap command when you are ready to run Veridion in a live repository and see how it governs deployment trust end to end.</p>
+      <div class="cta-code" role="group" aria-label="Bootstrap command">
+        <code id="cta-code-text">veridion-bootstrap --preset application-team</code>
+        <button class="copy-btn" id="copy-btn" aria-label="Copy command to clipboard" title="Copy">
+          <svg class="icon-copy" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+          <svg class="icon-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div class="hero-actions">
+        <a href="/docs/evaluation" class="btn btn--primary btn--large">
+          Read the evaluation guide
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2.5 7h9M8 3.5 11.5 7 8 10.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <a href="/docs/design-partner" class="btn btn--ghost btn--large">
+          Design partner guide
+        </a>
+        <a href="/docs/quickstart" class="btn btn--ghost btn--large">
+          Read the quickstart
+        </a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="footer-inner">
+    <span class="footer-brand">Veridion</span>
+    <span class="footer-tagline">AI increases software velocity. Veridion governs operational trust.</span>
+    <a href="https://github.com/veridionhq/veridion" class="footer-gh" target="_blank" rel="noopener noreferrer">
+      GitHub
+      <svg width="11" height="11" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2.5 7h9M8 3.5 11.5 7 8 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </a>
+  </div>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Terminal animation ──────────────────────────────────────────
+  var LINES = [
+    { t: '## Release Decision Intelligence', c: 'h2' },
+    { t: '', c: 'blank' },
+    { t: 'Decision:   CONDITIONAL GO', c: 'decision-cond' },
+    { t: 'RDI Score:  74', c: 'kv' },
+    { t: 'Confidence: HIGH', c: 'kv' },
+    { t: '', c: 'blank' },
+    { t: 'Summary: Introduced: 3 | Existing: 47 | Suppressed: 1 | Files: 12', c: 'summary' },
+    { t: '', c: 'blank' },
+    { t: '### Primary Drivers', c: 'h3' },
+    { t: '- 2 high-severity findings introduced (code)', c: 'li' },
+    { t: '- payments surface touched', c: 'li' },
+    { t: '- policy no_go threshold: 60 (score: 74)', c: 'li' },
+    { t: '', c: 'blank' },
+    { t: '### Required Approvals', c: 'h3' },
+    { t: '- Security owner', c: 'li' },
+    { t: '', c: 'blank' },
+    { t: '### Required Next Steps', c: 'h3' },
+    { t: '- Prioritize remediation of introduced findings', c: 'li' },
+    { t: '- Verify payment-impact before merge', c: 'li' },
+    { t: '- Verify rollback ownership and on-call coverage', c: 'li' },
+  ];
+
+  var terminalBody = document.getElementById('terminal-body');
+  var terminalStarted = false;
+
+  function renderTerminal() {
+    if (terminalStarted) return;
+    terminalStarted = true;
+    terminalBody.innerHTML = '';
+
+    LINES.forEach(function (line, i) {
+      var el = document.createElement('div');
+      el.className = 'tl tl--' + line.c;
+      el.textContent = line.t || '\u00a0';
+      el.style.animationDelay = (i * 65) + 'ms';
+      terminalBody.appendChild(el);
+    });
+
+    var cursor = document.createElement('span');
+    cursor.className = 'terminal-cursor';
+    cursor.setAttribute('aria-hidden', 'true');
+    cursor.textContent = '\u2588';
+    terminalBody.appendChild(cursor);
+  }
+
+  var tObs = new IntersectionObserver(function (entries) {
+    if (entries[0].isIntersecting) {
+      setTimeout(renderTerminal, 200);
+      tObs.disconnect();
+    }
+  }, { threshold: 0.15 });
+  tObs.observe(document.getElementById('hero-terminal'));
+
+  // ── Scroll reveal ───────────────────────────────────────────────
+  var revealObs = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (!entry.isIntersecting) return;
+      entry.target.classList.add('is-revealed');
+      var children = entry.target.querySelectorAll('.reveal-child');
+      children.forEach(function (child, i) {
+        setTimeout(function () { child.classList.add('is-revealed'); }, i * 90);
+      });
+    });
+  }, { threshold: 0.07, rootMargin: '0px 0px -28px 0px' });
+
+  document.querySelectorAll('.reveal').forEach(function (el) {
+    revealObs.observe(el);
+  });
+
+  // ── Nav scroll shadow ───────────────────────────────────────────
+  var nav = document.getElementById('nav');
+  window.addEventListener('scroll', function () {
+    nav.classList.toggle('nav--scrolled', window.scrollY > 60);
+  }, { passive: true });
+
+  // ── Copy button ─────────────────────────────────────────────────
+  var copyBtn = document.getElementById('copy-btn');
+  var codeText = document.getElementById('cta-code-text');
+  copyBtn.addEventListener('click', function () {
+    navigator.clipboard.writeText(codeText.textContent.trim()).then(function () {
+      copyBtn.classList.add('copied');
+      setTimeout(function () { copyBtn.classList.remove('copied'); }, 2200);
+    });
+  });
+}());
+</script>
+</body>
 </html>

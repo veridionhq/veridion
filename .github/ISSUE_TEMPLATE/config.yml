@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Veridion Docs
+    url: https://getveridion.com/docs/
+    about: Start with the public docs before opening an issue.
+  - name: Security Reporting
+    url: https://github.com/veridionhq/veridion/blob/main/SECURITY.md
+    about: Follow the security policy for sensitive reports.

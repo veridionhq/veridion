@@ -2,6 +2,9 @@
 
 Veridion is operational trust infrastructure for autonomous engineering systems.
 
+Website: `https://getveridion.com`
+Docs: `https://getveridion.com/docs/`
+
 The product is not "AI for DevOps" and it is not another scanner wrapper. The wedge is Release Decision Intelligence (RDI): a system that determines whether a software change is safe to reach production, explains why, and recommends the next action.
 
 ## Category
@@ -101,6 +104,8 @@ GitHub PR
 
 ## Repo Docs
 
+- [Website](https://getveridion.com)
+- [Docs Home](https://getveridion.com/docs/)
 - [Quickstart](docs/QUICKSTART.md)
 - [Evaluation Guide](docs/EVALUATION_GUIDE.md)
 - [Evaluation Checklist](docs/EVALUATION_CHECKLIST.md)
@@ -112,6 +117,10 @@ GitHub PR
 - [Execution Plan](docs/EXECUTION_PLAN.md)
 - [Milestones](docs/roadmap/MILESTONES.md)
 - [Testing Strategy](docs/TESTING_STRATEGY.md)
+- [Support](SUPPORT.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security Policy](SECURITY.md)
+- [License](LICENSE)
 
 ## Current Focus
 
