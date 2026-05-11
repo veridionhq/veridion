@@ -10,9 +10,9 @@ COMMENT_MARKER_START = "<!-- veridion:rdi:start -->"
 COMMENT_MARKER_END = "<!-- veridion:rdi:end -->"
 MAX_AI_ITEMS = 3
 MAX_PRIMARY_DRIVER_ITEMS = 6
-MAX_CONTEXTUAL_RISK_ITEMS = 5
+MAX_CONTEXTUAL_RISK_ITEMS = 4
 MAX_REQUIRED_NEXT_STEP_ITEMS = 6
-MAX_ADVISORY_GUIDANCE_ITEMS = 6
+MAX_ADVISORY_GUIDANCE_ITEMS = 4
 REQUIRED_NEXT_STEP_PREFIXES = (
     "Block release",
     "Run staging smoke tests",
@@ -53,28 +53,23 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
     compact_render = _should_use_compact_render(bundle, decision, primary_drivers, contextual_risk)
 
     if bundle.ai_attribution.detected and not compact_render:
-        lines.extend(_section("AI Attribution", _truncate_items(_format_ai_attribution(bundle), MAX_AI_ITEMS, "detail")))
-    if compact_render:
-        release_context = _format_release_context(bundle)
-        if release_context:
-            lines.extend(_section("Release Context", release_context))
-    else:
-        if bundle.historical_signals.elevated_signals:
-            lines.extend(_section("Historical Trust Signals", _format_historical_signals(bundle)))
-        if bundle.runtime_signals.elevated_signals:
-            lines.extend(_section("Runtime Context", _format_runtime_signals(bundle)))
-        if bundle.ownership_signals.elevated_signals:
-            lines.extend(_section("Ownership Context", _format_ownership_signals(bundle)))
-        if bundle.trust_baseline.elevated_signals:
-            lines.extend(_section("Operational Baseline", _format_trust_baseline(bundle)))
+        lines.extend(_section("AI Signals", _truncate_items(_format_ai_attribution(bundle), MAX_AI_ITEMS, "detail")))
+    key_context = _format_key_context(bundle, compact=compact_render)
+    if key_context:
+        lines.extend(_section("Key Context", key_context))
     if bundle.summary.suppressed_findings or bundle.summary.expired_suppressions:
         lines.extend(_section("Accepted Risk", _format_suppressions(bundle)))
 
-    lines.extend(_section("Primary Drivers", _truncate_items(primary_drivers, MAX_PRIMARY_DRIVER_ITEMS, "driver")))
+    lines.extend(
+        _section(
+            _drivers_title(decision.decision),
+            _truncate_items(primary_drivers, MAX_PRIMARY_DRIVER_ITEMS, "driver"),
+        )
+    )
     if contextual_risk and not compact_render:
         lines.extend(
             _section(
-                "Contextual Risk",
+                "Why this matters",
                 _truncate_items(contextual_risk, MAX_CONTEXTUAL_RISK_ITEMS, "contextual risk"),
             )
         )
@@ -91,19 +86,20 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
     )
     lines.extend(
         _section(
-            "Required Next Steps",
+            "What must happen next",
             _truncate_items(required_next_steps, MAX_REQUIRED_NEXT_STEP_ITEMS, "required step"),
         )
     )
     if advisory_guidance and not compact_render:
         lines.extend(
             _section(
-                "Advisory Guidance",
+                "Recommended rollout",
                 _truncate_items(advisory_guidance, MAX_ADVISORY_GUIDANCE_ITEMS, "guidance item"),
             )
         )
-    lines.extend(_section("Introduced Severity", _format_counts(bundle.summary.introduced_by_severity)))
-    lines.extend(_section("Introduced Finding Types", _format_counts(bundle.summary.introduced_by_finding_type)))
+    if bundle.summary.introduced_findings:
+        lines.extend(_section("Introduced Severity", _format_counts(bundle.summary.introduced_by_severity)))
+        lines.extend(_section("Introduced Finding Types", _format_counts(bundle.summary.introduced_by_finding_type)))
 
     return wrap_pr_comment("\n".join(lines).rstrip() + "\n")
 
@@ -130,6 +126,14 @@ def _format_approval(value: str) -> str:
 
 def _format_counts(counts: dict[str, int]) -> tuple[str, ...]:
     return tuple(f"{key}: {value}" for key, value in counts.items())
+
+
+def _drivers_title(decision: str) -> str:
+    if decision == "NO GO":
+        return "Why this is blocked"
+    if decision == "CONDITIONAL GO":
+        return "Why this needs review"
+    return "Why this is allowed"
 
 
 def _should_use_compact_render(
@@ -201,6 +205,73 @@ def _format_release_context(bundle: AnalysisBundle) -> tuple[str, ...]:
         baseline_parts.append(f"rollback readiness: {bundle.trust_baseline.rollback_readiness}")
     if bundle.trust_baseline.test_coverage_level:
         baseline_parts.append(f"test coverage: {bundle.trust_baseline.test_coverage_level}")
+    if baseline_parts:
+        items.append("baseline: " + " | ".join(baseline_parts))
+
+    return tuple(items)
+
+
+def _format_key_context(bundle: AnalysisBundle, *, compact: bool) -> tuple[str, ...]:
+    if compact:
+        return _format_release_context(bundle)
+
+    items: list[str] = []
+
+    history_parts: list[str] = []
+    if bundle.historical_signals.repo_criticality:
+        history_parts.append(f"repo criticality: {bundle.historical_signals.repo_criticality}")
+    if bundle.historical_signals.service_criticality:
+        history_parts.append(f"service criticality: {bundle.historical_signals.service_criticality}")
+    if bundle.historical_signals.rollback_rate_30d is not None:
+        history_parts.append(f"rollback rate: {bundle.historical_signals.rollback_rate_30d:.0%}")
+    if bundle.historical_signals.change_failure_rate_30d is not None:
+        history_parts.append(f"failure rate: {bundle.historical_signals.change_failure_rate_30d:.0%}")
+    if bundle.historical_signals.incident_count_30d:
+        history_parts.append(f"incidents: {bundle.historical_signals.incident_count_30d}")
+    if bundle.historical_signals.flaky_service:
+        history_parts.append("flaky service")
+    if bundle.historical_signals.sensitive_repo:
+        history_parts.append("sensitive repo")
+    if history_parts:
+        items.append("history: " + " | ".join(history_parts))
+
+    runtime_parts: list[str] = []
+    if bundle.runtime_signals.environment:
+        runtime_parts.append(f"target: {bundle.runtime_signals.environment}")
+    if bundle.runtime_signals.public_exposure:
+        runtime_parts.append("public exposure")
+    if bundle.runtime_signals.blast_radius:
+        runtime_parts.append(f"blast radius: {bundle.runtime_signals.blast_radius}")
+    if bundle.runtime_signals.deployment_window:
+        runtime_parts.append("window: " + bundle.runtime_signals.deployment_window.replace("_", " "))
+    if bundle.runtime_signals.rollout_strategy:
+        runtime_parts.append("rollout: " + bundle.runtime_signals.rollout_strategy.replace("_", " "))
+    if runtime_parts:
+        items.append("runtime: " + " | ".join(runtime_parts))
+
+    ownership_parts: list[str] = []
+    if bundle.ownership_signals.service_owner:
+        ownership_parts.append(f"owner: {bundle.ownership_signals.service_owner}")
+    if bundle.ownership_signals.owning_team:
+        ownership_parts.append(f"team: {bundle.ownership_signals.owning_team}")
+    if bundle.ownership_signals.review_coverage:
+        ownership_parts.append("review: " + bundle.ownership_signals.review_coverage.replace("_", " "))
+    if bundle.ownership_signals.team_trust_level:
+        ownership_parts.append("team trust: " + bundle.ownership_signals.team_trust_level)
+    if ownership_parts:
+        items.append("ownership: " + " | ".join(ownership_parts))
+
+    baseline_parts: list[str] = []
+    if bundle.trust_baseline.repo_stability:
+        baseline_parts.append("repo stability: " + bundle.trust_baseline.repo_stability)
+    if bundle.trust_baseline.service_stability:
+        baseline_parts.append("service stability: " + bundle.trust_baseline.service_stability)
+    if bundle.trust_baseline.test_coverage_level:
+        baseline_parts.append("test coverage: " + bundle.trust_baseline.test_coverage_level)
+    if bundle.trust_baseline.rollback_readiness:
+        baseline_parts.append("rollback: " + bundle.trust_baseline.rollback_readiness)
+    if bundle.trust_baseline.dependency_reputation_risk:
+        baseline_parts.append("dependency risk: " + bundle.trust_baseline.dependency_reputation_risk)
     if baseline_parts:
         items.append("baseline: " + " | ".join(baseline_parts))
 

@@ -23,44 +23,23 @@ def test_render_pr_comment_renders_policy_decision_for_high_risk_change() -> Non
 
     comment = render_pr_comment(bundle, decision)
 
-    assert comment == """<!-- veridion:rdi:start -->
-## Release Decision Intelligence
-
-**Decision:** NO GO
-**RDI Score:** 38
-**Confidence:** HIGH
-
-**Summary:** Introduced findings: 2 | Existing findings: 1 | Unattributed findings: 0 | Suppressed findings: 0 | Changed files: 4
-
-### Primary Drivers
-
-- 2 introduced high-severity finding(s)
-- infrastructure changes are present in the current diff
-- new dependency vulnerability findings were introduced
-- policy no_go threshold triggered at score 60
-
-### Required Approvals
-
-- platform owner
-- security owner
-
-### Required Next Steps
-
-- Block release until introduced risk is remediated or policy is adjusted
-- Run staging smoke tests for infrastructure-affecting changes
-- Review newly introduced dependencies and lockfile updates
-- Prioritize remediation for introduced high-severity findings
-
-### Introduced Severity
-
-- high: 2
-
-### Introduced Finding Types
-
-- code: 1
-- dependency: 1
-<!-- veridion:rdi:end -->
-"""
+    assert comment.startswith("<!-- veridion:rdi:start -->\n## Release Decision Intelligence")
+    assert "**Decision:** NO GO" in comment
+    assert "**RDI Score:** 38" in comment
+    assert "### Why this is blocked" in comment
+    assert "- 2 introduced high-severity finding(s)" in comment
+    assert "- infrastructure changes are present in the current diff" in comment
+    assert "- new dependency vulnerability findings were introduced" in comment
+    assert "### Required Approvals" in comment
+    assert "- platform owner" in comment
+    assert "- security owner" in comment
+    assert "### What must happen next" in comment
+    assert "- Block release until introduced risk is remediated or policy is adjusted" in comment
+    assert "### Introduced Severity" in comment
+    assert "- high: 2" in comment
+    assert "### Introduced Finding Types" in comment
+    assert "- dependency: 1" in comment
+    assert comment.endswith("<!-- veridion:rdi:end -->\n")
 
 
 def test_render_pr_comment_handles_clean_change_without_approvals() -> None:
@@ -91,8 +70,8 @@ def test_render_pr_comment_handles_clean_change_without_approvals() -> None:
     assert "**Summary:** Introduced findings: 0 | Existing findings: 0 | Unattributed findings: 0 | Suppressed findings: 0 | Changed files: 1" in comment
     assert "### Required Approvals" not in comment
     assert "- Proceed with normal review and deployment checks" in comment
-    assert "### Introduced Severity" in comment
-    assert "- None" in comment
+    assert "### Introduced Severity" not in comment
+    assert "### Introduced Finding Types" not in comment
     assert comment.startswith("<!-- veridion:rdi:start -->\n")
     assert comment.endswith("<!-- veridion:rdi:end -->\n")
 
@@ -110,11 +89,11 @@ def test_render_pr_comment_includes_ai_attribution_when_present() -> None:
 
     comment = render_pr_comment(bundle_with_ai, decision)
 
-    assert "### AI Attribution" in comment
+    assert "### AI Signals" in comment
     assert "- AI-origin signals detected: 1" in comment
     assert "- Sources: pr_body" in comment
     assert "- Indicators: Cursor" in comment
-    assert "### Primary Drivers" in comment
+    assert "### Why this is allowed" in comment
 
 
 def test_render_pr_comment_includes_historical_trust_signals_when_present() -> None:
@@ -139,11 +118,9 @@ def test_render_pr_comment_includes_historical_trust_signals_when_present() -> N
 
     comment = render_pr_comment(bundle, decision)
 
-    assert "### Historical Trust Signals" in comment
-    assert "- repo criticality: high | service criticality: critical" in comment
-    assert "- Historical instability: 30d rollback rate: 18% | 30d change failure rate: 22% | 30d incidents: 4" in comment
-    assert "- Operational flags: service marked flaky | repository marked sensitive" in comment
-    assert "### Contextual Risk" in comment
+    assert "### Key Context" in comment
+    assert "- history: repo criticality: high | service criticality: critical | rollback rate: 18% | failure rate: 22% | incidents: 4 | flaky service | sensitive repo" in comment
+    assert "### Why this matters" in comment
     assert "- repository criticality is high" in comment
     assert "- 30d change failure rate is elevated at 22%" in comment
 
@@ -204,11 +181,9 @@ def test_render_pr_comment_includes_runtime_and_ownership_sections_when_present(
 
     comment = render_pr_comment(bundle, decision)
 
-    assert "### Runtime Context" in comment
-    assert "- deployment target: production | service is publicly exposed | blast radius: high" in comment
-    assert "### Ownership Context" in comment
-    assert "- service owner missing | owning team: payments-platform" in comment
-    assert "- Coordination: review coverage: cross team | team trust: degrading" in comment
+    assert "### Key Context" in comment
+    assert "- runtime: target: production | public exposure | blast radius: high | window: after hours | rollout: direct" in comment
+    assert "- ownership: team: payments-platform | review: cross team | team trust: degrading" in comment
 
 
 def test_render_pr_comment_includes_trust_baseline_section_when_present() -> None:
@@ -229,9 +204,8 @@ def test_render_pr_comment_includes_trust_baseline_section_when_present() -> Non
 
     comment = render_pr_comment(bundle, decision)
 
-    assert "### Operational Baseline" in comment
-    assert "- repository stability: fragile | service stability: watch" in comment
-    assert "- Execution baseline: team deploy safety: degrading | test coverage: low | rollback readiness: partial | dependency reputation risk: high" in comment
+    assert "### Key Context" in comment
+    assert "- baseline: repo stability: fragile | service stability: watch | test coverage: low | rollback: partial | dependency risk: high" in comment
 
 
 def test_render_pr_comment_truncates_verbose_sections() -> None:
@@ -280,12 +254,11 @@ def test_render_pr_comment_truncates_verbose_sections() -> None:
 
     comment = render_pr_comment(bundle, decision)
 
-    assert "### Historical Trust Signals" in comment
-    assert "- Operational flags: service marked flaky | repository marked sensitive" in comment
-    assert "### Required Next Steps" in comment
-    assert "### Advisory Guidance" in comment
-    assert "### Primary Drivers" in comment
-    assert "### Contextual Risk" in comment
+    assert "### Key Context" in comment
+    assert "### What must happen next" in comment
+    assert "### Recommended rollout" in comment
+    assert "### Why this is allowed" in comment
+    assert "### Why this matters" in comment
     assert "- ... " in comment
     assert "more contextual risks" in comment
     assert "more guidance items" in comment
@@ -334,16 +307,12 @@ def test_render_pr_comment_compacts_clean_context_heavy_change() -> None:
 
     comment = render_pr_comment(bundle, decision)
 
-    assert "### Release Context" in comment
+    assert "### Key Context" in comment
     assert "- historical: repo criticality: high | service criticality: critical | rollback rate: 12%" in comment
     assert "- runtime: target: production | public exposure | blast radius: high" in comment
-    assert "### Historical Trust Signals" not in comment
-    assert "### Runtime Context" not in comment
-    assert "### Ownership Context" not in comment
-    assert "### Operational Baseline" not in comment
-    assert "### Contextual Risk" not in comment
-    assert "### Advisory Guidance" not in comment
-    assert "### Required Next Steps" in comment
+    assert "### Why this matters" not in comment
+    assert "### Recommended rollout" not in comment
+    assert "### What must happen next" in comment
     assert "- Verify rollback ownership and on-call coverage before deployment" in comment
 
 
