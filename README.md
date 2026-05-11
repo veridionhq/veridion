@@ -103,7 +103,11 @@ GitHub PR
 
 - [Quickstart](docs/QUICKSTART.md)
 - [Evaluation Guide](docs/EVALUATION_GUIDE.md)
+- [Evaluation Checklist](docs/EVALUATION_CHECKLIST.md)
 - [Design Partner Guide](docs/DESIGN_PARTNER.md)
+- [One-Pager](docs/ONE_PAGER.md)
+- [Deck Outline](docs/DECK_OUTLINE.md)
+- [Screenshot Guide](docs/SCREENSHOT_GUIDE.md)
 - [Operational Context Contract](docs/OPERATIONAL_CONTEXT.md)
 - [Execution Plan](docs/EXECUTION_PLAN.md)
 - [Milestones](docs/roadmap/MILESTONES.md)

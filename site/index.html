@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Veridion | Operational Trust For Software Delivery</title>
+    <meta
+      name="description"
+      content="Veridion is the operational trust layer for autonomous software delivery. It determines whether a change should safely ship."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Operational Trust Infrastructure</p>
+          <h1>AI increases software velocity. Veridion governs operational trust.</h1>
+          <p class="hero-text">
+            Veridion is the release decision system for increasingly autonomous engineering teams.
+            It answers one question clearly: <strong>should this change ship?</strong>
+          </p>
+          <div class="hero-actions">
+            <a href="../README.md" class="button button-primary">Read the README</a>
+            <a href="../docs/QUICKSTART.md" class="button button-secondary">Try the Quickstart</a>
+          </div>
+        </div>
+        <div class="hero-panel">
+          <p class="panel-label">Current proof</p>
+          <ul class="panel-list">
+            <li><span>GO</span><small>Docs-only change</small></li>
+            <li><span>CONDITIONAL GO</span><small>Introduced code risk</small></li>
+            <li><span>NO GO</span><small>Risky dependency + ingress + IAM</small></li>
+            <li><span>CONDITIONAL GO</span><small>Accepted-risk exception handling</small></li>
+          </ul>
+        </div>
+      </header>
+
+      <main>
+        <section class="section">
+          <div class="section-heading">
+            <p class="eyebrow">The wedge</p>
+            <h2>Veridion is not another scanner wrapper.</h2>
+          </div>
+          <div class="grid three-up">
+            <article class="card">
+              <h3>What changed?</h3>
+              <p>
+                Veridion understands application code, dependencies, Dockerfiles, Terraform,
+                Kubernetes, Helm, GitHub Actions, IAM policy, network changes, and migrations.
+              </p>
+            </article>
+            <article class="card">
+              <h3>What risk was introduced?</h3>
+              <p>
+                The system isolates new risk from pre-existing backlog so teams can reason about
+                the current pull request instead of drowning in legacy noise.
+              </p>
+            </article>
+            <article class="card">
+              <h3>What should happen next?</h3>
+              <p>
+                Veridion produces a decision, confidence level, approvals, and next steps rather
+                than a raw pile of findings.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section statement-band">
+          <p>
+            Most tools stop at <em>finding problems</em>. Veridion is built to
+            <strong>govern what can safely reach production.</strong>
+          </p>
+        </section>
+
+        <section class="section">
+          <div class="section-heading">
+            <p class="eyebrow">Why now</p>
+            <h2>The control layer is the missing layer.</h2>
+          </div>
+          <div class="grid two-up">
+            <article class="card">
+              <h3>AI is accelerating delivery faster than trust systems can keep up.</h3>
+              <ul class="plain-list">
+                <li>More generated code</li>
+                <li>More autonomous remediation</li>
+                <li>More infrastructure change</li>
+                <li>More deployment frequency</li>
+              </ul>
+            </article>
+            <article class="card">
+              <h3>That creates a control problem, not just a productivity problem.</h3>
+              <ul class="plain-list">
+                <li>What changed?</li>
+                <li>What did it introduce?</li>
+                <li>What is the blast radius?</li>
+                <li>Should this ship?</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-heading">
+            <p class="eyebrow">Current product</p>
+            <h2>What the MVP already does</h2>
+          </div>
+          <div class="grid three-up">
+            <article class="card">
+              <h3>Introduced-only release decisions</h3>
+              <p>
+                Multi-scanner normalization, deduplication, baseline comparison, and deterministic
+                release decisioning.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Blast-radius and policy intelligence</h3>
+              <p>
+                Change-surface inference, operational context, approvals, score adjustments, and
+                accepted-risk suppression governance.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Portable integration contract</h3>
+              <p>
+                GitHub is the current wedge, but the engine already accepts a versioned
+                operational-context artifact for future environments.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-heading">
+            <p class="eyebrow">Evaluate</p>
+            <h2>How to judge whether Veridion is working</h2>
+          </div>
+          <div class="grid two-up">
+            <article class="card">
+              <h3>Good output should feel like a decision memo</h3>
+              <p>
+                Primary drivers, contextual risk, approvals, and required next steps should be
+                scannable without opening raw scanner logs.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Accepted risk should stay visible</h3>
+              <p>
+                A suppression should never erase the truth. It should downgrade cleanly, remain
+                visible, and preserve accountability.
+              </p>
+            </article>
+          </div>
+          <div class="link-grid">
+            <a href="../docs/EVALUATION_GUIDE.md" class="link-card">Evaluation Guide</a>
+            <a href="../docs/DESIGN_PARTNER.md" class="link-card">Design Partner Guide</a>
+            <a href="../docs/OPERATIONAL_CONTEXT.md" class="link-card">Operational Context Contract</a>
+            <a href="../docs/QUICKSTART.md" class="link-card">Quickstart</a>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
