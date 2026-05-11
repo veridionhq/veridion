@@ -102,6 +102,8 @@ GitHub PR
 ## Repo Docs
 
 - [Quickstart](docs/QUICKSTART.md)
+- [Evaluation Guide](docs/EVALUATION_GUIDE.md)
+- [Design Partner Guide](docs/DESIGN_PARTNER.md)
 - [Operational Context Contract](docs/OPERATIONAL_CONTEXT.md)
 - [Execution Plan](docs/EXECUTION_PLAN.md)
 - [Milestones](docs/roadmap/MILESTONES.md)
@@ -139,6 +141,7 @@ The current MVP has also been validated in an external canary repository with:
 - a clean docs-only `GO`
 - a deliberately risky dependency/ingress/IAM `NO GO`
 - a middle-path `CONDITIONAL GO` scenario for product tuning
+- an accepted-risk `CONDITIONAL GO` where suppressed findings remain visible
 
 ## Fastest Install Path
 
