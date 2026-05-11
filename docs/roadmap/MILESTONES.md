@@ -131,7 +131,8 @@ Status:
 
 - Complete on `main` for composite action execution, explicit outputs, smoke workflow validation, PR comment posting, artifact upload, and the versioned `operational-context` integration contract
 - Complete for starter policy packs and first-install quickstart docs
-- Follow-up remains around broader runner compatibility and live install validation outside the repo itself
+- Complete for first external install and canary validation across `GO`, `CONDITIONAL GO`, `NO GO`, and accepted-risk exception scenarios
+- Follow-up remains around broader runner compatibility and wider live install validation outside the current canary path
 
 ## M6: Trust Loop
 
@@ -149,6 +150,11 @@ Exit criteria:
 
 - The team can measure false positives and decision acceptance
 - Product improvements can be prioritized from usage data instead of intuition alone
+
+Status:
+
+- Started on `main` with repo-local accepted-risk suppressions, visible exception reporting, and expiration-aware suppression governance
+- Follow-up remains for stronger policy controls over suppressions, richer review-feedback capture, and real decision acceptance telemetry
 
 ## Execution Notes
 
