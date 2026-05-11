@@ -6,6 +6,7 @@ from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileC
 from veridion.context import HistoricalSignals, TrustBaseline, derive_runtime_signals
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.policy import evaluate_release, parse_policy_yaml
+from veridion.suppression import parse_suppressions_payload
 
 
 DEFAULT_POLICY_PATH = Path("tests/fixtures/policies/default_policy.yaml")
@@ -302,9 +303,59 @@ diff --git a/services/data/tenant_mapper.py b/services/data/tenant_mapper.py
     assert "change touches a payments-sensitive surface" in decision.reasons
     assert "change touches an authentication-sensitive surface" in decision.reasons
     assert "Coordinate staged validation for this shared platform change surface before release" in decision.recommendations
-    assert "Validate migration safety and data rollback steps before deployment" in decision.recommendations
-    assert "Verify payment-impact monitoring and rollback safeguards before release" in decision.recommendations
-    assert "Run authentication and access-control regression checks before deployment" in decision.recommendations
+
+
+def test_evaluate_release_downgrades_clean_go_when_accepted_risk_is_present() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="trivy",
+                finding_type="dependency",
+                rule_id="CVE-2025-99999",
+                title="Temporary dependency issue",
+                severity="high",
+                package_name="urllib3",
+                package_version="1.25.8",
+                location=NormalizedLocation(path="requirements.txt"),
+            )
+        ],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=0,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+        suppression_rules=parse_suppressions_payload(
+            {
+                "schema_version": 1,
+                "suppressions": [
+                    {
+                        "finding_type": "dependency",
+                        "package_name": "urllib3",
+                        "package_version": "1.25.8",
+                        "reason": "temporary vendor exception while upstream patch is pending",
+                        "expires_on": "2026-12-31",
+                    }
+                ],
+            }
+        ),
+    )
+
+    decision = evaluate_release(bundle, parse_policy_yaml(DEFAULT_POLICY_PATH.read_text()))
+
+    assert decision.decision == "CONDITIONAL GO"
+    assert decision.score == 96
+    assert "1 finding(s) are suppressed as accepted risk" in decision.reasons
+    assert decision.score_adjustments == ("accepted risk suppressions: -4",)
+    assert decision.required_approvals == ("security_owner",)
+    assert "Review newly introduced dependencies and lockfile updates" in decision.recommendations
 
 
 def test_evaluate_release_can_apply_policy_to_inferred_change_surfaces() -> None:

@@ -34,6 +34,7 @@ def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None)
     risk, score_adjustments = _apply_policy_score_adjustments(base_risk, bundle, resolved_policy)
 
     reasons = list(risk.reasons)
+    reasons.extend(_accepted_risk_reasons(bundle))
     reasons.extend(_historical_context_reasons(bundle))
     reasons.extend(_runtime_context_reasons(bundle))
     reasons.extend(_change_surface_reasons(bundle))
@@ -81,6 +82,10 @@ def _apply_policy_decision(
         return "NO GO"
 
     if risk.score < policy.conditional_go_below_score:
+        return "CONDITIONAL GO"
+
+    if bundle.summary.suppressed_findings:
+        reasons.append("accepted risk is present in the current change")
         return "CONDITIONAL GO"
 
     return risk.decision
@@ -266,6 +271,17 @@ def _historical_context_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
 
     if historical.sensitive_repo:
         reasons.append("repository is marked sensitive in operational metadata")
+
+    return tuple(reasons)
+
+
+def _accepted_risk_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
+    reasons: list[str] = []
+
+    if bundle.summary.suppressed_findings:
+        reasons.append(f"{bundle.summary.suppressed_findings} finding(s) are suppressed as accepted risk")
+    if bundle.summary.expired_suppressions:
+        reasons.append(f"{bundle.summary.expired_suppressions} accepted-risk suppression rule(s) are expired")
 
     return tuple(reasons)
 
@@ -527,6 +543,16 @@ def _apply_policy_score_adjustments(
     if policy.data_surface_score_penalty and _trigger_matches("data_surface", bundle):
         adjusted_score -= policy.data_surface_score_penalty
         adjustments.append(f"data-sensitive surface: -{policy.data_surface_score_penalty}")
+
+    if bundle.summary.suppressed_findings:
+        accepted_risk_penalty = min(12, max(4, 3 + (bundle.summary.suppressed_findings // 2)))
+        adjusted_score -= accepted_risk_penalty
+        adjustments.append(f"accepted risk suppressions: -{accepted_risk_penalty}")
+
+    if bundle.summary.expired_suppressions:
+        expired_penalty = min(15, bundle.summary.expired_suppressions * 5)
+        adjusted_score -= expired_penalty
+        adjustments.append(f"expired suppressions: -{expired_penalty}")
 
     adjusted_score = max(0, min(100, adjusted_score))
 

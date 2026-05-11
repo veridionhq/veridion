@@ -194,6 +194,11 @@ def test_run_action_applies_accepted_risk_suppressions() -> None:
     assert result.bundle.summary.introduced_findings == 1
     assert result.bundle.summary.expired_suppressions == 0
     assert result.decision.score > initial.decision.score
+    assert result.decision.score < 100
+    assert result.decision.decision == "NO GO"
+    assert "accepted risk suppressions: -" in "\n".join(result.decision.score_adjustments)
+    assert "1 finding(s) are suppressed as accepted risk" in result.decision.reasons
+    assert "policy no_go threshold triggered at score 60" in result.decision.reasons
     assert "### Accepted Risk" in result.comment_markdown
     assert "- suppressed findings: 1" in result.comment_markdown
     assert "temporary vendor exception while upstream patch is pending (1 finding(s)) (expires 2026-12-31)" in result.comment_markdown
