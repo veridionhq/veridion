@@ -177,8 +177,9 @@ def test_evaluate_release_adds_advisory_recommendations_for_historical_trust_sig
 
     decision = evaluate_release(bundle, parse_policy_yaml(DEFAULT_POLICY_PATH.read_text()))
 
-    assert decision.decision == "GO"
+    assert decision.decision == "CONDITIONAL GO"
     assert decision.required_approvals == ("platform_owner", "service_owner", "sre_owner", "security_owner")
+    assert "release still requires explicit approvals or operational checks" in decision.reasons
     assert "repository criticality is high" in decision.reasons
     assert "service criticality is critical" in decision.reasons
     assert "30d rollback rate is elevated at 18%" in decision.reasons
@@ -221,6 +222,32 @@ def test_evaluate_release_adds_advisory_recommendations_for_historical_trust_sig
         "Require and verify a rollback path before deployment",
         "Use an operator-assisted release path for this low-safety team baseline",
     )
+
+
+def test_evaluate_release_downgrades_clean_go_when_release_gates_exist() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        historical_signals=HistoricalSignals(
+            repo_criticality="high",
+        ),
+    )
+
+    decision = evaluate_release(
+        bundle,
+        parse_policy_yaml(
+            """
+allow_conditional: true
+require_service_owner_for:
+  - repo_criticality_high
+"""
+        ),
+    )
+
+    assert decision.decision == "CONDITIONAL GO"
+    assert decision.required_approvals == ("service_owner",)
+    assert "release still requires explicit approvals or operational checks" in decision.reasons
 
 
 def test_evaluate_release_only_requires_policy_configured_metadata_approvals() -> None:

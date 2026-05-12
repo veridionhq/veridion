@@ -257,7 +257,7 @@ def test_render_pr_comment_truncates_verbose_sections() -> None:
     assert "### Key Context" in comment
     assert "### What must happen next" in comment
     assert "### Recommended rollout" in comment
-    assert "### Why this is allowed" in comment
+    assert "### Why this needs review" in comment
     assert "### Why this matters" in comment
     assert "- ... " in comment
     assert "more contextual risks" in comment

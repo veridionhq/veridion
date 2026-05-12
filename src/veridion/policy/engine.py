@@ -43,6 +43,7 @@ def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None)
     decision = _apply_policy_decision(risk, bundle, resolved_policy, reasons)
     required_approvals = _required_approvals(bundle, resolved_policy)
     recommendations = _recommendations(bundle, risk, decision, required_approvals)
+    decision = _align_decision_with_release_gates(decision, required_approvals, recommendations, reasons)
 
     return PolicyDecision(
         score=risk.score,
@@ -241,6 +242,38 @@ def _recommendations(
         recommendations.append("Proceed with normal review and deployment checks")
 
     return tuple(dict.fromkeys(recommendations))
+
+
+def _align_decision_with_release_gates(
+    decision: str,
+    required_approvals: tuple[str, ...],
+    recommendations: tuple[str, ...],
+    reasons: list[str],
+) -> str:
+    if decision != "GO":
+        return decision
+
+    if required_approvals or _has_required_operational_gates(recommendations):
+        reasons.append("release still requires explicit approvals or operational checks")
+        return "CONDITIONAL GO"
+
+    return decision
+
+
+def _has_required_operational_gates(recommendations: tuple[str, ...]) -> bool:
+    required_gate_prefixes = (
+        "Run staging smoke tests",
+        "Review newly introduced dependencies",
+        "Prioritize remediation",
+        "Verify rollback ownership and on-call coverage",
+        "Require and verify a rollback path",
+        "Validate migration safety",
+        "Verify payment-impact",
+        "Run authentication and access-control",
+        "Validate data-handling and tenant-safety",
+        "Define a service owner",
+    )
+    return any(item.startswith(required_gate_prefixes) for item in recommendations)
 
 
 def _approval_label(value: str) -> str:
