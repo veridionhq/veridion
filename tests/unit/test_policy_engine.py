@@ -332,6 +332,64 @@ diff --git a/services/data/tenant_mapper.py b/services/data/tenant_mapper.py
     assert "Coordinate staged validation for this shared platform change surface before release" in decision.recommendations
 
 
+def test_evaluate_release_uses_content_aware_operational_risk_signals() -> None:
+    change_context = parse_unified_diff(
+        """\
+diff --git a/k8s/deployment.yaml b/k8s/deployment.yaml
+--- a/k8s/deployment.yaml
++++ b/k8s/deployment.yaml
+@@ -1,10 +1,11 @@
+-        livenessProbe:
+-          httpGet:
+-            path: /healthz
+-        readinessProbe:
+-          httpGet:
+-            path: /ready
+-        resources:
+-          limits:
+-            cpu: "500m"
++        securityContext:
++          privileged: true
++        strategy:
++          type: Recreate
+diff --git a/k8s/hpa.yaml b/k8s/hpa.yaml
+--- a/k8s/hpa.yaml
++++ b/k8s/hpa.yaml
+@@ -1 +1 @@
+-maxReplicas: 5
++maxReplicas: 20
+diff --git a/terraform/prod/iam/policy.tf b/terraform/prod/iam/policy.tf
+--- a/terraform/prod/iam/policy.tf
++++ b/terraform/prod/iam/policy.tf
+@@ -1 +1 @@
+-Action = ["s3:GetObject"]
++Action = "*"
+"""
+    )
+
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=change_context,
+        runtime_signals=derive_runtime_signals(change_context),
+    )
+
+    decision = evaluate_release(bundle)
+
+    assert "change weakens or removes health-check coverage" in decision.reasons
+    assert "change introduces direct rollout behavior" in decision.reasons
+    assert "change modifies autoscaling behavior" in decision.reasons
+    assert "change introduces privileged container settings" in decision.reasons
+    assert "change expands IAM permissions broadly" in decision.reasons
+    assert "change weakens or removes container resource limits" in decision.reasons
+    assert "Verify liveness, readiness, or health-check coverage before deployment" in decision.recommendations
+    assert "Avoid direct rollout settings for this change and use a staged release" in decision.recommendations
+    assert "Validate autoscaling thresholds and capacity behavior before deployment" in decision.recommendations
+    assert "Review privileged container settings before release" in decision.recommendations
+    assert "Review broad IAM permission changes before deployment" in decision.recommendations
+    assert "Restore or validate container resource limits before deployment" in decision.recommendations
+
+
 def test_evaluate_release_downgrades_clean_go_when_accepted_risk_is_present() -> None:
     bundle = build_analysis_bundle(
         current_findings=[

@@ -54,6 +54,7 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert "### AI Signals" in result.comment_markdown
     assert "### Key Context" in result.comment_markdown
     assert "### Why this is blocked" in result.comment_markdown
+    assert "### New threats detected" in result.comment_markdown
     assert "### Why this matters" in result.comment_markdown
     assert "- platform owner" in result.comment_markdown
     assert "- security owner" in result.comment_markdown

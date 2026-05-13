@@ -131,6 +131,30 @@ class ParsedChangeContext:
     def touches_data_surface(self) -> bool:
         return any("data_surface" in file.signals for file in self.files)
 
+    @property
+    def has_healthcheck_risk_changes(self) -> bool:
+        return any("healthcheck_risk_surface" in file.signals for file in self.files)
+
+    @property
+    def has_direct_rollout_changes(self) -> bool:
+        return any("direct_rollout_surface" in file.signals for file in self.files)
+
+    @property
+    def has_autoscaling_changes(self) -> bool:
+        return any("autoscaling_surface" in file.signals for file in self.files)
+
+    @property
+    def has_privileged_container_changes(self) -> bool:
+        return any("privileged_container_surface" in file.signals for file in self.files)
+
+    @property
+    def has_broad_iam_changes(self) -> bool:
+        return any("broad_iam_surface" in file.signals for file in self.files)
+
+    @property
+    def has_resource_limit_risk_changes(self) -> bool:
+        return any("resource_limit_risk_surface" in file.signals for file in self.files)
+
 
 def parse_unified_diff(diff_text: str) -> ParsedChangeContext:
     """Parse a unified diff into file-level change context."""
@@ -141,6 +165,8 @@ def parse_unified_diff(diff_text: str) -> ParsedChangeContext:
     added_lines = 0
     removed_lines = 0
     declared_change_type: str | None = None
+    added_content: list[str] = []
+    removed_content: list[str] = []
 
     for line in diff_text.splitlines():
         if line.startswith("diff --git "):
@@ -150,6 +176,8 @@ def parse_unified_diff(diff_text: str) -> ParsedChangeContext:
                         current_path,
                         added_lines,
                         removed_lines,
+                        added_content=tuple(added_content),
+                        removed_content=tuple(removed_content),
                         previous_path=previous_path,
                         declared_change_type=declared_change_type,
                     )
@@ -159,6 +187,8 @@ def parse_unified_diff(diff_text: str) -> ParsedChangeContext:
             added_lines = 0
             removed_lines = 0
             declared_change_type = None
+            added_content = []
+            removed_content = []
             continue
 
         if current_path is None:
@@ -190,10 +220,12 @@ def parse_unified_diff(diff_text: str) -> ParsedChangeContext:
 
         if line.startswith("+"):
             added_lines += 1
+            added_content.append(line[1:])
             continue
 
         if line.startswith("-"):
             removed_lines += 1
+            removed_content.append(line[1:])
 
     if current_path is not None:
         files.append(
@@ -201,6 +233,8 @@ def parse_unified_diff(diff_text: str) -> ParsedChangeContext:
                 current_path,
                 added_lines,
                 removed_lines,
+                added_content=tuple(added_content),
+                removed_content=tuple(removed_content),
                 previous_path=previous_path,
                 declared_change_type=declared_change_type,
             )
@@ -238,10 +272,16 @@ def _build_file_change(
     added_lines: int,
     removed_lines: int,
     *,
+    added_content: tuple[str, ...],
+    removed_content: tuple[str, ...],
     previous_path: str | None,
     declared_change_type: str | None,
 ) -> ParsedFileChange:
-    signals = _classify_path(path)
+    signals = _classify_path(
+        path,
+        added_content=added_content,
+        removed_content=removed_content,
+    )
     resolved_previous_path = previous_path
 
     if declared_change_type == "added":
@@ -268,11 +308,18 @@ def _build_file_change(
     )
 
 
-def _classify_path(path: str) -> tuple[str, ...]:
+def _classify_path(
+    path: str,
+    *,
+    added_content: tuple[str, ...],
+    removed_content: tuple[str, ...],
+) -> tuple[str, ...]:
     signals: list[str] = []
     file_name = path.rsplit("/", maxsplit=1)[-1]
     is_dependency_surface = False
     normalized_path = path.lower()
+    added_lower = tuple(line.lower() for line in added_content)
+    removed_lower = tuple(line.lower() for line in removed_content)
 
     if file_name in DEPENDENCY_MANIFEST_NAMES:
         signals.append("dependency_manifest")
@@ -299,6 +346,18 @@ def _classify_path(path: str) -> tuple[str, ...]:
         signals.append("auth_surface")
     if any(hint in normalized_path for hint in DATA_HINTS):
         signals.append("data_surface")
+    if _has_healthcheck_risk(added_lower, removed_lower):
+        signals.append("healthcheck_risk_surface")
+    if _has_direct_rollout_signal(added_lower):
+        signals.append("direct_rollout_surface")
+    if _has_autoscaling_signal(normalized_path, added_lower, removed_lower):
+        signals.append("autoscaling_surface")
+    if _has_privileged_container_signal(added_lower):
+        signals.append("privileged_container_surface")
+    if _has_broad_iam_signal(normalized_path, added_lower):
+        signals.append("broad_iam_surface")
+    if _has_resource_limit_risk(added_lower, removed_lower):
+        signals.append("resource_limit_risk_surface")
 
     if not signals:
         signals.append("application_code")
@@ -315,3 +374,64 @@ def _is_infrastructure_path(path: str, *, allow_suffix_match: bool) -> bool:
     if any(hint in path for hint in IAC_PATH_HINTS):
         return path.endswith((".yaml", ".yml", ".json", ".tf", ".tfvars")) or ".github/workflows/" in path
     return False
+
+
+def _has_healthcheck_risk(added_lines: tuple[str, ...], removed_lines: tuple[str, ...]) -> bool:
+    probe_markers = ("livenessprobe", "readinessprobe", "startupprobe", "healthcheck")
+    removed_probe = any(any(marker in line for marker in probe_markers) for line in removed_lines)
+    added_probe = any(any(marker in line for marker in probe_markers) for line in added_lines)
+    return removed_probe and not added_probe
+
+
+def _has_direct_rollout_signal(added_lines: tuple[str, ...]) -> bool:
+    direct_markers = (
+        "type: recreate",
+        "maxunavailable: 100%",
+        "maxsurge: 100%",
+    )
+    return any(any(marker in line for marker in direct_markers) for line in added_lines)
+
+
+def _has_autoscaling_signal(
+    normalized_path: str,
+    added_lines: tuple[str, ...],
+    removed_lines: tuple[str, ...],
+) -> bool:
+    if any(token in normalized_path for token in ("hpa", "autoscaler", "autoscaling")):
+        return True
+    markers = ("minreplicas", "maxreplicas", "targetcpuutilizationpercentage", "targetmemoryutilizationpercentage")
+    combined = added_lines + removed_lines
+    return any(any(marker in line for marker in markers) for line in combined)
+
+
+def _has_privileged_container_signal(added_lines: tuple[str, ...]) -> bool:
+    markers = (
+        "privileged: true",
+        "allowprivilegeescalation: true",
+        "hostnetwork: true",
+        "hostpid: true",
+        "runasuser: 0",
+        "capabilities:",
+        "add:",
+    )
+    return any(any(marker in line for marker in markers) for line in added_lines)
+
+
+def _has_broad_iam_signal(normalized_path: str, added_lines: tuple[str, ...]) -> bool:
+    if not any(token in normalized_path for token in ("iam", "policy", "role", "terraform/", ".github/workflows/")):
+        return False
+    markers = (
+        "administratoraccess",
+        '"action": "*"',
+        "action = \"*\"",
+        "iam:*",
+        '"resource": "*"',
+        "resource = \"*\"",
+    )
+    return any(any(marker in line for marker in markers) for line in added_lines)
+
+
+def _has_resource_limit_risk(added_lines: tuple[str, ...], removed_lines: tuple[str, ...]) -> bool:
+    removed_limits = any("limits:" in line or "requests:" in line for line in removed_lines)
+    added_limits = any("limits:" in line or "requests:" in line for line in added_lines)
+    return removed_limits and not added_limits

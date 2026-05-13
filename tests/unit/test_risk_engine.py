@@ -31,9 +31,9 @@ def test_score_analysis_bundle_returns_conditional_go_for_high_risk_changes() ->
     assert result.decision == "NO GO"
     assert result.confidence == "high"
     assert result.reasons == (
-        "2 introduced high-severity finding(s)",
-        "infrastructure changes are present in the current diff",
-        "new dependency vulnerability findings were introduced",
+        "2 new high-severity issues detected",
+        "the change includes infrastructure updates",
+        "the change introduces vulnerable dependencies",
     )
 
 
@@ -140,8 +140,8 @@ def test_score_analysis_bundle_returns_no_go_for_critical_introduced_risk() -> N
     assert result.decision == "NO GO"
     assert result.confidence == "high"
     assert result.reasons == (
-        "1 introduced critical finding(s)",
-        "new dependency vulnerability findings were introduced",
+        "1 new critical issue detected",
+        "the change introduces vulnerable dependencies",
     )
 
 
@@ -174,7 +174,7 @@ def test_score_analysis_bundle_emits_reason_for_medium_findings() -> None:
 
     result = score_analysis_bundle(bundle)
 
-    assert "1 introduced medium-severity finding(s)" in result.reasons
+    assert "1 new medium-severity issue detected" in result.reasons
 
 
 def _bundle_with_high_code_and_dependency_risk():

@@ -155,6 +155,24 @@ def _recommendations(
     if change_context.has_database_migration_changes:
         recommendations.append("Validate migration safety and data rollback steps before deployment")
 
+    if change_context.has_healthcheck_risk_changes:
+        recommendations.append("Verify liveness, readiness, or health-check coverage before deployment")
+
+    if change_context.has_direct_rollout_changes:
+        recommendations.append("Avoid direct rollout settings for this change and use a staged release")
+
+    if change_context.has_autoscaling_changes:
+        recommendations.append("Validate autoscaling thresholds and capacity behavior before deployment")
+
+    if change_context.has_privileged_container_changes:
+        recommendations.append("Review privileged container settings before release")
+
+    if change_context.has_broad_iam_changes:
+        recommendations.append("Review broad IAM permission changes before deployment")
+
+    if change_context.has_resource_limit_risk_changes:
+        recommendations.append("Restore or validate container resource limits before deployment")
+
     if bundle.summary.dependency_changes or bundle.summary.lockfile_changes:
         recommendations.append("Review newly introduced dependencies and lockfile updates")
 
@@ -333,6 +351,18 @@ def _change_surface_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
         reasons.append("change touches an authentication-sensitive surface")
     if context.touches_data_surface:
         reasons.append("change touches a data-sensitive surface")
+    if context.has_healthcheck_risk_changes:
+        reasons.append("change weakens or removes health-check coverage")
+    if context.has_direct_rollout_changes:
+        reasons.append("change introduces direct rollout behavior")
+    if context.has_autoscaling_changes:
+        reasons.append("change modifies autoscaling behavior")
+    if context.has_privileged_container_changes:
+        reasons.append("change introduces privileged container settings")
+    if context.has_broad_iam_changes:
+        reasons.append("change expands IAM permissions broadly")
+    if context.has_resource_limit_risk_changes:
+        reasons.append("change weakens or removes container resource limits")
 
     return tuple(reasons)
 

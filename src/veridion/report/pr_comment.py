@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from veridion.analysis import AnalysisBundle
+from veridion.normalize.models import NormalizedFinding
 from veridion.policy.engine import PolicyDecision
 from veridion.policy.labels import APPROVAL_LABELS
 
@@ -10,6 +11,7 @@ COMMENT_MARKER_START = "<!-- veridion:rdi:start -->"
 COMMENT_MARKER_END = "<!-- veridion:rdi:end -->"
 MAX_AI_ITEMS = 3
 MAX_PRIMARY_DRIVER_ITEMS = 6
+MAX_THREAT_ITEMS = 4
 MAX_CONTEXTUAL_RISK_ITEMS = 4
 MAX_REQUIRED_NEXT_STEP_ITEMS = 6
 MAX_ADVISORY_GUIDANCE_ITEMS = 4
@@ -66,6 +68,9 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
             _truncate_items(primary_drivers, MAX_PRIMARY_DRIVER_ITEMS, "driver"),
         )
     )
+    introduced_threats = _format_introduced_threats(bundle)
+    if introduced_threats:
+        lines.extend(_section("New threats detected", _truncate_items(introduced_threats, MAX_THREAT_ITEMS, "threat")))
     if contextual_risk and not compact_render:
         lines.extend(
             _section(
@@ -128,12 +133,70 @@ def _format_counts(counts: dict[str, int]) -> tuple[str, ...]:
     return tuple(f"{key}: {value}" for key, value in counts.items())
 
 
+def _format_introduced_threats(bundle: AnalysisBundle) -> tuple[str, ...]:
+    introduced = sorted(
+        bundle.baseline_comparison.introduced,
+        key=lambda finding: (
+            _severity_rank(finding.severity),
+            finding.finding_type,
+            finding.title.lower(),
+            finding.location.path or "",
+        ),
+    )
+    seen: set[str] = set()
+    items: list[str] = []
+
+    for finding in introduced:
+        description = _describe_introduced_threat(finding)
+        if description in seen:
+            continue
+        seen.add(description)
+        items.append(description)
+
+    return tuple(items)
+
+
 def _drivers_title(decision: str) -> str:
     if decision == "NO GO":
         return "Why this is blocked"
     if decision == "CONDITIONAL GO":
         return "Why this needs review"
     return "Why this is allowed"
+
+
+def _severity_rank(severity: str) -> int:
+    order = {
+        "critical": 0,
+        "high": 1,
+        "medium": 2,
+        "low": 3,
+        "info": 4,
+        "unknown": 5,
+    }
+    return order.get(severity, 6)
+
+
+def _describe_introduced_threat(finding: NormalizedFinding) -> str:
+    location = _normalize_location(finding.location.path)
+    severity = finding.severity.replace("-", " ")
+
+    if finding.finding_type == "dependency":
+        package = " ".join(part for part in (finding.package_name, finding.package_version) if part)
+        package_label = package or finding.rule_id
+        if location:
+            return f"{severity} dependency risk: {package_label} in {location} ({finding.title})"
+        return f"{severity} dependency risk: {package_label} ({finding.title})"
+
+    threat_label = finding.title.strip() or finding.rule_id
+    if location:
+        return f"{severity} {finding.finding_type} risk in {location}: {threat_label}"
+    return f"{severity} {finding.finding_type} risk: {threat_label}"
+
+
+def _normalize_location(path: str | None) -> str:
+    if not path:
+        return ""
+    return path.removeprefix("/workspace/")
 
 
 def _should_use_compact_render(

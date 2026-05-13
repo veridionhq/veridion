@@ -144,18 +144,23 @@ def _derive_reasons(features: RiskFeatures) -> tuple[str, ...]:
     reasons: list[str] = []
 
     if features.introduced_critical:
-        reasons.append(f"{features.introduced_critical} introduced critical finding(s)")
+        reasons.append(_issue_count_reason(features.introduced_critical, "critical"))
     if features.introduced_high:
-        reasons.append(f"{features.introduced_high} introduced high-severity finding(s)")
+        reasons.append(_issue_count_reason(features.introduced_high, "high-severity"))
     if features.introduced_medium:
-        reasons.append(f"{features.introduced_medium} introduced medium-severity finding(s)")
+        reasons.append(_issue_count_reason(features.introduced_medium, "medium-severity"))
     if features.introduced_low:
-        reasons.append(f"{features.introduced_low} introduced low-severity finding(s)")
+        reasons.append(_issue_count_reason(features.introduced_low, "low-severity"))
     if features.has_infrastructure_changes and features.introduced_findings:
-        reasons.append("infrastructure changes are present in the current diff")
+        reasons.append("the change includes infrastructure updates")
     if features.introduced_dependency_findings:
-        reasons.append("new dependency vulnerability findings were introduced")
+        reasons.append("the change introduces vulnerable dependencies")
     if not reasons and features.introduced_findings == 0:
         reasons.append("no introduced findings detected")
 
     return tuple(reasons)
+
+
+def _issue_count_reason(count: int, severity: str) -> str:
+    noun = "issue" if count == 1 else "issues"
+    return f"{count} new {severity} {noun} detected"
