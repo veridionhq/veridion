@@ -68,9 +68,8 @@ def render_pr_comment_result(
 
     lines.append("## Release Decision Intelligence")
     lines.append("")
-    lines.append(f"**Decision:** {decision.decision}")
-    lines.append(f"**RDI Score:** {decision.score}")
-    lines.append(f"**Confidence:** {decision.confidence.upper()}")
+    lines.append(f"> {_decision_icon(decision.decision)} **{decision.decision}**")
+    lines.append(f"> RDI Score: {decision.score} | Confidence: {decision.confidence.upper()}")
     lines.append("")
 
     summary_parts = [
@@ -152,6 +151,15 @@ def wrap_pr_comment(body: str) -> str:
     """Wrap a rendered PR comment with stable Veridion markers."""
 
     return f"{COMMENT_MARKER_START}\n{body.rstrip()}\n{COMMENT_MARKER_END}\n"
+
+
+def _decision_icon(decision: str) -> str:
+    icons = {
+        "NO GO": "❌",
+        "CONDITIONAL GO": "🟡",
+        "GO": "✅",
+    }
+    return icons.get(decision, "ℹ️")
 
 
 def _section(title: str, items: tuple[str, ...] | list[str]) -> list[str]:
