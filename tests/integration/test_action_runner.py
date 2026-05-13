@@ -55,7 +55,7 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert result.decision.score_adjustments == ()
     assert "## Release Decision Intelligence" in result.comment_markdown
     assert "**Decision:** NO GO" in result.comment_markdown
-    assert "### AI Signals" in result.comment_markdown
+    assert "### AI Signals" not in result.comment_markdown
     assert "### Key Context" in result.comment_markdown
     assert "### Why this is blocked" in result.comment_markdown
     assert "### Key threats" in result.comment_markdown

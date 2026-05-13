@@ -100,8 +100,6 @@ def render_pr_comment_result(
         summary_style=summary_style,
     )
 
-    if bundle.ai_attribution.detected and not compact_render:
-        lines.extend(_section("AI Signals", _truncate_items(_format_ai_attribution(bundle), MAX_AI_ITEMS, "detail")))
     key_context = _format_key_context(bundle, compact=compact_render)
     if key_context:
         lines.extend(_section("Key Context", key_context))
@@ -118,7 +116,7 @@ def render_pr_comment_result(
         lines.extend(
             _section(
                 _drivers_title(decision.decision),
-                _truncate_items(rendered_primary_drivers, MAX_PRIMARY_DRIVER_ITEMS, "driver"),
+                rendered_primary_drivers[:MAX_PRIMARY_DRIVER_ITEMS],
             )
         )
     introduced_threats = summarized_threats or tuple(render_threat_line(item) for item in introduced_threat_explanations)
@@ -230,9 +228,14 @@ def _merge_headline_summary(
     if not rendered_primary_drivers:
         return fallback
     headline = fallback[0]
-    if headline in rendered_primary_drivers:
-        return rendered_primary_drivers
-    return (headline,) + rendered_primary_drivers
+    merged = [headline]
+    headline_key = _normalize_driver_line(headline)
+    for line in rendered_primary_drivers:
+        if _normalize_driver_line(line) == headline_key:
+            continue
+        if line not in merged:
+            merged.append(line)
+    return tuple(merged)
 
 
 def _summarize_comment_sections(
@@ -270,12 +273,12 @@ def _summarize_comment_sections(
 def _headline_blocker_summary(bundle: AnalysisBundle, threats: tuple[ThreatExplanation, ...]) -> str:
     top = threats[0]
     if top.threat_type == "dependency":
-        summary = f"this change cannot ship because it introduces {top.severity} vulnerable dependencies such as {top.subject}"
+        summary = f"this change cannot ship because it introduces {top.severity} vulnerable dependencies"
     else:
         location = f" in {top.location}" if top.location else ""
         summary = f"this change cannot ship because it introduces {top.severity} {top.threat_type} risk{location}"
     if bundle.runtime_signals.public_exposure:
-        summary += " into a public-facing path"
+        summary += " into a public-facing service"
     elif bundle.runtime_signals.blast_radius in {"high", "critical"}:
         summary += " in a high-blast-radius path"
     return summary
@@ -482,17 +485,18 @@ def _truncate_items(items: tuple[str, ...], limit: int, noun: str) -> tuple[str,
     return items[:limit] + (f"... {remaining} more {suffix}",)
 
 
-def _format_ai_attribution(bundle: AnalysisBundle) -> tuple[str, ...]:
-    items = [f"AI-origin signals detected: {bundle.ai_attribution.signal_count}"]
-
-    if bundle.ai_attribution.ai_authored_commits:
-        items.append(f"AI-attributed commits: {bundle.ai_attribution.ai_authored_commits}")
-    if bundle.ai_attribution.sources:
-        items.append("Sources: " + ", ".join(bundle.ai_attribution.sources))
-    if bundle.ai_attribution.indicators:
-        items.append("Indicators: " + ", ".join(bundle.ai_attribution.indicators))
-
-    return tuple(items)
+def _normalize_driver_line(line: str) -> str:
+    normalized = line.strip().lower().rstrip(".")
+    replacements = (
+        (" into a public-facing path", ""),
+        (" into a public-facing service", ""),
+        (" in a high-blast-radius path", ""),
+        ("this change cannot ship because ", ""),
+        ("this change needs review because ", ""),
+    )
+    for old, new in replacements:
+        normalized = normalized.replace(old, new)
+    return " ".join(normalized.split())
 
 
 def _format_historical_signals(bundle: AnalysisBundle) -> tuple[str, ...]:

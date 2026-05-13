@@ -307,3 +307,35 @@ def test_parse_summarization_result_rejects_example_style_blocker_line() -> None
         assert "example phrasing" in str(exc)
     else:
         raise AssertionError("expected example-style blocker line to be rejected")
+
+
+def test_explain_introduced_threats_normalizes_broad_iam_findings() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="terraform.lang.security.iam.no-iam-admin-privileges.no-iam-admin-privileges",
+                title='IAM policies that allow full "*-*" admin privileges violates the principle of least privilege.',
+                severity="medium",
+                location=NormalizedLocation(path="infra/main.tf", start_line=10, end_line=10),
+            ),
+        ],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="infra/main.tf",
+                    change_type="modified",
+                    added_lines=2,
+                    removed_lines=0,
+                    signals=("infrastructure",),
+                    previous_path="infra/main.tf",
+                ),
+            )
+        ),
+    )
+
+    threats = explain_introduced_threats(bundle)
+
+    assert threats[0].summary == "adds overly broad IAM permissions"

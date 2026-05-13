@@ -106,10 +106,7 @@ def test_render_pr_comment_includes_ai_attribution_when_present() -> None:
 
     comment = render_pr_comment(bundle_with_ai, decision)
 
-    assert "### AI Signals" in comment
-    assert "- AI-origin signals detected: 1" in comment
-    assert "- Sources: pr_body" in comment
-    assert "- Indicators: Cursor" in comment
+    assert "### AI Signals" not in comment
     assert "### Why this is allowed" in comment
 
 

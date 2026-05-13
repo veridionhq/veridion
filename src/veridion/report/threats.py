@@ -140,6 +140,11 @@ def _summarize_code_or_config_finding(finding: NormalizedFinding) -> tuple[str, 
             "container is configured as privileged",
             "a privileged container has broad host-level access if it is compromised",
         )
+    if "no-iam-admin-privileges" in rule_id or "no-iam-star-actions" in rule_id:
+        return (
+            "adds overly broad IAM permissions",
+            "overly broad IAM permissions can allow privilege escalation and violate least privilege",
+        )
 
     summary = _shorten_title(title)
     return summary, "the change introduces new application or configuration risk"
