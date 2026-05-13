@@ -89,7 +89,6 @@ class OpenAICompatibleSummarizer:
     def summarize(self, summary_request: SummarizationRequest) -> SummarizationResult:
         payload = {
             "model": self.model,
-            "temperature": 0.1,
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": _SYSTEM_PROMPT},
