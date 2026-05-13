@@ -58,8 +58,8 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert "### AI Signals" in result.comment_markdown
     assert "### Key Context" in result.comment_markdown
     assert "### Why this is blocked" in result.comment_markdown
-    assert "### What makes this unsafe to ship" in result.comment_markdown
-    assert "### Why this matters" in result.comment_markdown
+    assert "### Key threats" in result.comment_markdown
+    assert "### Why this matters" not in result.comment_markdown
     assert "- platform owner" in result.comment_markdown
     assert "- security owner" in result.comment_markdown
     assert "- service owner" in result.comment_markdown
@@ -68,10 +68,7 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert "Block release until introduced risk is remediated or policy is adjusted" in result.comment_markdown
     assert "Run staging smoke tests for infrastructure-affecting changes" in result.comment_markdown
     assert "### What must happen next" in result.comment_markdown
-    assert "### Recommended rollout" in result.comment_markdown
-    assert "... " in result.comment_markdown
-    assert "more contextual risks" in result.comment_markdown or "more contextual risk" in result.comment_markdown
-    assert "more guidance items" in result.comment_markdown or "more guidance item" in result.comment_markdown
+    assert "### Recommended rollout" not in result.comment_markdown
     assert "Unattributed findings: 0" in result.comment_markdown
     assert result.comment_markdown.startswith("<!-- veridion:rdi:start -->\n")
     assert result.to_dict()["comment_summary"]["mode"] == "deterministic"
@@ -138,9 +135,10 @@ def test_run_action_accepts_versioned_operational_context_artifact() -> None:
     )
     assert "### Key Context" in result.comment_markdown
     assert "### What must happen next" in result.comment_markdown
-    assert "### Recommended rollout" in result.comment_markdown
+    assert "### Recommended rollout" not in result.comment_markdown
     assert "### Why this is blocked" in result.comment_markdown
-    assert "### Why this matters" in result.comment_markdown
+    assert "### Why this matters" not in result.comment_markdown
+    assert "### Key threats" in result.comment_markdown
     assert "- platform owner" in result.comment_markdown
     assert "- security owner" in result.comment_markdown
     assert "- service owner" in result.comment_markdown

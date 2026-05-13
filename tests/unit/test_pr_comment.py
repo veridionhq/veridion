@@ -44,7 +44,7 @@ def test_render_pr_comment_renders_policy_decision_for_high_risk_change() -> Non
     assert "- 2 new high-severity issues detected" in comment
     assert "- the change includes infrastructure updates" in comment
     assert "- the change introduces vulnerable dependencies" in comment
-    assert "### What makes this unsafe to ship" in comment
+    assert "### Key threats" in comment
     assert "- high code risk in app/routes.py: New code issue" in comment
     assert "- high dependency risk in requirements.txt: urllib3 2.2.2 (New dependency issue)" in comment
     assert "### Required Approvals" in comment
@@ -52,10 +52,10 @@ def test_render_pr_comment_renders_policy_decision_for_high_risk_change() -> Non
     assert "- security owner" in comment
     assert "### What must happen next" in comment
     assert "- Block release until introduced risk is remediated or policy is adjusted" in comment
-    assert "### Introduced Severity" in comment
-    assert "- high: 2" in comment
-    assert "### Introduced Finding Types" in comment
-    assert "- dependency: 1" in comment
+    assert "### Recommended rollout" not in comment
+    assert "### Why this matters" not in comment
+    assert "### Introduced Severity" not in comment
+    assert "### Introduced Finding Types" not in comment
     assert comment.endswith("<!-- veridion:rdi:end -->\n")
 
 
@@ -137,9 +137,7 @@ def test_render_pr_comment_includes_historical_trust_signals_when_present() -> N
 
     assert "### Key Context" in comment
     assert "- history: repo criticality: high | service criticality: critical | rollback rate: 18% | failure rate: 22% | incidents: 4 | flaky service | sensitive repo" in comment
-    assert "### Why this matters" in comment
-    assert "- repository criticality is high" in comment
-    assert "- 30d change failure rate is elevated at 22%" in comment
+    assert "### Why this matters" not in comment
 
 
 def test_render_pr_comment_includes_policy_score_adjustments_when_present() -> None:
@@ -273,8 +271,8 @@ def test_render_pr_comment_truncates_verbose_sections() -> None:
 
     assert "### Key Context" in comment
     assert "### What must happen next" in comment
-    assert "### Recommended rollout" in comment
     assert "### Why this needs review" in comment
+    assert "### Recommended rollout" not in comment
 
 
 def test_render_pr_comment_surfaces_plain_english_threat_details() -> None:
@@ -283,7 +281,7 @@ def test_render_pr_comment_surfaces_plain_english_threat_details() -> None:
 
     comment = render_pr_comment(bundle, decision)
 
-    assert "### What makes this unsafe to ship" in comment
+    assert "### Key threats" in comment
     assert "- high code risk in app/routes.py: New code issue" in comment
     assert "- high dependency risk in requirements.txt: urllib3 2.2.2 (New dependency issue)" in comment
 
@@ -294,10 +292,10 @@ def test_render_pr_comment_can_use_optional_ai_wording_layer() -> None:
 
     comment = render_pr_comment(bundle, decision, summarizer=_StaticSummarizer())
 
-    assert "### What makes this unsafe to ship" in comment
+    assert "### Key threats" in comment
     assert "- this change introduces release risk that still needs review" in comment
     assert "- app/main.py uses subprocess with shell=True, which can allow command injection" in comment
-    assert "- this change also affects a production-facing path" in comment
+    assert "- this change also affects a production-facing path" not in comment
 
 
 def test_render_pr_comment_result_exposes_deterministic_summary_trace() -> None:
@@ -357,8 +355,8 @@ def test_render_pr_comment_compacts_clean_context_heavy_change() -> None:
     assert "### Key Context" in comment
     assert "- history: repo criticality: high | service criticality: critical | rollback rate: 12%" in comment
     assert "- runtime: target: production | public exposure | blast radius: high | window: after hours | rollout: canary" in comment
-    assert "### Why this matters" in comment
-    assert "### Recommended rollout" in comment
+    assert "### Why this matters" not in comment
+    assert "### Recommended rollout" not in comment
     assert "### What must happen next" in comment
     assert "- Verify rollback ownership and on-call coverage before deployment" in comment
 

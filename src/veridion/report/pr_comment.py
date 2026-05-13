@@ -13,7 +13,7 @@ from veridion.summarization import CommentSummarizer, SummarizationRequest, Summ
 COMMENT_MARKER_START = "<!-- veridion:rdi:start -->"
 COMMENT_MARKER_END = "<!-- veridion:rdi:end -->"
 MAX_AI_ITEMS = 3
-MAX_PRIMARY_DRIVER_ITEMS = 6
+MAX_PRIMARY_DRIVER_ITEMS = 4
 MAX_THREAT_ITEMS = 4
 MAX_CONTEXTUAL_RISK_ITEMS = 4
 MAX_REQUIRED_NEXT_STEP_ITEMS = 6
@@ -89,7 +89,8 @@ def render_pr_comment_result(
     required_next_steps, advisory_guidance = _split_recommendations(
         _filter_recommendations(decision.recommendations, decision.required_approvals)
     )
-    summarized_primary_drivers, summarized_threats, summarized_contextual, summary_trace = _summarize_comment_sections(
+    next_steps = required_next_steps or advisory_guidance or ("Proceed with normal review and deployment checks",)
+    summarized_primary_drivers, summarized_threats, _summarized_contextual, summary_trace = _summarize_comment_sections(
         summarizer=summarizer,
         decision=decision,
         primary_drivers=primary_drivers,
@@ -128,14 +129,6 @@ def render_pr_comment_result(
                 _truncate_items(introduced_threats, MAX_THREAT_ITEMS, "threat"),
             )
         )
-    rendered_contextual = summarized_contextual or contextual_risk
-    if rendered_contextual and not compact_render:
-        lines.extend(
-            _section(
-                "Why this matters",
-                _truncate_items(rendered_contextual, MAX_CONTEXTUAL_RISK_ITEMS, "contextual risk"),
-            )
-        )
 
     if decision.score_adjustments:
         lines.extend(_section("Policy Score Adjustments", decision.score_adjustments))
@@ -147,19 +140,9 @@ def render_pr_comment_result(
     lines.extend(
         _section(
             "What must happen next",
-            _truncate_items(required_next_steps, MAX_REQUIRED_NEXT_STEP_ITEMS, "required step"),
+            _truncate_items(next_steps, MAX_REQUIRED_NEXT_STEP_ITEMS, "required step"),
         )
     )
-    if advisory_guidance and not compact_render:
-        lines.extend(
-            _section(
-                "Recommended rollout",
-                _truncate_items(advisory_guidance, MAX_ADVISORY_GUIDANCE_ITEMS, "guidance item"),
-            )
-        )
-    if bundle.summary.introduced_findings:
-        lines.extend(_section("Introduced Severity", _format_counts(bundle.summary.introduced_by_severity)))
-        lines.extend(_section("Introduced Finding Types", _format_counts(bundle.summary.introduced_by_finding_type)))
 
     return RenderedComment(
         markdown=wrap_pr_comment("\n".join(lines).rstrip() + "\n"),
@@ -200,11 +183,7 @@ def _drivers_title(decision: str) -> str:
 
 
 def _threats_title(decision: str) -> str:
-    if decision == "NO GO":
-        return "What makes this unsafe to ship"
-    if decision == "CONDITIONAL GO":
-        return "What needs attention in this change"
-    return "New threats detected"
+    return "Key threats"
 
 
 def _default_driver_summary(
