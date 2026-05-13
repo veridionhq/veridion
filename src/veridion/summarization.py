@@ -76,7 +76,7 @@ class OpenAICompatibleSummarizer:
     model: str
     api_key: str
     base_url: str = "https://api.openai.com/v1"
-    timeout_seconds: int = 20
+    timeout_seconds: int = 60
 
     @property
     def provider(self) -> str:
