@@ -466,6 +466,8 @@ def _format_suppressions(bundle: AnalysisBundle) -> tuple[str, ...]:
     if bundle.summary.suppressed_findings:
         items.append(f"suppressed findings: {bundle.summary.suppressed_findings}")
         items.extend(_aggregate_suppression_reasons(bundle))
+        if bundle.suppression_report.governance_gaps:
+            items.append("governance gaps: " + ", ".join(bundle.suppression_report.governance_gaps))
     if bundle.summary.expired_suppressions:
         items.append(f"expired suppression rules: {bundle.summary.expired_suppressions}")
     return tuple(items)

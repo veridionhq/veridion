@@ -14,6 +14,7 @@ from veridion.context import (
     resolve_operational_context,
     resolve_operational_context_artifact,
 )
+from veridion.decision_contract import build_decision_contract, evaluate_gate
 from veridion.normalize import NormalizedFinding, normalize_report
 from veridion.policy import PolicyDecision, PolicyConfig, evaluate_release, parse_policy_yaml
 from veridion.report import explain_introduced_threats, render_pr_comment_result
@@ -33,6 +34,10 @@ class ActionResult:
     comment_summary_mode: str
     comment_summary_provider: str
     comment_summary_model: str
+    decision_contract: dict[str, object]
+    gate_status: str
+    decision_allowed: bool
+    allowed_decisions: tuple[str, ...]
     comment_summary_error: str = ""
     comment_identifier: str = "veridion:rdi"
 
@@ -50,6 +55,7 @@ class ActionResult:
                 "model": self.comment_summary_model,
                 "error": self.comment_summary_error,
             },
+            "decision_contract": self.decision_contract,
             "comment_identifier": self.comment_identifier,
         }
 
@@ -70,6 +76,7 @@ def run_action(
     comment_summary_base_url: str | None = None,
     comment_summary_region: str | None = None,
     comment_summary_style: str = "terse",
+    allowed_decisions: tuple[str, ...] = ("GO", "CONDITIONAL GO"),
 ) -> ActionResult:
     """Run the full RDI pipeline from file-backed action inputs."""
 
@@ -126,6 +133,21 @@ def run_action(
         summarizer=summarizer,
         summary_style=comment_summary_style,
     )
+    introduced_threats = explain_introduced_threats(bundle)
+    gate = evaluate_gate(decision.decision, allowed_decisions=allowed_decisions)
+    decision_contract = build_decision_contract(
+        bundle=bundle,
+        decision=decision,
+        threats=introduced_threats,
+        comment_identifier="veridion:rdi",
+        comment_summary={
+            "mode": rendered_comment.summary_trace.mode,
+            "provider": rendered_comment.summary_trace.provider,
+            "model": rendered_comment.summary_trace.model,
+            "error": rendered_comment.summary_trace.error,
+        },
+        gate=gate,
+    )
 
     return ActionResult(
         bundle=bundle,
@@ -134,6 +156,10 @@ def run_action(
         comment_summary_mode=rendered_comment.summary_trace.mode,
         comment_summary_provider=rendered_comment.summary_trace.provider,
         comment_summary_model=rendered_comment.summary_trace.model,
+        decision_contract=decision_contract,
+        gate_status=gate.status,
+        decision_allowed=gate.decision_allowed,
+        allowed_decisions=gate.allowed_decisions,
         comment_summary_error=rendered_comment.summary_trace.error,
     )
 
@@ -168,6 +194,7 @@ def main(argv: list[str] | None = None) -> int:
         comment_summary_base_url=args.comment_summary_base_url,
         comment_summary_region=args.comment_summary_region,
         comment_summary_style=args.comment_summary_style,
+        allowed_decisions=_parse_allowed_decisions(args.allowed_decisions),
     )
 
     if args.comment_path:
@@ -176,8 +203,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.json_output_path:
         Path(args.json_output_path).write_text(json.dumps(result.to_dict(), indent=2) + "\n")
 
-    _write_github_outputs(result, args.comment_path, args.json_output_path)
+    if args.decision_contract_path:
+        Path(args.decision_contract_path).write_text(json.dumps(result.decision_contract, indent=2) + "\n")
+
+    _write_github_outputs(result, args.comment_path, args.json_output_path, args.decision_contract_path)
     print(result.comment_markdown, end="")
+    if _as_bool_flag(args.enforce_decision) and not result.decision_allowed:
+        return 1
     return 0
 
 
@@ -211,6 +243,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--comment-summary-style", default="terse", help="Comment wording style: terse or expanded")
     parser.add_argument("--comment-path", help="Path to write rendered PR comment markdown")
     parser.add_argument("--json-output-path", help="Path to write structured JSON output")
+    parser.add_argument("--decision-contract-path", help="Path to write machine-facing decision contract JSON")
+    parser.add_argument("--enforce-decision", default="false", help="Exit non-zero when the final decision is not allowed")
+    parser.add_argument(
+        "--allowed-decisions",
+        default="GO,CONDITIONAL GO",
+        help="Comma-separated decisions allowed to pass when enforce-decision=true",
+    )
     return parser
 
 
@@ -254,6 +293,7 @@ def _write_github_outputs(
     result: ActionResult,
     comment_path: str | None,
     json_output_path: str | None,
+    decision_contract_path: str | None,
 ) -> None:
     github_output = os.environ.get("GITHUB_OUTPUT")
     if not github_output:
@@ -270,6 +310,14 @@ def _write_github_outputs(
         f"comment_summary_error={result.comment_summary_error}",
         f"comment_path={comment_path or ''}",
         f"json_output_path={json_output_path or ''}",
+        f"decision_contract_path={decision_contract_path or ''}",
+        f"gate_status={result.gate_status}",
+        f"decision_allowed={str(result.decision_allowed).lower()}",
+        f"allowed_decisions={','.join(result.allowed_decisions)}",
+        f"required_approvals_json={json.dumps(list(result.decision.required_approvals))}",
+        f"required_next_steps_json={json.dumps(result.decision_contract['actions']['required_next_steps'])}",
+        f"blocking_reasons_json={json.dumps(result.decision_contract['reasons']['blocking'])}",
+        f"accepted_risk_present={str(bool(result.bundle.summary.suppressed_findings)).lower()}",
     ]
     if result.decision.required_approvals:
         lines.append(f"required_approvals={','.join(result.decision.required_approvals)}")
@@ -278,3 +326,14 @@ def _write_github_outputs(
 
     with Path(github_output).open("a", encoding="utf-8") as handle:
         handle.write("\n".join(lines) + "\n")
+
+
+def _parse_allowed_decisions(value: str) -> tuple[str, ...]:
+    values = tuple(item.strip() for item in value.split(",") if item.strip())
+    if not values:
+        raise RuntimeError("allowed-decisions must contain at least one decision")
+    return values
+
+
+def _as_bool_flag(value: str) -> bool:
+    return value.strip().lower() == "true"

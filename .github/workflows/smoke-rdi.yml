@@ -42,6 +42,7 @@ jobs:
           metadata-path: pr-metadata.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
+          decision-contract-path: veridion-decision.json
 
       - name: Show outputs
         shell: bash
@@ -59,3 +60,4 @@ jobs:
           path: |
             veridion-pr-comment.md
             veridion-result.json
+            veridion-decision.json

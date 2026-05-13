@@ -301,6 +301,7 @@ jobs:
           suppression-path: .veridion/suppressions.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
+          decision-contract-path: veridion-decision.json
           post-comment: "true"
           github-token: ${{{{ secrets.GITHUB_TOKEN }}}}
           repository: ${{{{ github.repository }}}}
@@ -314,6 +315,7 @@ jobs:
           path: |
             veridion-pr-comment.md
             veridion-result.json
+            veridion-decision.json
 """
 
 

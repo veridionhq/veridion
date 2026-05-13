@@ -48,6 +48,8 @@ It is the operational trust layer that decides whether a change should safely mo
 
 The action can now consume a versioned operational-context artifact as its primary context contract. That artifact can be produced by GitHub workflows today, and later by other CI/CD or platform integrations without changing the decision engine.
 
+The comment is now only one view of the product. Veridion also emits a first-class machine contract at `veridion-decision.json` so downstream workflow steps can gate, route approvals, and audit accepted risk without scraping prose.
+
 The current GitHub path still builds from two source inputs:
 
 - PR metadata for request-scoped signals like title, body, labels, and commit history
@@ -156,6 +158,7 @@ The current `main` branch already includes:
 - Initial historical trust signals for criticality, rollback rate, incidents, and flaky services
 - Initial trust-baseline signals for repo fragility, service stability, rollback readiness, and dependency reputation
 - A versioned `operational-context` contract for non-GitHub producers
+- A versioned `decision contract` for downstream workflow automation and gating
 - Starter policy packs for application teams, platform teams, and regulated services
 
 The current MVP has also been validated in an external canary repository with:
@@ -195,15 +198,27 @@ The GitHub Action can build `operational-context.json` internally from repo-loca
 
 Bootstrap also creates `.veridion/suppressions.json` so teams have a first-class accepted-risk feedback loop instead of ad hoc ignore behavior.
 
+Each suppression can now carry governance metadata such as owner, approver, and ticket so accepted risk remains auditable instead of becoming silent ignore state.
+
 Optional AI wording can sit on top of the deterministic decision engine. If you configure a provider, Veridion still decides deterministically and only uses the model to rewrite structured threat facts into shorter operator-facing English.
 
 For an OpenAI-backed setup in GitHub Actions, add:
 
 - repository variable: `VERIDION_COMMENT_SUMMARY_PROVIDER=openai`
-- repository variable: `VERIDION_COMMENT_SUMMARY_MODEL=gpt-5.4-mini`
+- repository variable: `VERIDION_COMMENT_SUMMARY_MODEL=gpt-5-mini`
 - repository secret: `VERIDION_COMMENT_SUMMARY_API_KEY`
 
-OpenAI's model guide says to choose a smaller variant such as `gpt-5.4-mini` when you are optimizing for latency and cost, which fits this wording-only layer well: [OpenAI Models](https://developers.openai.com/api/docs/models).
+OpenAI's model guide says to choose a smaller variant such as `gpt-5-mini` when you are optimizing for latency and cost, which fits this wording-only layer well: [OpenAI Models](https://developers.openai.com/api/docs/models).
+
+For downstream automation, the action now exposes:
+
+- `gate_status`: `pass`, `review`, or `block`
+- `decision_allowed`: whether the configured gate permits the final verdict
+- `required_approvals_json`
+- `required_next_steps_json`
+- `blocking_reasons_json`
+- `accepted_risk_present`
+- `decision_contract_path`
 
 For contributor/local development only, an editable install also works:
 

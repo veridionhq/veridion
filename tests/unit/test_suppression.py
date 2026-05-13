@@ -23,6 +23,10 @@ def test_parse_suppressions_payload_and_apply_by_rule_id() -> None:
                 {
                     "rule_id": "python.lang.security.audit.dangerous-subprocess-use",
                     "reason": "accepted temporarily while refactor is in progress",
+                    "owner": "platform-security",
+                    "approved_by": "security-owner",
+                    "ticket": "SEC-123",
+                    "created_at": "2026-05-10T00:00:00Z",
                     "expires_on": "2026-12-31",
                 }
             ],
@@ -41,7 +45,12 @@ def test_parse_suppressions_payload_and_apply_by_rule_id() -> None:
     assert report.expired_rules == 0
     assert report.suppressed_baseline_findings == 0
     assert report.suppressed_findings[0].reason == "accepted temporarily while refactor is in progress"
+    assert report.suppressed_findings[0].owner == "platform-security"
+    assert report.suppressed_findings[0].approved_by == "security-owner"
+    assert report.suppressed_findings[0].ticket == "SEC-123"
+    assert report.suppressed_findings[0].created_at == "2026-05-10T00:00:00Z"
     assert report.suppressed_findings[0].expires_on == "2026-12-31"
+    assert report.governance_gaps == ()
 
 
 def test_apply_suppressions_ignores_expired_rules() -> None:
@@ -194,3 +203,8 @@ def test_apply_suppressions_matches_path_prefix() -> None:
     assert current == []
     assert baseline == []
     assert report.suppressed_findings[0].reason == "temporary admin path exception"
+    assert report.governance_gaps == (
+        "approval metadata missing",
+        "owner missing",
+        "tracking ticket missing",
+    )

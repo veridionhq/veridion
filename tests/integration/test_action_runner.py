@@ -52,6 +52,9 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
         "sre_owner",
     )
     assert result.comment_identifier == "veridion:rdi"
+    assert result.gate_status == "block"
+    assert result.decision_allowed is False
+    assert result.allowed_decisions == ("GO", "CONDITIONAL GO")
     assert result.decision.score_adjustments == ()
     assert "## Release Decision Intelligence" in result.comment_markdown
     assert "### ❌ NO GO" in result.comment_markdown
@@ -72,6 +75,17 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert "Unattributed findings: 0" in result.comment_markdown
     assert result.comment_markdown.startswith("<!-- veridion:rdi:start -->\n")
     assert result.to_dict()["comment_summary"]["mode"] == "deterministic"
+    decision_contract = result.to_dict()["decision_contract"]
+    assert decision_contract["schema_version"] == 1
+    assert decision_contract["decision"]["verdict"] == "NO GO"
+    assert decision_contract["decision"]["gate_status"] == "block"
+    assert decision_contract["actions"]["required_approvals"] == [
+        "platform_owner",
+        "security_owner",
+        "service_owner",
+        "sre_owner",
+    ]
+    assert "rollback readiness" in " ".join(decision_contract["signals"]["trust_baseline"]["elevated"])
 
 
 def test_action_result_to_dict_is_json_serializable() -> None:
@@ -87,6 +101,7 @@ def test_action_result_to_dict_is_json_serializable() -> None:
 
     assert '"decision": "GO"' in rendered
     assert '"comment_identifier": "veridion:rdi"' in rendered
+    assert '"decision_contract"' in rendered
 
 
 def test_run_action_accepts_versioned_operational_context_artifact() -> None:
@@ -190,6 +205,7 @@ def test_run_action_applies_accepted_risk_suppressions() -> None:
     )
 
     assert result.bundle.summary.suppressed_findings == 1
+    assert result.bundle.summary.suppression_governance_gaps == 3
     assert result.bundle.summary.introduced_findings == 1
     assert result.bundle.summary.expired_suppressions == 0
     assert result.decision.score > initial.decision.score
@@ -198,6 +214,13 @@ def test_run_action_applies_accepted_risk_suppressions() -> None:
     assert "accepted risk suppressions: -" in "\n".join(result.decision.score_adjustments)
     assert "1 finding(s) are suppressed as accepted risk" in result.decision.reasons
     assert "policy no_go threshold triggered at score 60" in result.decision.reasons
+    assert "Fill suppression owner, approval, and ticket metadata before release" in result.decision.recommendations
     assert "### Accepted Risk" in result.comment_markdown
     assert "- suppressed findings: 1" in result.comment_markdown
     assert "temporary vendor exception while upstream patch is pending (1 finding(s)) (expires 2026-12-31)" in result.comment_markdown
+    assert "governance gaps: approval metadata missing, owner missing, tracking ticket missing" in result.comment_markdown
+    assert result.to_dict()["decision_contract"]["accepted_risk"]["governance_gaps"] == [
+        "approval metadata missing",
+        "owner missing",
+        "tracking ticket missing",
+    ]

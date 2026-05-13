@@ -72,6 +72,18 @@ inputs:
     description: "Path to write structured JSON output"
     required: false
     default: "veridion-result.json"
+  decision-contract-path:
+    description: "Path to write machine-facing decision contract JSON"
+    required: false
+    default: "veridion-decision.json"
+  enforce-decision:
+    description: "Whether to fail the action when the final decision is not allowed"
+    required: false
+    default: "false"
+  allowed-decisions:
+    description: "Comma-separated decisions allowed to pass when enforce-decision is true"
+    required: false
+    default: "GO,CONDITIONAL GO"
   github-token:
     description: "GitHub token used to upsert the PR comment"
     required: false
@@ -107,9 +119,30 @@ outputs:
   json_output_path:
     description: "Path to structured JSON result"
     value: ${{ steps.run-rdi.outputs.json_output_path }}
+  decision_contract_path:
+    description: "Path to machine-facing decision contract JSON"
+    value: ${{ steps.run-rdi.outputs.decision_contract_path }}
   comment_identifier:
     description: "Stable comment identifier"
     value: ${{ steps.run-rdi.outputs.comment_identifier }}
+  gate_status:
+    description: "Stable gate status for workflow automation: pass, review, or block"
+    value: ${{ steps.run-rdi.outputs.gate_status }}
+  decision_allowed:
+    description: "Whether the final decision is allowed by the configured action gate"
+    value: ${{ steps.run-rdi.outputs.decision_allowed }}
+  required_approvals_json:
+    description: "JSON array of required approval roles"
+    value: ${{ steps.run-rdi.outputs.required_approvals_json }}
+  required_next_steps_json:
+    description: "JSON array of required next steps"
+    value: ${{ steps.run-rdi.outputs.required_next_steps_json }}
+  blocking_reasons_json:
+    description: "JSON array of blocking reasons"
+    value: ${{ steps.run-rdi.outputs.blocking_reasons_json }}
+  accepted_risk_present:
+    description: "Whether active accepted-risk suppressions are present in the change"
+    value: ${{ steps.run-rdi.outputs.accepted_risk_present }}
   comment_id:
     description: "GitHub comment id when comment posting is enabled"
     value: ${{ steps.comment-rdi.outputs.comment_id }}
@@ -180,6 +213,9 @@ runs:
         INPUT_COMMENT_SUMMARY_STYLE: ${{ inputs.comment-summary-style }}
         INPUT_COMMENT_PATH: ${{ inputs.comment-path }}
         INPUT_JSON_OUTPUT_PATH: ${{ inputs.json-output-path }}
+        INPUT_DECISION_CONTRACT_PATH: ${{ inputs.decision-contract-path }}
+        INPUT_ENFORCE_DECISION: ${{ inputs.enforce-decision }}
+        INPUT_ALLOWED_DECISIONS: ${{ inputs.allowed-decisions }}
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
         INPUT_REPOSITORY: ${{ inputs.repository }}
         INPUT_PULL_REQUEST_NUMBER: ${{ inputs.pull-request-number }}
@@ -251,7 +287,10 @@ runs:
           "${suppression_args[@]}" \
           "${summary_args[@]}" \
           --comment-path "${INPUT_COMMENT_PATH}" \
-          --json-output-path "${INPUT_JSON_OUTPUT_PATH}"
+          --json-output-path "${INPUT_JSON_OUTPUT_PATH}" \
+          --decision-contract-path "${INPUT_DECISION_CONTRACT_PATH}" \
+          --enforce-decision "${INPUT_ENFORCE_DECISION}" \
+          --allowed-decisions "${INPUT_ALLOWED_DECISIONS}"
     - name: Post Veridion PR comment
       id: comment-rdi
       if: ${{ inputs.post-comment == 'true' }}

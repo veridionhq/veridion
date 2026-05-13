@@ -25,6 +25,7 @@ def test_build_bootstrap_files_scaffolds_expected_paths() -> None:
     assert "uses: veridionhq/veridion@main" in files[".github/workflows/veridion-rdi.yml"]
     assert "policy-path: .veridion/policy.yaml" in files[".github/workflows/veridion-rdi.yml"]
     assert "suppression-path: .veridion/suppressions.json" in files[".github/workflows/veridion-rdi.yml"]
+    assert "decision-contract-path: veridion-decision.json" in files[".github/workflows/veridion-rdi.yml"]
 
 
 def test_build_bootstrap_files_rejects_unknown_preset() -> None:

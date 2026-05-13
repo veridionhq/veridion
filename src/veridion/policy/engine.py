@@ -87,6 +87,8 @@ def _apply_policy_decision(
 
     if bundle.summary.suppressed_findings:
         reasons.append("accepted risk is present in the current change")
+        if bundle.summary.suppression_governance_gaps:
+            reasons.append("accepted risk governance metadata is incomplete")
         return "CONDITIONAL GO"
 
     return risk.decision
@@ -255,6 +257,9 @@ def _recommendations(
 
     if bundle.summary.expired_suppressions:
         recommendations.append("Remove or renew expired accepted-risk suppressions before release")
+
+    if bundle.summary.suppression_governance_gaps:
+        recommendations.append("Fill suppression owner, approval, and ticket metadata before release")
 
     if not recommendations:
         recommendations.append("Proceed with normal review and deployment checks")
