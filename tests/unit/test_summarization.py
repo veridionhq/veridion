@@ -327,6 +327,26 @@ def test_parse_summarization_result_rejects_example_style_blocker_line() -> None
         raise AssertionError("expected example-style blocker line to be rejected")
 
 
+def test_parse_summarization_result_rejects_approval_language_in_driver() -> None:
+    try:
+        _parse_summarization_result(
+            """
+            {
+              "driver_summary": [
+                "this change needs review because app/main.py uses subprocess with shell=True",
+                "platform_owner approval required"
+              ],
+              "threat_summaries": [],
+              "contextual_summary": []
+            }
+            """
+        )
+    except RuntimeError as exc:
+        assert "approval language" in str(exc)
+    else:
+        raise AssertionError("expected approval language in driver summary to be rejected")
+
+
 def test_explain_introduced_threats_normalizes_broad_iam_findings() -> None:
     bundle = build_analysis_bundle(
         current_findings=[

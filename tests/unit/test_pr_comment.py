@@ -37,8 +37,8 @@ def test_render_pr_comment_renders_policy_decision_for_high_risk_change() -> Non
     comment = render_pr_comment(bundle, decision)
 
     assert comment.startswith("<!-- veridion:rdi:start -->\n## Release Decision Intelligence")
-    assert "> ❌ **NO GO**" in comment
-    assert "> RDI Score: 38 | Confidence: HIGH" in comment
+    assert "### ❌ NO GO" in comment
+    assert "**RDI Score:** 38 | **Confidence:** HIGH" in comment
     assert "### Why this is blocked" in comment
     assert "- this change cannot ship because it introduces high code risk in app/routes.py" in comment
     assert "- 2 new high-severity issues detected" in comment
@@ -83,7 +83,7 @@ def test_render_pr_comment_handles_clean_change_without_approvals() -> None:
 
     comment = render_pr_comment(bundle, decision)
 
-    assert "> ✅ **GO**" in comment
+    assert "### ✅ GO" in comment
     assert "**Summary:** Introduced findings: 0 | Existing findings: 0 | Unattributed findings: 0 | Suppressed findings: 0 | Changed files: 1" in comment
     assert "### Required Approvals" not in comment
     assert "- Proceed with normal review and deployment checks" in comment

@@ -68,8 +68,8 @@ def render_pr_comment_result(
 
     lines.append("## Release Decision Intelligence")
     lines.append("")
-    lines.append(f"> {_decision_icon(decision.decision)} **{decision.decision}**")
-    lines.append(f"> RDI Score: {decision.score} | Confidence: {decision.confidence.upper()}")
+    lines.append(f"### {_decision_icon(decision.decision)} {decision.decision}")
+    lines.append(f"**RDI Score:** {decision.score} | **Confidence:** {decision.confidence.upper()}")
     lines.append("")
 
     summary_parts = [
@@ -240,6 +240,8 @@ def _merge_headline_summary(
     headline_key = _normalize_driver_line(headline)
     for line in rendered_primary_drivers:
         if _normalize_driver_line(line) == headline_key:
+            continue
+        if line.lower().startswith(("this change cannot ship because", "this change needs review because")):
             continue
         if line not in merged:
             merged.append(line)

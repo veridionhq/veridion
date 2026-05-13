@@ -323,6 +323,8 @@ def _validate_operator_lines(lines: tuple[str, ...], *, max_items: int, section:
             raise RuntimeError("summarizer output restated the decision instead of the blocker reason")
         if section == "driver" and index == 0 and "such as" in lowered:
             raise RuntimeError("summarizer output used example phrasing instead of a decisive blocker statement")
+        if section == "driver" and "approval required" in lowered:
+            raise RuntimeError("summarizer output used approval language in the blocker summary")
         if section == "context" and lowered.startswith(_ACTION_PREFIXES):
             raise RuntimeError("summarizer output used action language in contextual summary")
         if section == "threat":
