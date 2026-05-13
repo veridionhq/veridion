@@ -9,6 +9,7 @@ from veridion.summarization import (
     SummarizationRequest,
     SummarizationResult,
     build_comment_summarizer,
+    _parse_summarization_result,
     summarize_comment_request,
 )
 
@@ -208,3 +209,41 @@ def test_summarize_comment_request_captures_http_error_body(monkeypatch) -> None
     assert trace.provider == "openai"
     assert trace.model == "gpt-5-mini"
     assert trace.error == 'HTTP 429: {"error":{"type":"insufficient_quota","message":"Quota exceeded"}}'
+
+
+def test_parse_summarization_result_rejects_schema_shaped_output() -> None:
+    try:
+        _parse_summarization_result(
+            """
+            {
+              "driver_summary": ["required_approvals: platform_owner, security_owner"],
+              "threat_summaries": ["grype: pyyaml 5.3.1 in requirements.txt -- advisory_count: 2"],
+              "contextual_summary": []
+            }
+            """
+        )
+    except RuntimeError as exc:
+        assert "schema-shaped fields" in str(exc)
+    else:
+        raise AssertionError("expected schema-shaped output to be rejected")
+
+
+def test_parse_summarization_result_caps_threat_summaries() -> None:
+    result = _parse_summarization_result(
+        """
+        {
+          "driver_summary": ["this change cannot ship because it adds critical vulnerable dependencies"],
+          "threat_summaries": [
+            "requirements.txt introduces pyyaml 5.3.1 with critical code-execution risk",
+            "requirements.txt introduces urllib3 1.25.8 with multiple high-severity advisories",
+            "infra/main.tf adds overly broad IAM permissions",
+            "this fourth line should be dropped"
+          ],
+          "contextual_summary": ["service is publicly exposed", "blast radius is high", "change touches a shared platform surface", "extra context"]
+        }
+        """
+    )
+
+    assert len(result.threat_summaries) == 3
+    assert result.threat_summaries[-1] == "infra/main.tf adds overly broad IAM permissions"
+    assert len(result.contextual_summary) == 3
