@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from typing import Protocol
-from urllib import request
+from urllib import error, request
 
 from veridion.report.threats import ThreatExplanation
 
@@ -274,8 +274,11 @@ def _post_json(
 ) -> dict[str, object]:
     body = json.dumps(payload).encode("utf-8")
     http_request = request.Request(url, data=body, headers=headers, method="POST")
-    with request.urlopen(http_request, timeout=timeout_seconds) as response:
-        return json.loads(response.read())
+    try:
+        with request.urlopen(http_request, timeout=timeout_seconds) as response:
+            return json.loads(response.read())
+    except error.HTTPError as exc:
+        raise RuntimeError(_format_http_error(exc)) from exc
 
 
 def _parse_summarization_result(text: str) -> SummarizationResult:
@@ -321,3 +324,20 @@ Rules:
   - threat_summaries: string[]
   - contextual_summary: string[]
 """.strip()
+
+
+def _format_http_error(exc: error.HTTPError) -> str:
+    status = getattr(exc, "code", "unknown")
+    body = ""
+    try:
+        raw_body = exc.read()
+    except Exception:
+        raw_body = b""
+    if isinstance(raw_body, bytes) and raw_body:
+        body = raw_body.decode("utf-8", errors="replace").strip()
+    elif isinstance(raw_body, str):
+        body = raw_body.strip()
+    if body:
+        compact_body = " ".join(body.split())
+        return f"HTTP {status}: {compact_body}"
+    return f"HTTP {status}: {exc.reason}"

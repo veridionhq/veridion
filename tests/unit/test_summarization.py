@@ -1,3 +1,6 @@
+import io
+from urllib import error
+
 from veridion.analysis import build_analysis_bundle
 from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
@@ -6,6 +9,7 @@ from veridion.summarization import (
     SummarizationRequest,
     SummarizationResult,
     build_comment_summarizer,
+    summarize_comment_request,
 )
 
 
@@ -164,3 +168,43 @@ def test_summarization_result_shape_is_simple() -> None:
     )
 
     assert result.driver_summary[0].startswith("this change introduces")
+
+
+def test_summarize_comment_request_captures_http_error_body(monkeypatch) -> None:
+    summarizer = build_comment_summarizer(
+        provider="openai",
+        model="gpt-5-mini",
+        api_key="test-key",
+    )
+    assert summarizer is not None
+
+    def fake_urlopen(req, timeout=0):  # noqa: ARG001
+        raise error.HTTPError(
+            req.full_url,
+            429,
+            "Too Many Requests",
+            hdrs=None,
+            fp=io.BytesIO(b'{"error":{"type":"insufficient_quota","message":"Quota exceeded"}}'),
+        )
+
+    monkeypatch.setattr("veridion.summarization.request.urlopen", fake_urlopen)
+
+    result, trace = summarize_comment_request(
+        SummarizationRequest(
+            decision="NO GO",
+            score=0,
+            confidence="high",
+            primary_drivers=("policy max_severity exceeded",),
+            threats=(),
+            contextual_risk=(),
+            required_approvals=("security_owner",),
+            required_next_steps=("Block release until introduced risk is remediated or policy is adjusted",),
+        ),
+        summarizer,
+    )
+
+    assert result is None
+    assert trace.mode == "deterministic"
+    assert trace.provider == "openai"
+    assert trace.model == "gpt-5-mini"
+    assert trace.error == 'HTTP 429: {"error":{"type":"insufficient_quota","message":"Quota exceeded"}}'
