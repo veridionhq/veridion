@@ -137,6 +137,26 @@ Then tune:
 - score penalties
 - trust profile posture values
 
+## Optional AI wording layer
+
+Veridion can optionally rewrite its structured threat facts into shorter English using a model provider, while still keeping the decision and policy logic deterministic.
+
+For an OpenAI-backed setup in GitHub Actions, add:
+
+- repository variable: `VERIDION_COMMENT_SUMMARY_PROVIDER=openai`
+- repository variable: `VERIDION_COMMENT_SUMMARY_MODEL=gpt-5.4-mini`
+- repository secret: `VERIDION_COMMENT_SUMMARY_API_KEY`
+
+The workflow example already passes these optional inputs through when they are present.
+
+Supported providers today:
+
+- OpenAI-compatible
+- Anthropic / Claude
+- AWS Bedrock
+
+If no provider is configured, or if the model response is invalid, Veridion falls back to deterministic rendering automatically.
+
 ## Install Notes
 
 - `operational-context.json` is the portable integration contract. Other CI/CD systems should emit that same artifact instead of duplicating Veridion internals.

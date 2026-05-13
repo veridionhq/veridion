@@ -163,6 +163,12 @@ jobs:
             syft=artifacts/baseline-syft.json
           policy-path: examples/policy-packs/application-team.yaml
           operational-context-path: operational-context.json
+          comment-summary-provider: ${{ vars.VERIDION_COMMENT_SUMMARY_PROVIDER }}
+          comment-summary-model: ${{ vars.VERIDION_COMMENT_SUMMARY_MODEL }}
+          comment-summary-api-key: ${{ secrets.VERIDION_COMMENT_SUMMARY_API_KEY }}
+          comment-summary-base-url: ${{ vars.VERIDION_COMMENT_SUMMARY_BASE_URL }}
+          comment-summary-region: ${{ vars.VERIDION_COMMENT_SUMMARY_REGION }}
+          comment-summary-style: terse
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           post-comment: "true"

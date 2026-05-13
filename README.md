@@ -195,6 +195,16 @@ The GitHub Action can build `operational-context.json` internally from repo-loca
 
 Bootstrap also creates `.veridion/suppressions.json` so teams have a first-class accepted-risk feedback loop instead of ad hoc ignore behavior.
 
+Optional AI wording can sit on top of the deterministic decision engine. If you configure a provider, Veridion still decides deterministically and only uses the model to rewrite structured threat facts into shorter operator-facing English.
+
+For an OpenAI-backed setup in GitHub Actions, add:
+
+- repository variable: `VERIDION_COMMENT_SUMMARY_PROVIDER=openai`
+- repository variable: `VERIDION_COMMENT_SUMMARY_MODEL=gpt-5.4-mini`
+- repository secret: `VERIDION_COMMENT_SUMMARY_API_KEY`
+
+OpenAI's model guide says to choose a smaller variant such as `gpt-5.4-mini` when you are optimizing for latency and cost, which fits this wording-only layer well: [OpenAI Models](https://developers.openai.com/api/docs/models).
+
 For contributor/local development only, an editable install also works:
 
 ```bash

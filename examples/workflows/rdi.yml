@@ -124,6 +124,12 @@ jobs:
           trust-profile-source-path: examples/trust/trust-profile.source.json
           trust-catalog-source-path: examples/trust/trust-catalog.source.json
           suppression-path: .veridion/suppressions.json
+          comment-summary-provider: ${{ vars.VERIDION_COMMENT_SUMMARY_PROVIDER }}
+          comment-summary-model: ${{ vars.VERIDION_COMMENT_SUMMARY_MODEL }}
+          comment-summary-api-key: ${{ secrets.VERIDION_COMMENT_SUMMARY_API_KEY }}
+          comment-summary-base-url: ${{ vars.VERIDION_COMMENT_SUMMARY_BASE_URL }}
+          comment-summary-region: ${{ vars.VERIDION_COMMENT_SUMMARY_REGION }}
+          comment-summary-style: terse
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           post-comment: "true"
