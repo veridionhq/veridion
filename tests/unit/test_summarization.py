@@ -247,3 +247,44 @@ def test_parse_summarization_result_caps_threat_summaries() -> None:
     assert len(result.threat_summaries) == 3
     assert result.threat_summaries[-1] == "infra/main.tf adds overly broad IAM permissions"
     assert len(result.contextual_summary) == 3
+
+
+def test_parse_summarization_result_rejects_redundant_decision_line() -> None:
+    try:
+        _parse_summarization_result(
+            """
+            {
+              "driver_summary": [
+                "Decision: NO GO.",
+                "this change cannot ship because requirements.txt introduces critical vulnerable dependencies"
+              ],
+              "threat_summaries": [],
+              "contextual_summary": []
+            }
+            """
+        )
+    except RuntimeError as exc:
+        assert "restated the decision" in str(exc)
+    else:
+        raise AssertionError("expected redundant decision line to be rejected")
+
+
+def test_parse_summarization_result_rejects_action_language_in_context() -> None:
+    try:
+        _parse_summarization_result(
+            """
+            {
+              "driver_summary": [
+                "this change cannot ship because requirements.txt introduces critical vulnerable dependencies"
+              ],
+              "threat_summaries": [],
+              "contextual_summary": [
+                "Block release until introduced risk is remediated or policy is adjusted."
+              ]
+            }
+            """
+        )
+    except RuntimeError as exc:
+        assert "action language in contextual summary" in str(exc)
+    else:
+        raise AssertionError("expected action language in context to be rejected")

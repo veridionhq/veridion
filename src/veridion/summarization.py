@@ -284,9 +284,11 @@ def _parse_summarization_result(text: str) -> SummarizationResult:
     parsed = json.loads(text)
     if not isinstance(parsed, dict):
         raise RuntimeError("summarizer output must be a JSON object")
-    driver_summary = _validate_operator_lines(_string_tuple(parsed.get("driver_summary")), max_items=4)
-    threat_summaries = _validate_operator_lines(_string_tuple(parsed.get("threat_summaries")), max_items=3)
-    contextual_summary = _validate_operator_lines(_string_tuple(parsed.get("contextual_summary")), max_items=3)
+    driver_summary = _validate_operator_lines(_string_tuple(parsed.get("driver_summary")), max_items=4, section="driver")
+    threat_summaries = _validate_operator_lines(_string_tuple(parsed.get("threat_summaries")), max_items=3, section="threat")
+    contextual_summary = _validate_operator_lines(
+        _string_tuple(parsed.get("contextual_summary")), max_items=3, section="context"
+    )
     if not threat_summaries and not driver_summary:
         raise RuntimeError("summarizer output must contain driver_summary or threat_summaries")
     return SummarizationResult(
@@ -309,7 +311,7 @@ def _string_tuple(value: object) -> tuple[str, ...]:
     return tuple(normalized)
 
 
-def _validate_operator_lines(lines: tuple[str, ...], *, max_items: int) -> tuple[str, ...]:
+def _validate_operator_lines(lines: tuple[str, ...], *, max_items: int, section: str) -> tuple[str, ...]:
     validated: list[str] = []
     for line in lines[:max_items]:
         lowered = line.lower()
@@ -317,6 +319,10 @@ def _validate_operator_lines(lines: tuple[str, ...], *, max_items: int) -> tuple
             raise RuntimeError("summarizer output leaked schema-shaped fields")
         if lowered.startswith(("source:", "severity:", "location:", "subject:", "threat_type:")):
             raise RuntimeError("summarizer output used metadata labels instead of operator language")
+        if section == "driver" and lowered.startswith("decision:"):
+            raise RuntimeError("summarizer output restated the decision instead of the blocker reason")
+        if section == "context" and lowered.startswith(_ACTION_PREFIXES):
+            raise RuntimeError("summarizer output used action language in contextual summary")
         validated.append(line)
     return tuple(validated)
 
@@ -330,15 +336,22 @@ Rules:
 - Keep wording direct and short.
 - Prefer one sentence fragments, not paragraphs.
 - Write for a staff DevOps or platform engineer deciding whether to ship.
+- Sound authoritative and decisive, not tentative or report-like.
 - Use plain English, not schema labels or scanner metadata.
 - Do not use field names like advisory_count, required_approvals, required_next_steps, source, severity, location, subject, or threat_type.
 - Do not echo internal keys or counts unless they help explain the operator risk directly.
+- driver_summary explains why the change is blocked or needs review. Do not repeat "Decision: NO GO" or "Decision: CONDITIONAL GO".
 - Threat summaries must describe only the top 2-3 concrete threats worth reading first.
+- threat_summaries should be short concrete lines, not mini reports.
 - Merge duplicate package advisories into one short line when possible.
+- contextual_summary explains impact or stakes only, such as public exposure, blast radius, or shared platform risk.
+- contextual_summary must never contain instructions or action items.
 - Good: "requirements.txt introduces pyyaml 5.3.1 with critical code-execution risk"
 - Good: "infra/main.tf adds overly broad IAM permissions"
+- Good: "service is publicly exposed"
 - Bad: "grype: pyyaml 5.3.1 in requirements.txt — critical; advisory_count: 2"
 - Bad: "required_approvals: platform_owner, security_owner"
+- Bad: "Block release until introduced risk is remediated or policy is adjusted"
 - Return valid JSON only with:
   - driver_summary: string[]
   - threat_summaries: string[]
@@ -357,6 +370,20 @@ _BANNED_SUMMARY_TOKENS = (
     "threat_summaries",
     "contextual_summary",
     "threat_type",
+)
+
+
+_ACTION_PREFIXES = (
+    "block ",
+    "block release",
+    "run ",
+    "review ",
+    "prioritize ",
+    "require ",
+    "verify ",
+    "coordinate ",
+    "remediate ",
+    "adjust ",
 )
 
 
