@@ -317,6 +317,7 @@ def _write_github_outputs(
         f"required_approvals_json={json.dumps(list(result.decision.required_approvals))}",
         f"required_next_steps_json={json.dumps(result.decision_contract['actions']['required_next_steps'])}",
         f"blocking_reasons_json={json.dumps(result.decision_contract['reasons']['blocking'])}",
+        f"blocking_categories_json={json.dumps(result.decision_contract['decision']['blocking_categories'])}",
         f"accepted_risk_present={str(bool(result.bundle.summary.suppressed_findings)).lower()}",
     ]
     if result.decision.required_approvals:

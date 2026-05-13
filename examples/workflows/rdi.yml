@@ -132,6 +132,7 @@ jobs:
           comment-summary-style: terse
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
+          decision-contract-path: veridion-decision.json
           post-comment: "true"
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
@@ -143,6 +144,10 @@ jobs:
           echo "Decision: ${{ steps.run-rdi.outputs.decision }}"
           echo "Score: ${{ steps.run-rdi.outputs.score }}"
           echo "Confidence: ${{ steps.run-rdi.outputs.confidence }}"
+          echo "Gate status: ${{ steps.run-rdi.outputs.gate_status }}"
+          echo "Decision allowed: ${{ steps.run-rdi.outputs.decision_allowed }}"
+          echo "Blocking categories: ${{ steps.run-rdi.outputs.blocking_categories_json }}"
+          echo "Required approvals JSON: ${{ steps.run-rdi.outputs.required_approvals_json }}"
           echo "Comment identifier: ${{ steps.run-rdi.outputs.comment_identifier }}"
           echo "Comment mode: ${{ steps.run-rdi.outputs.comment_mode }}"
           echo "Comment id: ${{ steps.run-rdi.outputs.comment_id }}"
@@ -162,3 +167,4 @@ jobs:
           path: |
             veridion-pr-comment.md
             veridion-result.json
+            veridion-decision.json

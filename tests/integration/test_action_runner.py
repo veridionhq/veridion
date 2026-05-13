@@ -77,13 +77,30 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert result.to_dict()["comment_summary"]["mode"] == "deterministic"
     decision_contract = result.to_dict()["decision_contract"]
     assert decision_contract["schema_version"] == 1
+    assert decision_contract["source"] == "veridion/action"
+    assert decision_contract["contract_version_source"] == "veridion.decision_contract@1"
     assert decision_contract["decision"]["verdict"] == "NO GO"
     assert decision_contract["decision"]["gate_status"] == "block"
+    assert decision_contract["decision"]["blocking_categories"] == [
+        "introduced_critical_findings",
+        "introduced_high_findings",
+        "infrastructure_risk",
+        "dependency_risk",
+        "public_exposure",
+        "large_blast_radius",
+        "policy_max_severity_exceeded",
+    ]
     assert decision_contract["actions"]["required_approvals"] == [
         "platform_owner",
         "security_owner",
         "service_owner",
         "sre_owner",
+    ]
+    assert decision_contract["actions"]["required_approval_labels"] == [
+        "platform owner",
+        "security owner",
+        "service owner",
+        "sre owner",
     ]
     assert "rollback readiness" in " ".join(decision_contract["signals"]["trust_baseline"]["elevated"])
 

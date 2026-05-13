@@ -140,6 +140,9 @@ outputs:
   blocking_reasons_json:
     description: "JSON array of blocking reasons"
     value: ${{ steps.run-rdi.outputs.blocking_reasons_json }}
+  blocking_categories_json:
+    description: "JSON array of normalized blocking categories"
+    value: ${{ steps.run-rdi.outputs.blocking_categories_json }}
   accepted_risk_present:
     description: "Whether active accepted-risk suppressions are present in the change"
     value: ${{ steps.run-rdi.outputs.accepted_risk_present }}

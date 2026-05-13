@@ -30,8 +30,9 @@ class PolicyConfig:
     # database_migration_surface, data_surface.
     require_sre_owner_for: tuple[str, ...] = ()
     # Valid values: sensitive_repo, public_exposure, dependency_reputation_risk, payments_surface, auth_surface,
-    # data_surface.
+    # data_surface, accepted_risk_present, accepted_risk_governance_gap.
     require_security_owner_for: tuple[str, ...] = ()
+    require_complete_accepted_risk_metadata: bool = False
     historical_instability_score_penalty: int = 0
     service_criticality_score_penalty: int = 0
     sensitive_repo_score_penalty: int = 0
@@ -118,6 +119,10 @@ def _policy_from_mapping(parsed: dict[str, object]) -> PolicyConfig:
         require_service_owner_for=_string_list(parsed.get("require_service_owner_for"), "require_service_owner_for"),
         require_sre_owner_for=_string_list(parsed.get("require_sre_owner_for"), "require_sre_owner_for"),
         require_security_owner_for=_string_list(parsed.get("require_security_owner_for"), "require_security_owner_for"),
+        require_complete_accepted_risk_metadata=_as_bool(
+            parsed.get("require_complete_accepted_risk_metadata"),
+            default=False,
+        ),
         historical_instability_score_penalty=_as_int(parsed.get("historical_instability_score_penalty"), default=0),
         service_criticality_score_penalty=_as_int(parsed.get("service_criticality_score_penalty"), default=0),
         sensitive_repo_score_penalty=_as_int(parsed.get("sensitive_repo_score_penalty"), default=0),

@@ -85,6 +85,14 @@ def _apply_policy_decision(
     if risk.score < policy.conditional_go_below_score:
         return "CONDITIONAL GO"
 
+    if (
+        policy.require_complete_accepted_risk_metadata
+        and bundle.summary.suppressed_findings
+        and bundle.summary.suppression_governance_gaps
+    ):
+        reasons.append("policy requires complete accepted-risk governance metadata")
+        return "NO GO"
+
     if bundle.summary.suppressed_findings:
         reasons.append("accepted risk is present in the current change")
         if bundle.summary.suppression_governance_gaps:
@@ -480,6 +488,8 @@ def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
         "payments_surface": bundle.change_context.touches_payments_surface,
         "auth_surface": bundle.change_context.touches_auth_surface,
         "data_surface": bundle.change_context.touches_data_surface,
+        "accepted_risk_present": bool(bundle.summary.suppressed_findings),
+        "accepted_risk_governance_gap": bool(bundle.summary.suppression_governance_gaps),
     }
     return checks.get(trigger, False) if trigger in VALID_POLICY_TRIGGERS else False
 

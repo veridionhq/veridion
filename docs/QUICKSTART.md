@@ -90,10 +90,20 @@ Example:
       "package_name": "urllib3",
       "package_version": "1.25.8",
       "reason": "temporary exception until upstream vendor patch",
+      "owner": "platform-security",
+      "approved_by": "security-owner",
+      "ticket": "SEC-1234",
+      "created_at": "2026-05-13T00:00:00Z",
       "expires_on": "2026-06-30"
     }
   ]
 }
+```
+
+If you want suppressions to block release when audit metadata is incomplete, set:
+
+```yaml
+require_complete_accepted_risk_metadata: true
 ```
 
 ## 6. Add the workflow
@@ -119,6 +129,7 @@ The workflow will:
 - build a versioned `operational-context.json`
 - run scanners on head and base
 - produce a Veridion decision and PR comment
+- emit `veridion-decision.json` for downstream automation
 
 ## 8. Tune only after first runs
 
@@ -144,7 +155,7 @@ Veridion can optionally rewrite its structured threat facts into shorter English
 For an OpenAI-backed setup in GitHub Actions, add:
 
 - repository variable: `VERIDION_COMMENT_SUMMARY_PROVIDER=openai`
-- repository variable: `VERIDION_COMMENT_SUMMARY_MODEL=gpt-5.4-mini`
+- repository variable: `VERIDION_COMMENT_SUMMARY_MODEL=gpt-5-mini`
 - repository secret: `VERIDION_COMMENT_SUMMARY_API_KEY`
 
 The workflow example already passes these optional inputs through when they are present.

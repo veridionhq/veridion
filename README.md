@@ -120,6 +120,7 @@ GitHub PR
 - [Website](https://getveridion.com)
 - [Docs Home](https://getveridion.com/docs/)
 - [Quickstart](docs/QUICKSTART.md)
+- [Automation Guide](docs/AUTOMATION_GUIDE.md)
 - [Evaluation Guide](docs/EVALUATION_GUIDE.md)
 - [Evaluation Checklist](docs/EVALUATION_CHECKLIST.md)
 - [Design Partner Guide](docs/DESIGN_PARTNER.md)
@@ -217,6 +218,7 @@ For downstream automation, the action now exposes:
 - `required_approvals_json`
 - `required_next_steps_json`
 - `blocking_reasons_json`
+- `blocking_categories_json`
 - `accepted_risk_present`
 - `decision_contract_path`
 

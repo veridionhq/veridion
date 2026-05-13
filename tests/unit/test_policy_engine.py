@@ -443,6 +443,73 @@ def test_evaluate_release_downgrades_clean_go_when_accepted_risk_is_present() ->
     assert "Review newly introduced dependencies and lockfile updates" in decision.recommendations
 
 
+def test_evaluate_release_can_block_when_policy_requires_complete_accepted_risk_metadata() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="trivy",
+                finding_type="dependency",
+                rule_id="CVE-2025-99999",
+                title="Temporary dependency issue",
+                severity="high",
+                package_name="urllib3",
+                package_version="1.25.8",
+                location=NormalizedLocation(path="requirements.txt"),
+            )
+        ],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=0,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+        suppression_rules=parse_suppressions_payload(
+            {
+                "schema_version": 1,
+                "suppressions": [
+                    {
+                        "finding_type": "dependency",
+                        "package_name": "urllib3",
+                        "package_version": "1.25.8",
+                        "reason": "temporary vendor exception while upstream patch is pending",
+                        "expires_on": "2026-12-31",
+                    }
+                ],
+            }
+        ),
+    )
+
+    decision = evaluate_release(
+        bundle,
+        parse_policy_yaml(
+            DEFAULT_POLICY_PATH.read_text()
+            + "\nrequire_complete_accepted_risk_metadata: true\n"
+        ),
+    )
+
+    assert decision.decision == "NO GO"
+    assert "policy requires complete accepted-risk governance metadata" in decision.reasons
+
+
+def test_parse_policy_yaml_accepts_accepted_risk_triggers() -> None:
+    policy = parse_policy_yaml(
+        """
+require_security_owner_for:
+  - accepted_risk_present
+  - accepted_risk_governance_gap
+"""
+    )
+
+    assert policy.require_security_owner_for == ("accepted_risk_present", "accepted_risk_governance_gap")
+
+
 def test_evaluate_release_can_apply_policy_to_inferred_change_surfaces() -> None:
     change_context = parse_unified_diff(
         """\

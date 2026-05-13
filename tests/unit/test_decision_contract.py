@@ -1,7 +1,11 @@
 import json
 
+from veridion.analysis import build_analysis_bundle
 from veridion.action.runner import _parse_allowed_decisions, _write_github_outputs, run_action
-from veridion.decision_contract import evaluate_gate
+from veridion.change_context.diff_parser import ParsedChangeContext
+from veridion.decision_contract import build_decision_contract, evaluate_gate
+from veridion.policy import PolicyConfig, evaluate_release
+from veridion.report.threats import ThreatExplanation
 
 
 def test_evaluate_gate_maps_decisions_to_stable_statuses() -> None:
@@ -50,6 +54,67 @@ def test_write_github_outputs_emits_gate_and_contract_fields(tmp_path, monkeypat
     assert "decision_contract_path=veridion-decision.json" in content
     assert "required_approvals_json=[]" in content
     assert "accepted_risk_present=false" in content
+    assert "blocking_categories_json=[]" in content
 
     blocking_line = next(line for line in content.splitlines() if line.startswith("blocking_reasons_json="))
     assert json.loads(blocking_line.split("=", maxsplit=1)[1]) == []
+
+
+def test_run_action_decision_contract_includes_metadata_and_categories() -> None:
+    result = run_action(
+        diff_text="diff --git a/requirements.txt b/requirements.txt\nindex 1111111..2222222 100644\n--- a/requirements.txt\n+++ b/requirements.txt\n@@ -1 +1 @@\n-urllib3==2.2.2\n+urllib3==1.25.8\n",
+        current_reports={},
+        baseline_reports={},
+        policy_text=None,
+    )
+
+    contract = result.decision_contract
+
+    assert contract["schema_version"] == 1
+    assert contract["source"] == "veridion/action"
+    assert contract["contract_version_source"] == "veridion.decision_contract@1"
+    assert isinstance(contract["generated_at"], str)
+    assert "blocking_categories" in contract["decision"]
+
+
+def test_build_decision_contract_deduplicates_equivalent_threats() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+    )
+    decision = evaluate_release(bundle, PolicyConfig())
+    contract = build_decision_contract(
+        bundle=bundle,
+        decision=decision,
+        threats=(
+            ThreatExplanation(
+                source="semgrep",
+                threat_type="code",
+                severity="medium",
+                subject="terraform.rule.one",
+                location="infra/main.tf",
+                summary="adds overly broad IAM permissions",
+                why_not_safe="overly broad IAM permissions can allow privilege escalation and violate least privilege",
+                advisory_count=1,
+            ),
+            ThreatExplanation(
+                source="semgrep",
+                threat_type="code",
+                severity="medium",
+                subject="terraform.rule.two",
+                location="infra/main.tf",
+                summary="adds overly broad IAM permissions",
+                why_not_safe="overly broad IAM permissions can allow privilege escalation and violate least privilege",
+                advisory_count=1,
+            ),
+        ),
+        comment_identifier="veridion:rdi",
+        comment_summary={"mode": "deterministic", "provider": "none", "model": "", "error": ""},
+        gate=evaluate_gate("GO", allowed_decisions=("GO", "CONDITIONAL GO")),
+    )
+
+    threats = contract["threats"]
+    assert len(threats) == 1
+    assert threats[0]["advisory_count"] == 2
+    assert threats[0]["subjects"] == ["terraform.rule.one", "terraform.rule.two"]

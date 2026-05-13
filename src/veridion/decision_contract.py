@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from veridion.analysis import AnalysisBundle
 from veridion.policy import PolicyDecision
@@ -75,6 +76,9 @@ def build_decision_contract(
 
     return {
         "schema_version": SUPPORTED_DECISION_SCHEMA_VERSION,
+        "generated_at": _utc_now(),
+        "source": "veridion/action",
+        "contract_version_source": "veridion.decision_contract@1",
         "decision": {
             "verdict": decision.decision,
             "score": decision.score,
@@ -82,6 +86,7 @@ def build_decision_contract(
             "gate_status": gate.status,
             "decision_allowed": gate.decision_allowed,
             "allowed_decisions": list(gate.allowed_decisions),
+            "blocking_categories": _blocking_categories(bundle, decision),
         },
         "reasons": {
             "blocking": list(blocking_reasons),
@@ -90,11 +95,12 @@ def build_decision_contract(
         },
         "actions": {
             "required_approvals": list(decision.required_approvals),
+            "required_approval_labels": [_format_approval(value) for value in decision.required_approvals],
             "required_next_steps": list(required_next_steps or advisory_guidance),
             "advisory_guidance": list(advisory_guidance),
             "all_recommendations": list(decision.recommendations),
         },
-        "threats": [item.to_dict() for item in threats],
+        "threats": _normalize_threats(threats),
         "signals": operational_signals,
         "accepted_risk": {
             "present": bool(bundle.summary.suppressed_findings),
@@ -235,3 +241,94 @@ def _operational_signals(bundle: AnalysisBundle) -> dict[str, object]:
             "elevated": list(trust.elevated_signals),
         },
     }
+
+
+def _normalize_threats(threats: tuple[ThreatExplanation, ...]) -> list[dict[str, object]]:
+    grouped: dict[tuple[str, str, str | None, str, str], dict[str, object]] = {}
+
+    for threat in threats:
+        key = (
+            threat.severity,
+            threat.threat_type,
+            threat.location,
+            threat.summary,
+            threat.why_not_safe,
+        )
+        existing = grouped.get(key)
+        if existing is None:
+            existing = {
+                "severity": threat.severity,
+                "threat_type": threat.threat_type,
+                "location": threat.location,
+                "summary": threat.summary,
+                "why_not_safe": threat.why_not_safe,
+                "advisory_count": 0,
+                "subjects": [],
+                "sources": [],
+            }
+            grouped[key] = existing
+        existing["advisory_count"] += threat.advisory_count
+        if threat.subject not in existing["subjects"]:
+            existing["subjects"].append(threat.subject)
+        if threat.source not in existing["sources"]:
+            existing["sources"].append(threat.source)
+
+    return sorted(
+        grouped.values(),
+        key=lambda item: (
+            _severity_rank(str(item["severity"])),
+            str(item["threat_type"]),
+            str(item["location"] or ""),
+            str(item["summary"]),
+        ),
+    )
+
+
+def _blocking_categories(bundle: AnalysisBundle, decision: PolicyDecision) -> list[str]:
+    categories: list[str] = []
+    features = decision.risk.features
+
+    if features.introduced_critical:
+        categories.append("introduced_critical_findings")
+    if features.introduced_high:
+        categories.append("introduced_high_findings")
+    if features.introduced_medium:
+        categories.append("introduced_medium_findings")
+    if bundle.summary.infrastructure_changes:
+        categories.append("infrastructure_risk")
+    if features.introduced_dependency_findings:
+        categories.append("dependency_risk")
+    if bundle.runtime_signals.public_exposure:
+        categories.append("public_exposure")
+    if bundle.runtime_signals.blast_radius in {"high", "critical"}:
+        categories.append("large_blast_radius")
+    if bundle.change_context.has_shared_platform_changes:
+        categories.append("shared_platform_surface")
+    if bundle.summary.suppressed_findings:
+        categories.append("accepted_risk_present")
+    if bundle.summary.suppression_governance_gaps:
+        categories.append("accepted_risk_governance_gap")
+    if bundle.summary.expired_suppressions:
+        categories.append("expired_accepted_risk")
+    if any(reason.startswith("policy max_severity") for reason in decision.reasons):
+        categories.append("policy_max_severity_exceeded")
+    if any(reason.startswith("policy no_go threshold") for reason in decision.reasons):
+        categories.append("policy_no_go_threshold")
+
+    return categories
+
+
+def _severity_rank(severity: str) -> int:
+    order = {
+        "critical": 0,
+        "high": 1,
+        "medium": 2,
+        "low": 3,
+        "info": 4,
+        "unknown": 5,
+    }
+    return order.get(severity, 6)
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
