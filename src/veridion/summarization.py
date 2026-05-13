@@ -313,7 +313,7 @@ def _string_tuple(value: object) -> tuple[str, ...]:
 
 def _validate_operator_lines(lines: tuple[str, ...], *, max_items: int, section: str) -> tuple[str, ...]:
     validated: list[str] = []
-    for line in lines[:max_items]:
+    for index, line in enumerate(lines[:max_items]):
         lowered = line.lower()
         if any(token in lowered for token in _BANNED_SUMMARY_TOKENS):
             raise RuntimeError("summarizer output leaked schema-shaped fields")
@@ -321,6 +321,8 @@ def _validate_operator_lines(lines: tuple[str, ...], *, max_items: int, section:
             raise RuntimeError("summarizer output used metadata labels instead of operator language")
         if section == "driver" and lowered.startswith("decision:"):
             raise RuntimeError("summarizer output restated the decision instead of the blocker reason")
+        if section == "driver" and index == 0 and "such as" in lowered:
+            raise RuntimeError("summarizer output used example phrasing instead of a decisive blocker statement")
         if section == "context" and lowered.startswith(_ACTION_PREFIXES):
             raise RuntimeError("summarizer output used action language in contextual summary")
         validated.append(line)
@@ -341,16 +343,24 @@ Rules:
 - Do not use field names like advisory_count, required_approvals, required_next_steps, source, severity, location, subject, or threat_type.
 - Do not echo internal keys or counts unless they help explain the operator risk directly.
 - driver_summary explains why the change is blocked or needs review. Do not repeat "Decision: NO GO" or "Decision: CONDITIONAL GO".
+- For NO GO, the first driver_summary line should start with "this change cannot ship because".
+- For CONDITIONAL GO, the first driver_summary line should start with "this change needs review because".
+- The first driver_summary line must state the blocking category directly. Do not use example phrasing like "such as".
 - Threat summaries must describe only the top 2-3 concrete threats worth reading first.
 - threat_summaries should be short concrete lines, not mini reports.
+- Prefer risk categories over scanner jargon or CVE trivia.
+- Avoid phrases like "multiple advisories present" when "multiple high-severity vulnerabilities" is clearer.
 - Merge duplicate package advisories into one short line when possible.
 - contextual_summary explains impact or stakes only, such as public exposure, blast radius, or shared platform risk.
 - contextual_summary must never contain instructions or action items.
+- Good: "this change cannot ship because it introduces critical vulnerable dependencies into a public-facing service"
 - Good: "requirements.txt introduces pyyaml 5.3.1 with critical code-execution risk"
+- Good: "requirements.txt introduces urllib3 1.25.8 with multiple high-severity dependency vulnerabilities"
 - Good: "infra/main.tf adds overly broad IAM permissions"
 - Good: "service is publicly exposed"
 - Bad: "grype: pyyaml 5.3.1 in requirements.txt — critical; advisory_count: 2"
 - Bad: "required_approvals: platform_owner, security_owner"
+- Bad: "this change cannot ship because it introduces critical vulnerable dependencies such as pyyaml 5.3.1"
 - Bad: "Block release until introduced risk is remediated or policy is adjusted"
 - Return valid JSON only with:
   - driver_summary: string[]

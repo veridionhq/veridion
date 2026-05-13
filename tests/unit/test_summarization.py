@@ -288,3 +288,22 @@ def test_parse_summarization_result_rejects_action_language_in_context() -> None
         assert "action language in contextual summary" in str(exc)
     else:
         raise AssertionError("expected action language in context to be rejected")
+
+
+def test_parse_summarization_result_rejects_example_style_blocker_line() -> None:
+    try:
+        _parse_summarization_result(
+            """
+            {
+              "driver_summary": [
+                "this change cannot ship because it introduces critical vulnerable dependencies such as pyyaml 5.3.1"
+              ],
+              "threat_summaries": [],
+              "contextual_summary": []
+            }
+            """
+        )
+    except RuntimeError as exc:
+        assert "example phrasing" in str(exc)
+    else:
+        raise AssertionError("expected example-style blocker line to be rejected")
