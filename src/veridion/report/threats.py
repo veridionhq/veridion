@@ -46,6 +46,8 @@ def explain_introduced_threats(bundle: AnalysisBundle) -> tuple[ThreatExplanatio
             severity = finding.severity.replace("-", " ")
             package = " ".join(part for part in (finding.package_name, finding.package_version) if part)
             subject = package or finding.rule_id
+            # Keep severities separate so the rendered threat lines preserve the highest-risk grouping.
+            # advisory_count is therefore per (package, location, severity), not a package-wide total.
             key = (severity, "dependency", subject, location)
             grouped_dependencies.setdefault(key, []).append(finding)
             continue

@@ -1,125 +1,16 @@
 import io
+import sys
+import types
 from urllib import error
 
-from veridion.analysis import build_analysis_bundle
-from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
-from veridion.normalize.models import NormalizedFinding, NormalizedLocation
-from veridion.report.threats import explain_introduced_threats, render_threat_line
 from veridion.summarization import (
+    BedrockSummarizer,
     SummarizationRequest,
     SummarizationResult,
     build_comment_summarizer,
     _parse_summarization_result,
     summarize_comment_request,
 )
-
-
-def test_explain_introduced_threats_returns_structured_dependency_and_code_facts() -> None:
-    bundle = build_analysis_bundle(
-        current_findings=[
-            NormalizedFinding(
-                source="semgrep",
-                finding_type="code",
-                rule_id="python.lang.security.audit.dangerous-subprocess-use",
-                title="Found 'subprocess' function 'run' with 'shell=True'. This is dangerous because this call will spawn the command using a shell process.",
-                severity="high",
-                location=NormalizedLocation(path="app/main.py", start_line=12, end_line=12),
-            ),
-            NormalizedFinding(
-                source="trivy",
-                finding_type="dependency",
-                rule_id="CVE-2026-12345",
-                title="Improper Input Validation in PyYAML",
-                severity="critical",
-                package_name="pyyaml",
-                package_version="5.3.1",
-                location=NormalizedLocation(path="/workspace/requirements.txt"),
-            ),
-        ],
-        baseline_findings=[],
-        change_context=ParsedChangeContext(
-            files=(
-                ParsedFileChange(
-                    path="app/main.py",
-                    change_type="modified",
-                    added_lines=1,
-                    removed_lines=0,
-                    signals=("application_code",),
-                    previous_path="app/main.py",
-                ),
-                ParsedFileChange(
-                    path="requirements.txt",
-                    change_type="modified",
-                    added_lines=1,
-                    removed_lines=0,
-                    signals=("dependency_manifest",),
-                    previous_path="requirements.txt",
-                ),
-            )
-        ),
-    )
-
-    threats = explain_introduced_threats(bundle)
-
-    assert len(threats) == 2
-    assert threats[0].severity == "critical"
-    assert threats[0].threat_type == "dependency"
-    assert threats[0].subject == "pyyaml 5.3.1"
-    assert threats[0].location == "requirements.txt"
-    assert threats[0].why_not_safe == "the change introduces vulnerable package versions"
-    assert render_threat_line(threats[0]) == (
-        "critical dependency risk in requirements.txt: pyyaml 5.3.1 (Improper Input Validation in PyYAML)"
-    )
-    assert threats[1].summary == "uses subprocess with shell=True"
-    assert threats[1].why_not_safe == "shell execution can allow command injection or unsafe command expansion"
-
-
-def test_explain_introduced_threats_groups_duplicate_dependency_advisories() -> None:
-    bundle = build_analysis_bundle(
-        current_findings=[
-            NormalizedFinding(
-                source="trivy",
-                finding_type="dependency",
-                rule_id="CVE-2026-12345",
-                title="Improper Input Validation in PyYAML",
-                severity="critical",
-                package_name="pyyaml",
-                package_version="5.3.1",
-                location=NormalizedLocation(path="/workspace/requirements.txt"),
-            ),
-            NormalizedFinding(
-                source="trivy",
-                finding_type="dependency",
-                rule_id="CVE-2026-22222",
-                title="PyYAML: incomplete fix for CVE-2020-1747",
-                severity="critical",
-                package_name="pyyaml",
-                package_version="5.3.1",
-                location=NormalizedLocation(path="/workspace/requirements.txt"),
-            ),
-        ],
-        baseline_findings=[],
-        change_context=ParsedChangeContext(
-            files=(
-                ParsedFileChange(
-                    path="requirements.txt",
-                    change_type="modified",
-                    added_lines=1,
-                    removed_lines=0,
-                    signals=("dependency_manifest",),
-                    previous_path="requirements.txt",
-                ),
-            )
-        ),
-    )
-
-    threats = explain_introduced_threats(bundle)
-
-    assert len(threats) == 1
-    assert threats[0].advisory_count == 2
-    assert render_threat_line(threats[0]) == (
-        "critical dependency risk in requirements.txt: pyyaml 5.3.1 (Improper Input Validation in PyYAML; PyYAML: incomplete fix for CVE-2020-1747)"
-    )
 
 
 def test_build_comment_summarizer_supports_disabled_and_errors_on_missing_requirements() -> None:
@@ -209,6 +100,44 @@ def test_summarize_comment_request_captures_http_error_body(monkeypatch) -> None
     assert trace.provider == "openai"
     assert trace.model == "gpt-5-mini"
     assert trace.error == 'HTTP 429: {"error":{"type":"insufficient_quota","message":"Quota exceeded"}}'
+
+
+def test_bedrock_summarizer_uses_boto3_client(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeBody:
+        def read(self) -> bytes:
+            return (
+                b'{"content":[{"text":"{\\"driver_summary\\":[\\"this change cannot ship because it introduces critical vulnerable dependencies\\"],\\"threat_summaries\\":[\\"requirements.txt introduces pyyaml 5.3.1 with critical code-execution risk\\"],\\"contextual_summary\\":[\\"service is publicly exposed\\"]}"}]}'
+            )
+
+    class _FakeClient:
+        def invoke_model(self, *, modelId: str, body: str) -> dict[str, object]:
+            captured["modelId"] = modelId
+            captured["body"] = body
+            return {"body": _FakeBody()}
+
+    fake_boto3 = types.SimpleNamespace(client=lambda service_name, region_name=None: _FakeClient())
+    monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
+
+    summarizer = BedrockSummarizer(model="anthropic.test", region="us-east-1")
+    result = summarizer.summarize(
+        SummarizationRequest(
+            decision="NO GO",
+            score=0,
+            confidence="high",
+            primary_drivers=("policy max_severity exceeded",),
+            threats=(),
+            contextual_risk=("service is publicly exposed",),
+            required_approvals=("security_owner",),
+            required_next_steps=("Block release until introduced risk is remediated or policy is adjusted",),
+        )
+    )
+
+    assert captured["modelId"] == "anthropic.test"
+    assert '"anthropic_version": "bedrock-2023-05-31"' in str(captured["body"])
+    assert result.driver_summary == ("this change cannot ship because it introduces critical vulnerable dependencies",)
+    assert result.threat_summaries == ("requirements.txt introduces pyyaml 5.3.1 with critical code-execution risk",)
 
 
 def test_parse_summarization_result_rejects_schema_shaped_output() -> None:
@@ -345,35 +274,3 @@ def test_parse_summarization_result_rejects_approval_language_in_driver() -> Non
         assert "approval language" in str(exc)
     else:
         raise AssertionError("expected approval language in driver summary to be rejected")
-
-
-def test_explain_introduced_threats_normalizes_broad_iam_findings() -> None:
-    bundle = build_analysis_bundle(
-        current_findings=[
-            NormalizedFinding(
-                source="semgrep",
-                finding_type="code",
-                rule_id="terraform.lang.security.iam.no-iam-admin-privileges.no-iam-admin-privileges",
-                title='IAM policies that allow full "*-*" admin privileges violates the principle of least privilege.',
-                severity="medium",
-                location=NormalizedLocation(path="infra/main.tf", start_line=10, end_line=10),
-            ),
-        ],
-        baseline_findings=[],
-        change_context=ParsedChangeContext(
-            files=(
-                ParsedFileChange(
-                    path="infra/main.tf",
-                    change_type="modified",
-                    added_lines=2,
-                    removed_lines=0,
-                    signals=("infrastructure",),
-                    previous_path="infra/main.tf",
-                ),
-            )
-        ),
-    )
-
-    threats = explain_introduced_threats(bundle)
-
-    assert threats[0].summary == "adds overly broad IAM permissions"

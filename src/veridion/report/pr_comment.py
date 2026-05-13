@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 from veridion.analysis import AnalysisBundle
 from veridion.policy.engine import PolicyDecision
@@ -519,7 +520,7 @@ def _split_reasons(reasons: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str
 
 
 def _is_primary_driver(reason: str) -> bool:
-    if " new " in reason and " issue" in reason:
+    if _SEVERITY_ISSUE_REASON_RE.match(reason):
         return True
 
     primary_markers = (
@@ -532,6 +533,11 @@ def _is_primary_driver(reason: str) -> bool:
         "policy does not allow conditional releases",
     )
     return reason.startswith(primary_markers)
+
+
+_SEVERITY_ISSUE_REASON_RE = re.compile(
+    r"^\d+ new (critical|high|medium|low|info|unknown)-severity (?:issues?|issue\(s\)) detected$"
+)
 
 
 def _filter_recommendations(
