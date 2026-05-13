@@ -40,6 +40,30 @@ inputs:
     description: "Path to optional accepted-risk suppression JSON"
     required: false
     default: ""
+  comment-summary-provider:
+    description: "Optional wording model provider for PR comment summarization: openai, anthropic, or bedrock"
+    required: false
+    default: ""
+  comment-summary-model:
+    description: "Optional wording model id used when comment-summary-provider is enabled"
+    required: false
+    default: ""
+  comment-summary-api-key:
+    description: "Optional API key for OpenAI or Anthropic comment summarization"
+    required: false
+    default: ""
+  comment-summary-base-url:
+    description: "Optional API base URL override for OpenAI-compatible or Anthropic comment summarization"
+    required: false
+    default: ""
+  comment-summary-region:
+    description: "Optional AWS region for Bedrock comment summarization"
+    required: false
+    default: ""
+  comment-summary-style:
+    description: "Optional wording style for AI comment summarization: terse or expanded"
+    required: false
+    default: "terse"
   comment-path:
     description: "Path to write the rendered PR comment markdown"
     required: false
@@ -148,6 +172,12 @@ runs:
         INPUT_METADATA_PATH: ${{ inputs.metadata-path }}
         INPUT_TRUST_PROFILE_PATH: ${{ inputs.trust-profile-path }}
         INPUT_SUPPRESSION_PATH: ${{ inputs.suppression-path }}
+        INPUT_COMMENT_SUMMARY_PROVIDER: ${{ inputs.comment-summary-provider }}
+        INPUT_COMMENT_SUMMARY_MODEL: ${{ inputs.comment-summary-model }}
+        INPUT_COMMENT_SUMMARY_API_KEY: ${{ inputs.comment-summary-api-key }}
+        INPUT_COMMENT_SUMMARY_BASE_URL: ${{ inputs.comment-summary-base-url }}
+        INPUT_COMMENT_SUMMARY_REGION: ${{ inputs.comment-summary-region }}
+        INPUT_COMMENT_SUMMARY_STYLE: ${{ inputs.comment-summary-style }}
         INPUT_COMMENT_PATH: ${{ inputs.comment-path }}
         INPUT_JSON_OUTPUT_PATH: ${{ inputs.json-output-path }}
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
@@ -191,6 +221,25 @@ runs:
         if [[ -n "${INPUT_SUPPRESSION_PATH}" ]]; then
           suppression_args+=(--suppression-path "${INPUT_SUPPRESSION_PATH}")
         fi
+        summary_args=()
+        if [[ -n "${INPUT_COMMENT_SUMMARY_PROVIDER}" ]]; then
+          summary_args+=(--comment-summary-provider "${INPUT_COMMENT_SUMMARY_PROVIDER}")
+        fi
+        if [[ -n "${INPUT_COMMENT_SUMMARY_MODEL}" ]]; then
+          summary_args+=(--comment-summary-model "${INPUT_COMMENT_SUMMARY_MODEL}")
+        fi
+        if [[ -n "${INPUT_COMMENT_SUMMARY_API_KEY}" ]]; then
+          summary_args+=(--comment-summary-api-key "${INPUT_COMMENT_SUMMARY_API_KEY}")
+        fi
+        if [[ -n "${INPUT_COMMENT_SUMMARY_BASE_URL}" ]]; then
+          summary_args+=(--comment-summary-base-url "${INPUT_COMMENT_SUMMARY_BASE_URL}")
+        fi
+        if [[ -n "${INPUT_COMMENT_SUMMARY_REGION}" ]]; then
+          summary_args+=(--comment-summary-region "${INPUT_COMMENT_SUMMARY_REGION}")
+        fi
+        if [[ -n "${INPUT_COMMENT_SUMMARY_STYLE}" ]]; then
+          summary_args+=(--comment-summary-style "${INPUT_COMMENT_SUMMARY_STYLE}")
+        fi
         python3 -m veridion.action \
           --diff-path "${INPUT_DIFF_PATH}" \
           "${reports_args[@]}" \
@@ -200,6 +249,7 @@ runs:
           "${metadata_args[@]}" \
           "${trust_profile_args[@]}" \
           "${suppression_args[@]}" \
+          "${summary_args[@]}" \
           --comment-path "${INPUT_COMMENT_PATH}" \
           --json-output-path "${INPUT_JSON_OUTPUT_PATH}"
     - name: Post Veridion PR comment

@@ -32,6 +32,7 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert result.decision.decision == "NO GO"
     assert result.decision.score < 60
     assert result.bundle.summary.introduced_findings == 2
+    assert len(result.to_dict()["threats"]) == 2
     assert result.bundle.summary.inventory_packages == 1
     assert result.bundle.summary.ai_change_signals == 4
     assert result.bundle.summary.ai_authored_commits == 1
@@ -54,7 +55,7 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert "### AI Signals" in result.comment_markdown
     assert "### Key Context" in result.comment_markdown
     assert "### Why this is blocked" in result.comment_markdown
-    assert "### New threats detected" in result.comment_markdown
+    assert "### What makes this unsafe to ship" in result.comment_markdown
     assert "### Why this matters" in result.comment_markdown
     assert "- platform owner" in result.comment_markdown
     assert "- security owner" in result.comment_markdown

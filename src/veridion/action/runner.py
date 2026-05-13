@@ -16,7 +16,8 @@ from veridion.context import (
 )
 from veridion.normalize import NormalizedFinding, normalize_report
 from veridion.policy import PolicyDecision, PolicyConfig, evaluate_release, parse_policy_yaml
-from veridion.report import render_pr_comment
+from veridion.report import explain_introduced_threats, render_pr_comment
+from veridion.summarization import build_comment_summarizer
 from veridion.suppression import parse_suppressions_payload
 from veridion.change_context import parse_unified_diff
 from veridion.util import plain
@@ -37,6 +38,7 @@ class ActionResult:
         return {
             "analysis": self.bundle.to_dict(),
             "decision": plain(asdict(self.decision)),
+            "threats": [item.to_dict() for item in explain_introduced_threats(self.bundle)],
             "comment_markdown": self.comment_markdown,
             "comment_identifier": self.comment_identifier,
         }
@@ -52,6 +54,12 @@ def run_action(
     metadata_text: str | None = None,
     trust_profile_text: str | None = None,
     suppression_text: str | None = None,
+    comment_summary_provider: str | None = None,
+    comment_summary_model: str | None = None,
+    comment_summary_api_key: str | None = None,
+    comment_summary_base_url: str | None = None,
+    comment_summary_region: str | None = None,
+    comment_summary_style: str = "terse",
 ) -> ActionResult:
     """Run the full RDI pipeline from file-backed action inputs."""
 
@@ -95,7 +103,19 @@ def run_action(
         suppression_rules=suppression_rules,
     )
     decision = evaluate_release(bundle, policy)
-    comment_markdown = render_pr_comment(bundle, decision)
+    summarizer = build_comment_summarizer(
+        provider=comment_summary_provider,
+        model=comment_summary_model,
+        api_key=comment_summary_api_key,
+        base_url=comment_summary_base_url,
+        region=comment_summary_region,
+    )
+    comment_markdown = render_pr_comment(
+        bundle,
+        decision,
+        summarizer=summarizer,
+        summary_style=comment_summary_style,
+    )
 
     return ActionResult(
         bundle=bundle,
@@ -128,6 +148,12 @@ def main(argv: list[str] | None = None) -> int:
         metadata_text=metadata_text,
         trust_profile_text=trust_profile_text,
         suppression_text=suppression_text,
+        comment_summary_provider=args.comment_summary_provider,
+        comment_summary_model=args.comment_summary_model,
+        comment_summary_api_key=args.comment_summary_api_key,
+        comment_summary_base_url=args.comment_summary_base_url,
+        comment_summary_region=args.comment_summary_region,
+        comment_summary_style=args.comment_summary_style,
     )
 
     if args.comment_path:
@@ -163,6 +189,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--metadata-path", help="Path to optional pull request metadata JSON")
     parser.add_argument("--trust-profile-path", help="Path to optional trust profile JSON")
     parser.add_argument("--suppression-path", help="Path to optional accepted-risk suppression JSON")
+    parser.add_argument("--comment-summary-provider", help="Optional wording model provider: openai, anthropic, bedrock")
+    parser.add_argument("--comment-summary-model", help="Optional wording model id")
+    parser.add_argument("--comment-summary-api-key", help="Optional wording model API key for OpenAI/Anthropic")
+    parser.add_argument("--comment-summary-base-url", help="Optional API base URL override for wording models")
+    parser.add_argument("--comment-summary-region", help="Optional AWS region for Bedrock wording models")
+    parser.add_argument("--comment-summary-style", default="terse", help="Comment wording style: terse or expanded")
     parser.add_argument("--comment-path", help="Path to write rendered PR comment markdown")
     parser.add_argument("--json-output-path", help="Path to write structured JSON output")
     return parser

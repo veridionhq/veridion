@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from veridion.analysis import AnalysisBundle
-from veridion.normalize.models import NormalizedFinding
 from veridion.policy.engine import PolicyDecision
 from veridion.policy.labels import APPROVAL_LABELS
+from veridion.report.threats import explain_introduced_threats, render_threat_line
+from veridion.summarization import CommentSummarizer, SummarizationRequest
 
 COMMENT_MARKER_START = "<!-- veridion:rdi:start -->"
 COMMENT_MARKER_END = "<!-- veridion:rdi:end -->"
@@ -29,7 +30,13 @@ REQUIRED_NEXT_STEP_PREFIXES = (
 )
 
 
-def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
+def render_pr_comment(
+    bundle: AnalysisBundle,
+    decision: PolicyDecision,
+    *,
+    summarizer: CommentSummarizer | None = None,
+    summary_style: str = "terse",
+) -> str:
     """Render a deterministic PR comment for the current release decision."""
 
     lines: list[str] = []
@@ -53,6 +60,19 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
 
     primary_drivers, contextual_risk = _split_reasons(decision.reasons)
     compact_render = _should_use_compact_render(bundle, decision, primary_drivers, contextual_risk)
+    introduced_threat_explanations = explain_introduced_threats(bundle)
+    required_next_steps, advisory_guidance = _split_recommendations(
+        _filter_recommendations(decision.recommendations, decision.required_approvals)
+    )
+    summarized_primary_drivers, summarized_threats, summarized_contextual = _summarize_comment_sections(
+        summarizer=summarizer,
+        decision=decision,
+        primary_drivers=primary_drivers,
+        introduced_threats=introduced_threat_explanations,
+        contextual_risk=contextual_risk,
+        required_next_steps=required_next_steps,
+        summary_style=summary_style,
+    )
 
     if bundle.ai_attribution.detected and not compact_render:
         lines.extend(_section("AI Signals", _truncate_items(_format_ai_attribution(bundle), MAX_AI_ITEMS, "detail")))
@@ -62,20 +82,28 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
     if bundle.summary.suppressed_findings or bundle.summary.expired_suppressions:
         lines.extend(_section("Accepted Risk", _format_suppressions(bundle)))
 
-    lines.extend(
-        _section(
-            _drivers_title(decision.decision),
-            _truncate_items(primary_drivers, MAX_PRIMARY_DRIVER_ITEMS, "driver"),
+    rendered_primary_drivers = summarized_primary_drivers or _default_driver_summary(bundle, decision)
+    if rendered_primary_drivers:
+        lines.extend(
+            _section(
+                _drivers_title(decision.decision),
+                _truncate_items(rendered_primary_drivers, MAX_PRIMARY_DRIVER_ITEMS, "driver"),
+            )
         )
-    )
-    introduced_threats = _format_introduced_threats(bundle)
+    introduced_threats = summarized_threats or tuple(render_threat_line(item) for item in introduced_threat_explanations)
     if introduced_threats:
-        lines.extend(_section("New threats detected", _truncate_items(introduced_threats, MAX_THREAT_ITEMS, "threat")))
-    if contextual_risk and not compact_render:
+        lines.extend(
+            _section(
+                _threats_title(decision.decision),
+                _truncate_items(introduced_threats, MAX_THREAT_ITEMS, "threat"),
+            )
+        )
+    rendered_contextual = summarized_contextual or contextual_risk
+    if rendered_contextual and not compact_render:
         lines.extend(
             _section(
                 "Why this matters",
-                _truncate_items(contextual_risk, MAX_CONTEXTUAL_RISK_ITEMS, "contextual risk"),
+                _truncate_items(rendered_contextual, MAX_CONTEXTUAL_RISK_ITEMS, "contextual risk"),
             )
         )
 
@@ -86,9 +114,6 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
         approvals = tuple(_format_approval(name) for name in decision.required_approvals)
         lines.extend(_section("Required Approvals", approvals))
 
-    required_next_steps, advisory_guidance = _split_recommendations(
-        _filter_recommendations(decision.recommendations, decision.required_approvals)
-    )
     lines.extend(
         _section(
             "What must happen next",
@@ -133,29 +158,6 @@ def _format_counts(counts: dict[str, int]) -> tuple[str, ...]:
     return tuple(f"{key}: {value}" for key, value in counts.items())
 
 
-def _format_introduced_threats(bundle: AnalysisBundle) -> tuple[str, ...]:
-    introduced = sorted(
-        bundle.baseline_comparison.introduced,
-        key=lambda finding: (
-            _severity_rank(finding.severity),
-            finding.finding_type,
-            finding.title.lower(),
-            finding.location.path or "",
-        ),
-    )
-    seen: set[str] = set()
-    items: list[str] = []
-
-    for finding in introduced:
-        description = _describe_introduced_threat(finding)
-        if description in seen:
-            continue
-        seen.add(description)
-        items.append(description)
-
-    return tuple(items)
-
-
 def _drivers_title(decision: str) -> str:
     if decision == "NO GO":
         return "Why this is blocked"
@@ -164,39 +166,56 @@ def _drivers_title(decision: str) -> str:
     return "Why this is allowed"
 
 
-def _severity_rank(severity: str) -> int:
-    order = {
-        "critical": 0,
-        "high": 1,
-        "medium": 2,
-        "low": 3,
-        "info": 4,
-        "unknown": 5,
-    }
-    return order.get(severity, 6)
+def _threats_title(decision: str) -> str:
+    if decision == "NO GO":
+        return "What makes this unsafe to ship"
+    if decision == "CONDITIONAL GO":
+        return "What needs attention in this change"
+    return "New threats detected"
 
 
-def _describe_introduced_threat(finding: NormalizedFinding) -> str:
-    location = _normalize_location(finding.location.path)
-    severity = finding.severity.replace("-", " ")
-
-    if finding.finding_type == "dependency":
-        package = " ".join(part for part in (finding.package_name, finding.package_version) if part)
-        package_label = package or finding.rule_id
-        if location:
-            return f"{severity} dependency risk: {package_label} in {location} ({finding.title})"
-        return f"{severity} dependency risk: {package_label} ({finding.title})"
-
-    threat_label = finding.title.strip() or finding.rule_id
-    if location:
-        return f"{severity} {finding.finding_type} risk in {location}: {threat_label}"
-    return f"{severity} {finding.finding_type} risk: {threat_label}"
+def _default_driver_summary(bundle: AnalysisBundle, decision: PolicyDecision) -> tuple[str, ...]:
+    if "no introduced findings detected" in decision.reasons:
+        return ("no introduced findings detected",)
+    if "release still requires explicit approvals or operational checks" in decision.reasons:
+        return ("release still requires explicit approvals or operational checks",)
+    if decision.decision == "NO GO" and bundle.baseline_comparison.introduced:
+        return ("new risk in this change crosses the current release policy",)
+    if decision.decision == "CONDITIONAL GO" and bundle.baseline_comparison.introduced:
+        return ("new risk was introduced and needs review before shipping",)
+    return ()
 
 
-def _normalize_location(path: str | None) -> str:
-    if not path:
-        return ""
-    return path.removeprefix("/workspace/")
+def _summarize_comment_sections(
+    *,
+    summarizer: CommentSummarizer | None,
+    decision: PolicyDecision,
+    primary_drivers: tuple[str, ...],
+    introduced_threats,
+    contextual_risk: tuple[str, ...],
+    required_next_steps: tuple[str, ...],
+    summary_style: str,
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    if summarizer is None or not introduced_threats:
+        return primary_drivers, (), ()
+    try:
+        result = summarizer.summarize(
+            SummarizationRequest(
+                decision=decision.decision,
+                score=decision.score,
+                confidence=decision.confidence,
+                primary_drivers=primary_drivers,
+                threats=tuple(introduced_threats),
+                contextual_risk=contextual_risk,
+                required_approvals=decision.required_approvals,
+                required_next_steps=required_next_steps,
+                style=summary_style,
+            )
+        )
+    except Exception:
+        return primary_drivers, (), ()
+    rendered_primary = result.driver_summary or primary_drivers
+    return rendered_primary, result.threat_summaries, result.contextual_summary
 
 
 def _should_use_compact_render(
@@ -522,12 +541,14 @@ def _split_reasons(reasons: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str
 
 
 def _is_primary_driver(reason: str) -> bool:
-    if " introduced " in reason:
+    if " new " in reason and " issue" in reason:
         return True
 
     primary_markers = (
-        "infrastructure changes",
-        "new dependency vulnerability",
+        "no introduced findings detected",
+        "release still requires explicit approvals or operational checks",
+        "the change includes infrastructure updates",
+        "the change introduces vulnerable dependencies",
         "policy max_severity",
         "policy no_go threshold",
         "policy does not allow conditional releases",

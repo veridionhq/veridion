@@ -1,0 +1,165 @@
+"""Structured threat explanations for introduced release risk."""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+
+from veridion.analysis import AnalysisBundle
+from veridion.normalize.models import NormalizedFinding
+
+
+@dataclass(frozen=True)
+class ThreatExplanation:
+    """Concrete, human-readable explanation for an introduced threat."""
+
+    source: str
+    threat_type: str
+    severity: str
+    subject: str
+    location: str | None
+    summary: str
+    why_not_safe: str
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+def explain_introduced_threats(bundle: AnalysisBundle) -> tuple[ThreatExplanation, ...]:
+    """Build deterministic threat explanations from introduced findings."""
+
+    introduced = sorted(
+        bundle.baseline_comparison.introduced,
+        key=lambda finding: (
+            _severity_rank(finding.severity),
+            finding.finding_type,
+            finding.title.lower(),
+            finding.location.path or "",
+        ),
+    )
+    explanations: list[ThreatExplanation] = []
+    seen: set[tuple[str, str, str, str | None]] = set()
+
+    for finding in introduced:
+        explanation = _explain_finding(finding)
+        key = (
+            explanation.severity,
+            explanation.threat_type,
+            explanation.summary,
+            explanation.location,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        explanations.append(explanation)
+
+    return tuple(explanations)
+
+
+def render_threat_line(explanation: ThreatExplanation) -> str:
+    """Render a short threat line for comment output."""
+
+    if explanation.location:
+        return (
+            f"{explanation.severity} {explanation.threat_type} risk in "
+            f"{explanation.location}: {explanation.summary}"
+        )
+    return f"{explanation.severity} {explanation.threat_type} risk: {explanation.summary}"
+
+
+def _explain_finding(finding: NormalizedFinding) -> ThreatExplanation:
+    location = _normalize_location(finding.location.path)
+    severity = finding.severity.replace("-", " ")
+
+    if finding.finding_type == "dependency":
+        package = " ".join(part for part in (finding.package_name, finding.package_version) if part)
+        subject = package or finding.rule_id
+        summary = _summarize_dependency_title(finding)
+        why_not_safe = "the change introduces a vulnerable package version"
+        return ThreatExplanation(
+            source=finding.source,
+            threat_type="dependency",
+            severity=severity,
+            subject=subject,
+            location=location,
+            summary=f"{subject}" + (f" ({summary})" if summary else ""),
+            why_not_safe=why_not_safe,
+        )
+
+    summary, why_not_safe = _summarize_code_or_config_finding(finding)
+    return ThreatExplanation(
+        source=finding.source,
+        threat_type=finding.finding_type,
+        severity=severity,
+        subject=finding.rule_id,
+        location=location,
+        summary=summary,
+        why_not_safe=why_not_safe,
+    )
+
+
+def _summarize_dependency_title(finding: NormalizedFinding) -> str:
+    title = (finding.title or finding.rule_id).strip()
+    return _shorten_title(title)
+
+
+def _summarize_code_or_config_finding(finding: NormalizedFinding) -> tuple[str, str]:
+    title = (finding.title or finding.rule_id).strip()
+    lowered = title.lower()
+    rule_id = finding.rule_id.lower()
+
+    if "shell=true" in lowered:
+        return (
+            "uses subprocess with shell=True",
+            "shell execution can allow command injection or unsafe command expansion",
+        )
+    if "allowprivilegeescalation" in lowered or "allowprivilegeescalation" in rule_id:
+        return (
+            "container can allow privilege escalation",
+            "a compromised process may be able to gain elevated privileges inside the container",
+        )
+    if "runasnonroot" in lowered or "runasnonroot" in rule_id:
+        return (
+            "container may run as root",
+            "running as root increases the impact of a container compromise",
+        )
+    if "privileged: true" in lowered or "privileged" in rule_id:
+        return (
+            "container is configured as privileged",
+            "a privileged container has broad host-level access if it is compromised",
+        )
+
+    summary = _shorten_title(title)
+    return summary, "the change introduces new application or configuration risk"
+
+
+def _shorten_title(text: str) -> str:
+    shortened = _first_sentence(text)
+    if len(shortened) > 90:
+        shortened = shortened[:87].rstrip() + "..."
+    return shortened
+
+
+def _first_sentence(text: str) -> str:
+    for delimiter in (". ", "\n", ": "):
+        if delimiter in text:
+            return text.split(delimiter, 1)[0].strip().rstrip(".")
+    return text.strip().rstrip(".")
+
+
+def _normalize_location(path: str | None) -> str | None:
+    if not path:
+        return None
+    normalized = path.removeprefix("/workspace/").lstrip("/")
+    return normalized or None
+
+
+def _severity_rank(severity: str) -> int:
+    order = {
+        "critical": 0,
+        "high": 1,
+        "medium": 2,
+        "low": 3,
+        "info": 4,
+        "unknown": 5,
+    }
+    return order.get(severity, 6)

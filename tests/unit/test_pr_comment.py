@@ -6,6 +6,16 @@ from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.policy import PolicyConfig, evaluate_release
 from veridion.report import render_pr_comment
 from veridion.report.pr_comment import _is_required_next_step
+from veridion.summarization import SummarizationResult
+
+
+class _StaticSummarizer:
+    def summarize(self, summary_request):
+        return SummarizationResult(
+            driver_summary=("this change introduces release risk that still needs review",),
+            threat_summaries=("app/main.py uses subprocess with shell=True, which can allow command injection",),
+            contextual_summary=("this change also affects a production-facing path",),
+        )
 
 
 def test_render_pr_comment_renders_policy_decision_for_high_risk_change() -> None:
@@ -30,9 +40,9 @@ def test_render_pr_comment_renders_policy_decision_for_high_risk_change() -> Non
     assert "- 2 new high-severity issues detected" in comment
     assert "- the change includes infrastructure updates" in comment
     assert "- the change introduces vulnerable dependencies" in comment
-    assert "### New threats detected" in comment
+    assert "### What makes this unsafe to ship" in comment
     assert "- high code risk in app/routes.py: New code issue" in comment
-    assert "- high dependency risk: urllib3 2.2.2 in requirements.txt (New dependency issue)" in comment
+    assert "- high dependency risk in requirements.txt: urllib3 2.2.2 (New dependency issue)" in comment
     assert "### Required Approvals" in comment
     assert "- platform owner" in comment
     assert "- security owner" in comment
@@ -269,10 +279,21 @@ def test_render_pr_comment_surfaces_plain_english_threat_details() -> None:
 
     comment = render_pr_comment(bundle, decision)
 
-    assert "### New threats detected" in comment
+    assert "### What makes this unsafe to ship" in comment
     assert "- high code risk in app/routes.py: New code issue" in comment
-    assert "- high dependency risk: urllib3 2.2.2 in requirements.txt (New dependency issue)" in comment
-    assert "### Why this matters" in comment
+    assert "- high dependency risk in requirements.txt: urllib3 2.2.2 (New dependency issue)" in comment
+
+
+def test_render_pr_comment_can_use_optional_ai_wording_layer() -> None:
+    bundle = _bundle_with_iac_and_dependency_risk()
+    decision = evaluate_release(bundle, PolicyConfig(allow_conditional=True))
+
+    comment = render_pr_comment(bundle, decision, summarizer=_StaticSummarizer())
+
+    assert "### What makes this unsafe to ship" in comment
+    assert "- this change introduces release risk that still needs review" in comment
+    assert "- app/main.py uses subprocess with shell=True, which can allow command injection" in comment
+    assert "- this change also affects a production-facing path" in comment
 
 
 def test_render_pr_comment_compacts_clean_context_heavy_change() -> None:
@@ -319,10 +340,10 @@ def test_render_pr_comment_compacts_clean_context_heavy_change() -> None:
     comment = render_pr_comment(bundle, decision)
 
     assert "### Key Context" in comment
-    assert "- historical: repo criticality: high | service criticality: critical | rollback rate: 12%" in comment
-    assert "- runtime: target: production | public exposure | blast radius: high" in comment
-    assert "### Why this matters" not in comment
-    assert "### Recommended rollout" not in comment
+    assert "- history: repo criticality: high | service criticality: critical | rollback rate: 12%" in comment
+    assert "- runtime: target: production | public exposure | blast radius: high | window: after hours | rollout: canary" in comment
+    assert "### Why this matters" in comment
+    assert "### Recommended rollout" in comment
     assert "### What must happen next" in comment
     assert "- Verify rollback ownership and on-call coverage before deployment" in comment
 
