@@ -7,21 +7,28 @@ Docs: `https://getveridion.com/docs/`
 
 The product is not "AI for DevOps" and it is not another scanner wrapper. The wedge is Release Decision Intelligence (RDI): a system that determines whether a software change is safe to reach production, explains why, and recommends the next action.
 
+Security is one signal inside that decision, not the category itself.
+
 ## Category
 
 Veridion sits in a distinct category:
 
 - Not vulnerability scanning
+- Not AI AppSec
+- Not vulnerability remediation
 - Not generic CI tooling
 - Not observability
 - Not DevSecOps automation
 - Not AI code review
 
 Veridion is the trust and governance layer for autonomous software delivery.
+It sits between increasingly autonomous engineering systems and production.
 
 As engineering organizations adopt AI coding agents, AI-generated infrastructure, autonomous remediation, and increasingly automated deployment systems, they need a control plane that answers one question reliably:
 
 Should this change ship?
+
+That is a broader question than "is this vulnerable?"
 
 ## Product Wedge
 
@@ -35,6 +42,9 @@ Core responsibilities:
 - Surface lightweight AI-origin signals from PR metadata
 - Produce an RDI score and release decision
 - Explain the decision in a PR comment with recommended actions
+
+Security matters inside this model, but Veridion is not a security scanner or a remediation engine.
+It is the operational trust layer that decides whether a change should safely move toward production.
 
 The action can now consume a versioned operational-context artifact as its primary context contract. That artifact can be produced by GitHub workflows today, and later by other CI/CD or platform integrations without changing the decision engine.
 
@@ -86,6 +96,7 @@ RECOMMENDATIONS:
 
 - Introduced risk over legacy noise
 - Operational context over scanner spam
+- Deployment trust over security-only framing
 - Explainable decisions over opaque scoring
 - Fast installation over platform-heavy onboarding
 - Trustworthy output over shallow breadth
@@ -153,6 +164,8 @@ The current MVP has also been validated in an external canary repository with:
 - a deliberately risky dependency/ingress/IAM `NO GO`
 - a middle-path `CONDITIONAL GO` scenario for product tuning
 - an accepted-risk `CONDITIONAL GO` where suppressed findings remain visible
+
+That means the current product already handles more than vulnerability status alone. It reasons about release posture, operational context, approvals, and accepted risk together.
 
 ## Fastest Install Path
 

@@ -43,6 +43,7 @@ def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None)
     decision = _apply_policy_decision(risk, bundle, resolved_policy, reasons)
     required_approvals = _required_approvals(bundle, resolved_policy)
     recommendations = _recommendations(bundle, risk, decision, required_approvals)
+    decision = _align_decision_with_release_gates(decision, required_approvals, recommendations, reasons)
 
     return PolicyDecision(
         score=risk.score,
@@ -154,6 +155,24 @@ def _recommendations(
     if change_context.has_database_migration_changes:
         recommendations.append("Validate migration safety and data rollback steps before deployment")
 
+    if change_context.has_healthcheck_risk_changes:
+        recommendations.append("Verify liveness, readiness, or health-check coverage before deployment")
+
+    if change_context.has_direct_rollout_changes:
+        recommendations.append("Avoid direct rollout settings for this change and use a staged release")
+
+    if change_context.has_autoscaling_changes:
+        recommendations.append("Validate autoscaling thresholds and capacity behavior before deployment")
+
+    if change_context.has_privileged_container_changes:
+        recommendations.append("Review privileged container settings before release")
+
+    if change_context.has_broad_iam_changes:
+        recommendations.append("Review broad IAM permission changes before deployment")
+
+    if change_context.has_resource_limit_risk_changes:
+        recommendations.append("Restore or validate container resource limits before deployment")
+
     if bundle.summary.dependency_changes or bundle.summary.lockfile_changes:
         recommendations.append("Review newly introduced dependencies and lockfile updates")
 
@@ -243,6 +262,38 @@ def _recommendations(
     return tuple(dict.fromkeys(recommendations))
 
 
+def _align_decision_with_release_gates(
+    decision: str,
+    required_approvals: tuple[str, ...],
+    recommendations: tuple[str, ...],
+    reasons: list[str],
+) -> str:
+    if decision != "GO":
+        return decision
+
+    if required_approvals or _has_required_operational_gates(recommendations):
+        reasons.append("release still requires explicit approvals or operational checks")
+        return "CONDITIONAL GO"
+
+    return decision
+
+
+def _has_required_operational_gates(recommendations: tuple[str, ...]) -> bool:
+    required_gate_prefixes = (
+        "Run staging smoke tests",
+        "Review newly introduced dependencies",
+        "Prioritize remediation",
+        "Verify rollback ownership and on-call coverage",
+        "Require and verify a rollback path",
+        "Validate migration safety",
+        "Verify payment-impact",
+        "Run authentication and access-control",
+        "Validate data-handling and tenant-safety",
+        "Define a service owner",
+    )
+    return any(item.startswith(required_gate_prefixes) for item in recommendations)
+
+
 def _approval_label(value: str) -> str:
     return APPROVAL_LABELS.get(value, value.replace("_", " "))
 
@@ -300,6 +351,18 @@ def _change_surface_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
         reasons.append("change touches an authentication-sensitive surface")
     if context.touches_data_surface:
         reasons.append("change touches a data-sensitive surface")
+    if context.has_healthcheck_risk_changes:
+        reasons.append("change weakens or removes health-check coverage")
+    if context.has_direct_rollout_changes:
+        reasons.append("change introduces direct rollout behavior")
+    if context.has_autoscaling_changes:
+        reasons.append("change modifies autoscaling behavior")
+    if context.has_privileged_container_changes:
+        reasons.append("change introduces privileged container settings")
+    if context.has_broad_iam_changes:
+        reasons.append("change expands IAM permissions broadly")
+    if context.has_resource_limit_risk_changes:
+        reasons.append("change weakens or removes container resource limits")
 
     return tuple(reasons)
 

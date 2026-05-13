@@ -12,6 +12,8 @@ It determines whether a software change should safely ship by combining:
 - policy-driven approvals and scoring
 - accepted-risk governance
 
+Security is one input into that trust decision, not the category itself.
+
 ## What Problem It Solves
 
 Most tools stop at finding issues.
@@ -30,6 +32,11 @@ Veridion turns that into a decision artifact:
 - `CONDITIONAL GO`
 - `NO GO`
 
+Daybreak-style systems focus on finding and fixing vulnerabilities.
+Veridion answers a different question:
+
+**Should this change safely reach production?**
+
 ## Why It Matters Now
 
 AI is increasing:
@@ -47,6 +54,9 @@ Faster than organizations are increasing:
 
 That gap is the opportunity.
 
+The bottleneck is no longer just vulnerability discovery.
+It is production governance for increasingly autonomous software systems.
+
 ## What The MVP Does Today
 
 - runs as a GitHub Action
@@ -56,6 +66,16 @@ That gap is the opportunity.
 - applies policy-driven approvals and score adjustments
 - renders an explainable PR decision comment
 - governs accepted-risk suppressions with visible reason and expiry
+
+This is deliberately broader than AI security scanning:
+
+- security
+- reliability
+- deployment safety
+- operational fragility
+- rollback confidence
+- runtime context
+- release timing
 
 ## What Has Been Proven
 
@@ -79,6 +99,8 @@ Early platform, security, DevOps, or engineering productivity teams that:
 Veridion is not:
 
 - a scanner wrapper
+- an AI AppSec product
+- a vulnerability remediation tool
 - an AI code review tool
 - a generic DevOps dashboard
 

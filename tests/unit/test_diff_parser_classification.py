@@ -63,3 +63,46 @@ diff --git a/platform/shared/auth/gateway.py b/platform/shared/auth/gateway.py
         "public_exposure_surface",
         "payments_surface",
     )
+
+
+def test_operational_risk_signals_are_inferred_from_diff_content() -> None:
+    diff = """\
+diff --git a/k8s/deployment.yaml b/k8s/deployment.yaml
+--- a/k8s/deployment.yaml
++++ b/k8s/deployment.yaml
+@@ -1,10 +1,11 @@
+-        livenessProbe:
+-          httpGet:
+-            path: /healthz
+-        readinessProbe:
+-          httpGet:
+-            path: /ready
+-        resources:
+-          limits:
+-            cpu: "500m"
++        securityContext:
++          privileged: true
++        strategy:
++          type: Recreate
+diff --git a/k8s/hpa.yaml b/k8s/hpa.yaml
+--- a/k8s/hpa.yaml
++++ b/k8s/hpa.yaml
+@@ -1 +1 @@
+-maxReplicas: 5
++maxReplicas: 20
+diff --git a/terraform/prod/iam/policy.tf b/terraform/prod/iam/policy.tf
+--- a/terraform/prod/iam/policy.tf
++++ b/terraform/prod/iam/policy.tf
+@@ -1 +1 @@
+-Action = ["s3:GetObject"]
++Action = "*"
+"""
+
+    context = parse_unified_diff(diff)
+
+    assert context.has_healthcheck_risk_changes is True
+    assert context.has_direct_rollout_changes is True
+    assert context.has_autoscaling_changes is True
+    assert context.has_privileged_container_changes is True
+    assert context.has_broad_iam_changes is True
+    assert context.has_resource_limit_risk_changes is True

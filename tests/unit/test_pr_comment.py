@@ -27,9 +27,12 @@ def test_render_pr_comment_renders_policy_decision_for_high_risk_change() -> Non
     assert "**Decision:** NO GO" in comment
     assert "**RDI Score:** 38" in comment
     assert "### Why this is blocked" in comment
-    assert "- 2 introduced high-severity finding(s)" in comment
-    assert "- infrastructure changes are present in the current diff" in comment
-    assert "- new dependency vulnerability findings were introduced" in comment
+    assert "- 2 new high-severity issues detected" in comment
+    assert "- the change includes infrastructure updates" in comment
+    assert "- the change introduces vulnerable dependencies" in comment
+    assert "### New threats detected" in comment
+    assert "- high code risk in app/routes.py: New code issue" in comment
+    assert "- high dependency risk: urllib3 2.2.2 in requirements.txt (New dependency issue)" in comment
     assert "### Required Approvals" in comment
     assert "- platform owner" in comment
     assert "- security owner" in comment
@@ -257,11 +260,19 @@ def test_render_pr_comment_truncates_verbose_sections() -> None:
     assert "### Key Context" in comment
     assert "### What must happen next" in comment
     assert "### Recommended rollout" in comment
-    assert "### Why this is allowed" in comment
+    assert "### Why this needs review" in comment
+
+
+def test_render_pr_comment_surfaces_plain_english_threat_details() -> None:
+    bundle = _bundle_with_iac_and_dependency_risk()
+    decision = evaluate_release(bundle, PolicyConfig(allow_conditional=True))
+
+    comment = render_pr_comment(bundle, decision)
+
+    assert "### New threats detected" in comment
+    assert "- high code risk in app/routes.py: New code issue" in comment
+    assert "- high dependency risk: urllib3 2.2.2 in requirements.txt (New dependency issue)" in comment
     assert "### Why this matters" in comment
-    assert "- ... " in comment
-    assert "more contextual risks" in comment
-    assert "more guidance items" in comment
 
 
 def test_render_pr_comment_compacts_clean_context_heavy_change() -> None:
