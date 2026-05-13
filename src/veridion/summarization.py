@@ -117,7 +117,7 @@ class AnthropicSummarizer:
     model: str
     api_key: str
     base_url: str = "https://api.anthropic.com/v1/messages"
-    timeout_seconds: int = 20
+    timeout_seconds: int = 30
 
     @property
     def provider(self) -> str:

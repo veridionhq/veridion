@@ -122,7 +122,7 @@ def render_pr_comment_result(
     if introduced_threats:
         lines.extend(
             _section(
-                _threats_title(decision.decision),
+                _threats_title(),
                 _truncate_items(introduced_threats, MAX_THREAT_ITEMS, "threat"),
             )
         )
@@ -176,10 +176,6 @@ def _format_approval(value: str) -> str:
     return APPROVAL_LABELS.get(value, value.replace("_", " "))
 
 
-def _format_counts(counts: dict[str, int]) -> tuple[str, ...]:
-    return tuple(f"{key}: {value}" for key, value in counts.items())
-
-
 def _drivers_title(decision: str) -> str:
     if decision == "NO GO":
         return "Why this is blocked"
@@ -188,7 +184,7 @@ def _drivers_title(decision: str) -> str:
     return "Why this is allowed"
 
 
-def _threats_title(decision: str) -> str:
+def _threats_title() -> str:
     return "Key threats"
 
 
@@ -253,7 +249,7 @@ def _summarize_comment_sections(
     summarizer: CommentSummarizer | None,
     decision: PolicyDecision,
     primary_drivers: tuple[str, ...],
-    introduced_threats,
+    introduced_threats: tuple[ThreatExplanation, ...],
     contextual_risk: tuple[str, ...],
     required_next_steps: tuple[str, ...],
     summary_style: str,
@@ -507,129 +503,6 @@ def _normalize_driver_line(line: str) -> str:
     for old, new in replacements:
         normalized = normalized.replace(old, new)
     return " ".join(normalized.split())
-
-
-def _format_historical_signals(bundle: AnalysisBundle) -> tuple[str, ...]:
-    historical = bundle.historical_signals
-    items: list[str] = []
-
-    criticality_parts: list[str] = []
-    if historical.repo_criticality:
-        criticality_parts.append(f"repo criticality: {historical.repo_criticality}")
-    if historical.service_criticality:
-        criticality_parts.append(f"service criticality: {historical.service_criticality}")
-    if criticality_parts:
-        items.append(" | ".join(criticality_parts))
-
-    instability_parts: list[str] = []
-    if historical.rollback_rate_30d is not None:
-        instability_parts.append(f"30d rollback rate: {historical.rollback_rate_30d:.0%}")
-    if historical.change_failure_rate_30d is not None:
-        instability_parts.append(f"30d change failure rate: {historical.change_failure_rate_30d:.0%}")
-    if historical.incident_count_30d:
-        instability_parts.append(f"30d incidents: {historical.incident_count_30d}")
-    if instability_parts:
-        items.append("Historical instability: " + " | ".join(instability_parts))
-
-    flags: list[str] = []
-    if historical.flaky_service:
-        flags.append("service marked flaky")
-    if historical.sensitive_repo:
-        flags.append("repository marked sensitive")
-    if flags:
-        items.append("Operational flags: " + " | ".join(flags))
-
-    return tuple(items)
-
-
-def _format_runtime_signals(bundle: AnalysisBundle) -> tuple[str, ...]:
-    runtime = bundle.runtime_signals
-    items: list[str] = []
-
-    surface_parts: list[str] = []
-    if runtime.environment:
-        surface_parts.append(f"deployment target: {runtime.environment}")
-    if runtime.public_exposure:
-        surface_parts.append("service is publicly exposed")
-    if runtime.blast_radius:
-        surface_parts.append(f"blast radius: {runtime.blast_radius}")
-    if surface_parts:
-        items.append(" | ".join(surface_parts))
-
-    execution_parts: list[str] = []
-    if runtime.deployment_window:
-        execution_parts.append("deployment window: " + runtime.deployment_window.replace("_", " "))
-    if runtime.rollout_strategy:
-        execution_parts.append("rollout strategy: " + runtime.rollout_strategy.replace("_", " "))
-    if execution_parts:
-        items.append("Execution plan: " + " | ".join(execution_parts))
-
-    return tuple(items)
-
-
-def _format_ownership_signals(bundle: AnalysisBundle) -> tuple[str, ...]:
-    ownership = bundle.ownership_signals
-    items: list[str] = []
-
-    identity_parts: list[str] = []
-    if "service owner missing" in ownership.elevated_signals:
-        identity_parts.append("service owner missing")
-    elif ownership.service_owner:
-        identity_parts.append("service owner: " + ownership.service_owner)
-    if ownership.owning_team:
-        identity_parts.append("owning team: " + ownership.owning_team)
-    if identity_parts:
-        items.append(" | ".join(identity_parts))
-
-    coordination_parts: list[str] = []
-    if ownership.review_coverage:
-        coordination_parts.append("review coverage: " + ownership.review_coverage.replace("_", " "))
-    if ownership.team_trust_level:
-        coordination_parts.append("team trust: " + ownership.team_trust_level)
-    if coordination_parts:
-        items.append("Coordination: " + " | ".join(coordination_parts))
-
-    if "on-call coverage missing" in ownership.elevated_signals:
-        items.append("Operational readiness: on-call coverage missing")
-
-    return tuple(items)
-
-
-def _format_trust_baseline(bundle: AnalysisBundle) -> tuple[str, ...]:
-    baseline = bundle.trust_baseline
-    items: list[str] = []
-
-    stability_parts: list[str] = []
-    if baseline.repo_stability:
-        stability_parts.append("repository stability: " + baseline.repo_stability)
-    if baseline.service_stability:
-        stability_parts.append("service stability: " + baseline.service_stability)
-    if stability_parts:
-        items.append(" | ".join(stability_parts))
-
-    execution_parts: list[str] = []
-    if baseline.team_deploy_safety:
-        execution_parts.append("team deploy safety: " + baseline.team_deploy_safety)
-    if baseline.test_coverage_level:
-        execution_parts.append("test coverage: " + baseline.test_coverage_level)
-    if baseline.rollback_readiness:
-        execution_parts.append("rollback readiness: " + baseline.rollback_readiness)
-    if baseline.dependency_reputation_risk:
-        execution_parts.append("dependency reputation risk: " + baseline.dependency_reputation_risk)
-    if execution_parts:
-        items.append("Execution baseline: " + " | ".join(execution_parts))
-
-    profile_parts: list[str] = []
-    if bundle.trust_profile_metadata.repo_id:
-        profile_parts.append(bundle.trust_profile_metadata.repo_id)
-    if bundle.trust_profile_metadata.service_id:
-        profile_parts.append(bundle.trust_profile_metadata.service_id)
-    if bundle.trust_profile_metadata.team_id:
-        profile_parts.append(bundle.trust_profile_metadata.team_id)
-    if profile_parts:
-        items.append("Trust profile: " + " | ".join(profile_parts))
-
-    return tuple(items)
 
 
 def _split_reasons(reasons: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
