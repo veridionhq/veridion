@@ -47,8 +47,24 @@ class SummarizationResult:
     contextual_summary: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class SummarizationTrace:
+    """Execution metadata for optional wording summarization."""
+
+    mode: str
+    provider: str
+    model: str
+    error: str = ""
+
+
 class CommentSummarizer(Protocol):
     """Provider-agnostic interface for wording models."""
+
+    @property
+    def provider(self) -> str: ...
+
+    @property
+    def model_name(self) -> str: ...
 
     def summarize(self, summary_request: SummarizationRequest) -> SummarizationResult: ...
 
@@ -61,6 +77,14 @@ class OpenAICompatibleSummarizer:
     api_key: str
     base_url: str = "https://api.openai.com/v1"
     timeout_seconds: int = 20
+
+    @property
+    def provider(self) -> str:
+        return "openai"
+
+    @property
+    def model_name(self) -> str:
+        return self.model
 
     def summarize(self, summary_request: SummarizationRequest) -> SummarizationResult:
         payload = {
@@ -95,6 +119,14 @@ class AnthropicSummarizer:
     api_key: str
     base_url: str = "https://api.anthropic.com/v1/messages"
     timeout_seconds: int = 20
+
+    @property
+    def provider(self) -> str:
+        return "anthropic"
+
+    @property
+    def model_name(self) -> str:
+        return self.model
 
     def summarize(self, summary_request: SummarizationRequest) -> SummarizationResult:
         payload = {
@@ -131,6 +163,14 @@ class BedrockSummarizer:
 
     model: str
     region: str
+
+    @property
+    def provider(self) -> str:
+        return "bedrock"
+
+    @property
+    def model_name(self) -> str:
+        return self.model
 
     def summarize(self, summary_request: SummarizationRequest) -> SummarizationResult:
         try:
@@ -197,6 +237,32 @@ def build_comment_summarizer(
         return BedrockSummarizer(model=model, region=region)
 
     raise RuntimeError(f"unsupported comment summarization provider: {provider}")
+
+
+def summarize_comment_request(
+    summary_request: SummarizationRequest,
+    summarizer: CommentSummarizer | None,
+) -> tuple[SummarizationResult | None, SummarizationTrace]:
+    """Run optional summarization and return validated result plus execution trace."""
+
+    if summarizer is None:
+        return None, SummarizationTrace(mode="deterministic", provider="none", model="")
+    provider = getattr(summarizer, "provider", "custom")
+    model_name = getattr(summarizer, "model_name", "")
+    try:
+        result = summarizer.summarize(summary_request)
+    except Exception as exc:
+        return None, SummarizationTrace(
+            mode="deterministic",
+            provider=provider,
+            model=model_name,
+            error=str(exc),
+        )
+    return result, SummarizationTrace(
+        mode="ai",
+        provider=provider,
+        model=model_name,
+    )
 
 
 def _post_json(

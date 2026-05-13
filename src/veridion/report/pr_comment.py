@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from veridion.analysis import AnalysisBundle
 from veridion.policy.engine import PolicyDecision
 from veridion.policy.labels import APPROVAL_LABELS
-from veridion.report.threats import explain_introduced_threats, render_threat_line
-from veridion.summarization import CommentSummarizer, SummarizationRequest
+from veridion.report.threats import ThreatExplanation, explain_introduced_threats, render_threat_line
+from veridion.summarization import CommentSummarizer, SummarizationRequest, SummarizationTrace, summarize_comment_request
 
 COMMENT_MARKER_START = "<!-- veridion:rdi:start -->"
 COMMENT_MARKER_END = "<!-- veridion:rdi:end -->"
@@ -30,6 +32,14 @@ REQUIRED_NEXT_STEP_PREFIXES = (
 )
 
 
+@dataclass(frozen=True)
+class RenderedComment:
+    """Rendered PR comment plus wording telemetry."""
+
+    markdown: str
+    summary_trace: SummarizationTrace
+
+
 def render_pr_comment(
     bundle: AnalysisBundle,
     decision: PolicyDecision,
@@ -37,6 +47,21 @@ def render_pr_comment(
     summarizer: CommentSummarizer | None = None,
     summary_style: str = "terse",
 ) -> str:
+    return render_pr_comment_result(
+        bundle,
+        decision,
+        summarizer=summarizer,
+        summary_style=summary_style,
+    ).markdown
+
+
+def render_pr_comment_result(
+    bundle: AnalysisBundle,
+    decision: PolicyDecision,
+    *,
+    summarizer: CommentSummarizer | None = None,
+    summary_style: str = "terse",
+) -> RenderedComment:
     """Render a deterministic PR comment for the current release decision."""
 
     lines: list[str] = []
@@ -64,7 +89,7 @@ def render_pr_comment(
     required_next_steps, advisory_guidance = _split_recommendations(
         _filter_recommendations(decision.recommendations, decision.required_approvals)
     )
-    summarized_primary_drivers, summarized_threats, summarized_contextual = _summarize_comment_sections(
+    summarized_primary_drivers, summarized_threats, summarized_contextual, summary_trace = _summarize_comment_sections(
         summarizer=summarizer,
         decision=decision,
         primary_drivers=primary_drivers,
@@ -82,7 +107,12 @@ def render_pr_comment(
     if bundle.summary.suppressed_findings or bundle.summary.expired_suppressions:
         lines.extend(_section("Accepted Risk", _format_suppressions(bundle)))
 
-    rendered_primary_drivers = summarized_primary_drivers or _default_driver_summary(bundle, decision)
+    rendered_primary_drivers = _merge_headline_summary(
+        bundle=bundle,
+        decision=decision,
+        introduced_threats=introduced_threat_explanations,
+        rendered_primary_drivers=summarized_primary_drivers or primary_drivers,
+    )
     if rendered_primary_drivers:
         lines.extend(
             _section(
@@ -131,7 +161,10 @@ def render_pr_comment(
         lines.extend(_section("Introduced Severity", _format_counts(bundle.summary.introduced_by_severity)))
         lines.extend(_section("Introduced Finding Types", _format_counts(bundle.summary.introduced_by_finding_type)))
 
-    return wrap_pr_comment("\n".join(lines).rstrip() + "\n")
+    return RenderedComment(
+        markdown=wrap_pr_comment("\n".join(lines).rstrip() + "\n"),
+        summary_trace=summary_trace,
+    )
 
 
 def wrap_pr_comment(body: str) -> str:
@@ -174,16 +207,53 @@ def _threats_title(decision: str) -> str:
     return "New threats detected"
 
 
-def _default_driver_summary(bundle: AnalysisBundle, decision: PolicyDecision) -> tuple[str, ...]:
+def _default_driver_summary(
+    bundle: AnalysisBundle,
+    decision: PolicyDecision,
+    introduced_threats: tuple[ThreatExplanation, ...],
+) -> tuple[str, ...]:
     if "no introduced findings detected" in decision.reasons:
         return ("no introduced findings detected",)
     if "release still requires explicit approvals or operational checks" in decision.reasons:
         return ("release still requires explicit approvals or operational checks",)
-    if decision.decision == "NO GO" and bundle.baseline_comparison.introduced:
-        return ("new risk in this change crosses the current release policy",)
-    if decision.decision == "CONDITIONAL GO" and bundle.baseline_comparison.introduced:
-        return ("new risk was introduced and needs review before shipping",)
+    if decision.decision == "NO GO" and introduced_threats:
+        return (_headline_blocker_summary(bundle, introduced_threats),) + tuple(
+            item
+            for item in (
+                _severity_summary(bundle),
+                "the change includes infrastructure updates" if bundle.summary.infrastructure_changes else "",
+                "the change introduces vulnerable dependencies" if bundle.summary.introduced_by_finding_type.get("dependency") else "",
+            )
+            if item
+        )
+    if decision.decision == "CONDITIONAL GO" and introduced_threats:
+        return (_headline_review_summary(bundle, introduced_threats),) + tuple(
+            item
+            for item in (
+                _severity_summary(bundle),
+                "the change includes infrastructure updates" if bundle.summary.infrastructure_changes else "",
+            )
+            if item
+        )
     return ()
+
+
+def _merge_headline_summary(
+    *,
+    bundle: AnalysisBundle,
+    decision: PolicyDecision,
+    introduced_threats: tuple[ThreatExplanation, ...],
+    rendered_primary_drivers: tuple[str, ...],
+) -> tuple[str, ...]:
+    fallback = _default_driver_summary(bundle, decision, introduced_threats)
+    if not fallback:
+        return rendered_primary_drivers or fallback
+    if not rendered_primary_drivers:
+        return fallback
+    headline = fallback[0]
+    if headline in rendered_primary_drivers:
+        return rendered_primary_drivers
+    return (headline,) + rendered_primary_drivers
 
 
 def _summarize_comment_sections(
@@ -195,27 +265,69 @@ def _summarize_comment_sections(
     contextual_risk: tuple[str, ...],
     required_next_steps: tuple[str, ...],
     summary_style: str,
-) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], SummarizationTrace]:
     if summarizer is None or not introduced_threats:
-        return primary_drivers, (), ()
-    try:
-        result = summarizer.summarize(
-            SummarizationRequest(
-                decision=decision.decision,
-                score=decision.score,
-                confidence=decision.confidence,
-                primary_drivers=primary_drivers,
-                threats=tuple(introduced_threats),
-                contextual_risk=contextual_risk,
-                required_approvals=decision.required_approvals,
-                required_next_steps=required_next_steps,
-                style=summary_style,
-            )
-        )
-    except Exception:
-        return primary_drivers, (), ()
+        return primary_drivers, (), (), SummarizationTrace(mode="deterministic", provider="none", model="")
+    result, trace = summarize_comment_request(
+        SummarizationRequest(
+            decision=decision.decision,
+            score=decision.score,
+            confidence=decision.confidence,
+            primary_drivers=primary_drivers,
+            threats=tuple(introduced_threats),
+            contextual_risk=contextual_risk,
+            required_approvals=decision.required_approvals,
+            required_next_steps=required_next_steps,
+            style=summary_style,
+        ),
+        summarizer,
+    )
+    if result is None:
+        return primary_drivers, (), (), trace
     rendered_primary = result.driver_summary or primary_drivers
-    return rendered_primary, result.threat_summaries, result.contextual_summary
+    return rendered_primary, result.threat_summaries, result.contextual_summary, trace
+
+
+def _headline_blocker_summary(bundle: AnalysisBundle, threats: tuple[ThreatExplanation, ...]) -> str:
+    top = threats[0]
+    if top.threat_type == "dependency":
+        summary = f"this change cannot ship because it introduces {top.severity} vulnerable dependencies such as {top.subject}"
+    else:
+        location = f" in {top.location}" if top.location else ""
+        summary = f"this change cannot ship because it introduces {top.severity} {top.threat_type} risk{location}"
+    if bundle.runtime_signals.public_exposure:
+        summary += " into a public-facing path"
+    elif bundle.runtime_signals.blast_radius in {"high", "critical"}:
+        summary += " in a high-blast-radius path"
+    return summary
+
+
+def _headline_review_summary(bundle: AnalysisBundle, threats: tuple[ThreatExplanation, ...]) -> str:
+    top = threats[0]
+    if top.location:
+        summary = f"this change needs review because {top.location} {top.summary}"
+    else:
+        summary = f"this change needs review because it introduces {top.severity} {top.threat_type} risk"
+    if bundle.summary.infrastructure_changes:
+        summary += " and it also changes infrastructure"
+    return summary
+
+
+def _severity_summary(bundle: AnalysisBundle) -> str:
+    parts: list[str] = []
+    severities = bundle.summary.introduced_by_severity
+    if severities.get("critical"):
+        count = severities["critical"]
+        parts.append(f"{count} critical issue" + ("" if count == 1 else "s"))
+    if severities.get("high"):
+        count = severities["high"]
+        parts.append(f"{count} high-severity issue" + ("" if count == 1 else "s"))
+    if severities.get("medium"):
+        count = severities["medium"]
+        parts.append(f"{count} medium-severity issue" + ("" if count == 1 else "s"))
+    if not parts:
+        return ""
+    return "new risk includes " + ", ".join(parts)
 
 
 def _should_use_compact_render(

@@ -4,12 +4,15 @@ from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileC
 from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals, TrustBaseline
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.policy import PolicyConfig, evaluate_release
-from veridion.report import render_pr_comment
+from veridion.report import render_pr_comment, render_pr_comment_result
 from veridion.report.pr_comment import _is_required_next_step
 from veridion.summarization import SummarizationResult
 
 
 class _StaticSummarizer:
+    provider = "test"
+    model_name = "stub"
+
     def summarize(self, summary_request):
         return SummarizationResult(
             driver_summary=("this change introduces release risk that still needs review",),
@@ -37,6 +40,7 @@ def test_render_pr_comment_renders_policy_decision_for_high_risk_change() -> Non
     assert "**Decision:** NO GO" in comment
     assert "**RDI Score:** 38" in comment
     assert "### Why this is blocked" in comment
+    assert "- this change cannot ship because it introduces high code risk in app/routes.py" in comment
     assert "- 2 new high-severity issues detected" in comment
     assert "- the change includes infrastructure updates" in comment
     assert "- the change introduces vulnerable dependencies" in comment
@@ -294,6 +298,17 @@ def test_render_pr_comment_can_use_optional_ai_wording_layer() -> None:
     assert "- this change introduces release risk that still needs review" in comment
     assert "- app/main.py uses subprocess with shell=True, which can allow command injection" in comment
     assert "- this change also affects a production-facing path" in comment
+
+
+def test_render_pr_comment_result_exposes_deterministic_summary_trace() -> None:
+    bundle = _bundle_with_iac_and_dependency_risk()
+    decision = evaluate_release(bundle, PolicyConfig(allow_conditional=True))
+
+    rendered = render_pr_comment_result(bundle, decision)
+
+    assert rendered.summary_trace.mode == "deterministic"
+    assert rendered.summary_trace.provider == "none"
+    assert rendered.summary_trace.model == ""
 
 
 def test_render_pr_comment_compacts_clean_context_heavy_change() -> None:

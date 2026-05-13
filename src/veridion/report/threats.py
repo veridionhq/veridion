@@ -19,6 +19,7 @@ class ThreatExplanation:
     location: str | None
     summary: str
     why_not_safe: str
+    advisory_count: int = 1
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -37,22 +38,34 @@ def explain_introduced_threats(bundle: AnalysisBundle) -> tuple[ThreatExplanatio
         ),
     )
     explanations: list[ThreatExplanation] = []
-    seen: set[tuple[str, str, str, str | None]] = set()
+    grouped_dependencies: dict[tuple[str, str, str, str | None], list[NormalizedFinding]] = {}
 
     for finding in introduced:
-        explanation = _explain_finding(finding)
-        key = (
-            explanation.severity,
-            explanation.threat_type,
-            explanation.summary,
-            explanation.location,
-        )
-        if key in seen:
+        if finding.finding_type == "dependency":
+            location = _normalize_location(finding.location.path)
+            severity = finding.severity.replace("-", " ")
+            package = " ".join(part for part in (finding.package_name, finding.package_version) if part)
+            subject = package or finding.rule_id
+            key = (severity, "dependency", subject, location)
+            grouped_dependencies.setdefault(key, []).append(finding)
             continue
-        seen.add(key)
+        explanation = _explain_finding(finding)
         explanations.append(explanation)
 
-    return tuple(explanations)
+    for (severity, _, subject, location), findings in grouped_dependencies.items():
+        explanations.append(_merge_dependency_explanations(findings, severity=severity, subject=subject, location=location))
+
+    return tuple(
+        sorted(
+            explanations,
+            key=lambda item: (
+                _severity_rank(item.severity),
+                item.threat_type,
+                item.location or "",
+                item.subject,
+            ),
+        )
+    )
 
 
 def render_threat_line(explanation: ThreatExplanation) -> str:
@@ -132,6 +145,40 @@ def _summarize_code_or_config_finding(finding: NormalizedFinding) -> tuple[str, 
     return summary, "the change introduces new application or configuration risk"
 
 
+def _merge_dependency_explanations(
+    findings: list[NormalizedFinding],
+    *,
+    severity: str,
+    subject: str,
+    location: str | None,
+) -> ThreatExplanation:
+    ordered_titles = []
+    seen_titles: set[str] = set()
+    for finding in findings:
+        title = _summarize_dependency_title(finding)
+        if title and title not in seen_titles:
+            seen_titles.add(title)
+            ordered_titles.append(title)
+
+    if len(ordered_titles) <= 1:
+        summary = f"{subject}" + (f" ({ordered_titles[0]})" if ordered_titles else "")
+    elif len(ordered_titles) == 2:
+        summary = f"{subject} ({ordered_titles[0]}; {ordered_titles[1]})"
+    else:
+        summary = f"{subject} ({ordered_titles[0]}; {len(ordered_titles) - 1} more advisories)"
+
+    return ThreatExplanation(
+        source=findings[0].source,
+        threat_type="dependency",
+        severity=severity,
+        subject=subject,
+        location=location,
+        summary=summary,
+        why_not_safe="the change introduces vulnerable package versions",
+        advisory_count=len(findings),
+    )
+
+
 def _shorten_title(text: str) -> str:
     shortened = _first_sentence(text)
     if len(shortened) > 90:
@@ -140,7 +187,7 @@ def _shorten_title(text: str) -> str:
 
 
 def _first_sentence(text: str) -> str:
-    for delimiter in (". ", "\n", ": "):
+    for delimiter in (". ", "\n"):
         if delimiter in text:
             return text.split(delimiter, 1)[0].strip().rstrip(".")
     return text.strip().rstrip(".")

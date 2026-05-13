@@ -33,6 +33,9 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert result.decision.score < 60
     assert result.bundle.summary.introduced_findings == 2
     assert len(result.to_dict()["threats"]) == 2
+    assert result.comment_summary_mode == "deterministic"
+    assert result.comment_summary_provider == "none"
+    assert result.comment_summary_model == ""
     assert result.bundle.summary.inventory_packages == 1
     assert result.bundle.summary.ai_change_signals == 4
     assert result.bundle.summary.ai_authored_commits == 1
@@ -71,6 +74,7 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert "more guidance items" in result.comment_markdown or "more guidance item" in result.comment_markdown
     assert "Unattributed findings: 0" in result.comment_markdown
     assert result.comment_markdown.startswith("<!-- veridion:rdi:start -->\n")
+    assert result.to_dict()["comment_summary"]["mode"] == "deterministic"
 
 
 def test_action_result_to_dict_is_json_serializable() -> None:

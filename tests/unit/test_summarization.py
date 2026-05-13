@@ -61,12 +61,60 @@ def test_explain_introduced_threats_returns_structured_dependency_and_code_facts
     assert threats[0].threat_type == "dependency"
     assert threats[0].subject == "pyyaml 5.3.1"
     assert threats[0].location == "requirements.txt"
-    assert threats[0].why_not_safe == "the change introduces a vulnerable package version"
+    assert threats[0].why_not_safe == "the change introduces vulnerable package versions"
     assert render_threat_line(threats[0]) == (
         "critical dependency risk in requirements.txt: pyyaml 5.3.1 (Improper Input Validation in PyYAML)"
     )
     assert threats[1].summary == "uses subprocess with shell=True"
     assert threats[1].why_not_safe == "shell execution can allow command injection or unsafe command expansion"
+
+
+def test_explain_introduced_threats_groups_duplicate_dependency_advisories() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="trivy",
+                finding_type="dependency",
+                rule_id="CVE-2026-12345",
+                title="Improper Input Validation in PyYAML",
+                severity="critical",
+                package_name="pyyaml",
+                package_version="5.3.1",
+                location=NormalizedLocation(path="/workspace/requirements.txt"),
+            ),
+            NormalizedFinding(
+                source="trivy",
+                finding_type="dependency",
+                rule_id="CVE-2026-22222",
+                title="PyYAML: incomplete fix for CVE-2020-1747",
+                severity="critical",
+                package_name="pyyaml",
+                package_version="5.3.1",
+                location=NormalizedLocation(path="/workspace/requirements.txt"),
+            ),
+        ],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=0,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+    )
+
+    threats = explain_introduced_threats(bundle)
+
+    assert len(threats) == 1
+    assert threats[0].advisory_count == 2
+    assert render_threat_line(threats[0]) == (
+        "critical dependency risk in requirements.txt: pyyaml 5.3.1 (Improper Input Validation in PyYAML; PyYAML: incomplete fix for CVE-2020-1747)"
+    )
 
 
 def test_build_comment_summarizer_supports_disabled_and_errors_on_missing_requirements() -> None:

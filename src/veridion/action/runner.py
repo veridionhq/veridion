@@ -16,7 +16,7 @@ from veridion.context import (
 )
 from veridion.normalize import NormalizedFinding, normalize_report
 from veridion.policy import PolicyDecision, PolicyConfig, evaluate_release, parse_policy_yaml
-from veridion.report import explain_introduced_threats, render_pr_comment
+from veridion.report import explain_introduced_threats, render_pr_comment_result
 from veridion.summarization import build_comment_summarizer
 from veridion.suppression import parse_suppressions_payload
 from veridion.change_context import parse_unified_diff
@@ -30,6 +30,10 @@ class ActionResult:
     bundle: AnalysisBundle
     decision: PolicyDecision
     comment_markdown: str
+    comment_summary_mode: str
+    comment_summary_provider: str
+    comment_summary_model: str
+    comment_summary_error: str = ""
     comment_identifier: str = "veridion:rdi"
 
     def to_dict(self) -> dict[str, object]:
@@ -40,6 +44,12 @@ class ActionResult:
             "decision": plain(asdict(self.decision)),
             "threats": [item.to_dict() for item in explain_introduced_threats(self.bundle)],
             "comment_markdown": self.comment_markdown,
+            "comment_summary": {
+                "mode": self.comment_summary_mode,
+                "provider": self.comment_summary_provider,
+                "model": self.comment_summary_model,
+                "error": self.comment_summary_error,
+            },
             "comment_identifier": self.comment_identifier,
         }
 
@@ -110,7 +120,7 @@ def run_action(
         base_url=comment_summary_base_url,
         region=comment_summary_region,
     )
-    comment_markdown = render_pr_comment(
+    rendered_comment = render_pr_comment_result(
         bundle,
         decision,
         summarizer=summarizer,
@@ -120,7 +130,11 @@ def run_action(
     return ActionResult(
         bundle=bundle,
         decision=decision,
-        comment_markdown=comment_markdown,
+        comment_markdown=rendered_comment.markdown,
+        comment_summary_mode=rendered_comment.summary_trace.mode,
+        comment_summary_provider=rendered_comment.summary_trace.provider,
+        comment_summary_model=rendered_comment.summary_trace.model,
+        comment_summary_error=rendered_comment.summary_trace.error,
     )
 
 
@@ -250,6 +264,10 @@ def _write_github_outputs(
         f"score={result.decision.score}",
         f"confidence={result.decision.confidence}",
         f"comment_identifier={result.comment_identifier}",
+        f"comment_summary_mode={result.comment_summary_mode}",
+        f"comment_summary_provider={result.comment_summary_provider}",
+        f"comment_summary_model={result.comment_summary_model}",
+        f"comment_summary_error={result.comment_summary_error}",
         f"comment_path={comment_path or ''}",
         f"json_output_path={json_output_path or ''}",
     ]
