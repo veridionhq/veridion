@@ -13,8 +13,8 @@ from veridion.summarization import CommentSummarizer, SummarizationRequest, Summ
 COMMENT_MARKER_START = "<!-- veridion:rdi:start -->"
 COMMENT_MARKER_END = "<!-- veridion:rdi:end -->"
 MAX_AI_ITEMS = 3
-MAX_PRIMARY_DRIVER_ITEMS = 4
-MAX_THREAT_ITEMS = 4
+MAX_PRIMARY_DRIVER_ITEMS = 3
+MAX_THREAT_ITEMS = 3
 MAX_CONTEXTUAL_RISK_ITEMS = 4
 MAX_REQUIRED_NEXT_STEP_ITEMS = 6
 MAX_ADVISORY_GUIDANCE_ITEMS = 4

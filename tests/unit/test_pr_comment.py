@@ -43,7 +43,7 @@ def test_render_pr_comment_renders_policy_decision_for_high_risk_change() -> Non
     assert "- this change cannot ship because it introduces high code risk in app/routes.py" in comment
     assert "- 2 new high-severity issues detected" in comment
     assert "- the change includes infrastructure updates" in comment
-    assert "- the change introduces vulnerable dependencies" in comment
+    assert "- the change introduces vulnerable dependencies" not in comment
     assert "### Key threats" in comment
     assert "- high code risk in app/routes.py: New code issue" in comment
     assert "- high dependency risk in requirements.txt: urllib3 2.2.2 (New dependency issue)" in comment

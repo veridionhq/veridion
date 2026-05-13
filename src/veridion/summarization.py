@@ -325,6 +325,8 @@ def _validate_operator_lines(lines: tuple[str, ...], *, max_items: int, section:
             raise RuntimeError("summarizer output used example phrasing instead of a decisive blocker statement")
         if section == "context" and lowered.startswith(_ACTION_PREFIXES):
             raise RuntimeError("summarizer output used action language in contextual summary")
+        if section == "threat":
+            line = _polish_threat_line(line)
         validated.append(line)
     return tuple(validated)
 
@@ -350,6 +352,7 @@ Rules:
 - threat_summaries should be short concrete lines, not mini reports.
 - Prefer risk categories over scanner jargon or CVE trivia.
 - Avoid phrases like "multiple advisories present" when "multiple high-severity vulnerabilities" is clearer.
+- Do not prefix a threat with awkward severity labels like "high:" after a dash.
 - Merge duplicate package advisories into one short line when possible.
 - contextual_summary explains impact or stakes only, such as public exposure, blast radius, or shared platform risk.
 - contextual_summary must never contain instructions or action items.
@@ -395,6 +398,21 @@ _ACTION_PREFIXES = (
     "remediate ",
     "adjust ",
 )
+
+
+def _polish_threat_line(line: str) -> str:
+    replacements = (
+        (" — high: ", " — "),
+        (" — medium: ", " — "),
+        (" — critical: ", " — "),
+        (" — info: ", " — "),
+        ("multiple high-severity advisories", "multiple high-severity dependency vulnerabilities"),
+        ("multiple advisories", "multiple dependency vulnerabilities"),
+    )
+    polished = line
+    for old, new in replacements:
+        polished = polished.replace(old, new)
+    return polished
 
 
 def _format_http_error(exc: error.HTTPError) -> str:

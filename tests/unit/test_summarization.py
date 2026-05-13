@@ -249,6 +249,24 @@ def test_parse_summarization_result_caps_threat_summaries() -> None:
     assert len(result.contextual_summary) == 3
 
 
+def test_parse_summarization_result_polishes_awkward_threat_labels() -> None:
+    result = _parse_summarization_result(
+        """
+        {
+          "driver_summary": ["this change cannot ship because it introduces critical vulnerable dependencies"],
+          "threat_summaries": [
+            "urllib3 1.25.8 in requirements.txt — high: cross-origin cookie header not stripped on redirects; multiple high-severity advisories"
+          ],
+          "contextual_summary": []
+        }
+        """
+    )
+
+    assert result.threat_summaries == (
+        "urllib3 1.25.8 in requirements.txt — cross-origin cookie header not stripped on redirects; multiple high-severity dependency vulnerabilities",
+    )
+
+
 def test_parse_summarization_result_rejects_redundant_decision_line() -> None:
     try:
         _parse_summarization_result(
