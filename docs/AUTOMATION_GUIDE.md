@@ -60,7 +60,26 @@ allowed-decisions: "GO,CONDITIONAL GO"
 
 ## Enforce approval routing
 
-The action does not create GitHub reviewers for you. It tells you which roles must approve.
+The action can now optionally request GitHub reviewers when you provide an approval map.
+
+Example approval map:
+
+```json
+{
+  "schema_version": 1,
+  "roles": {
+    "platform_owner": { "teams": ["platform-team"] },
+    "security_owner": { "teams": ["security-team"] },
+    "service_owner": { "users": ["service-owner"] },
+    "sre_owner": { "teams": ["sre-team"] }
+  }
+}
+```
+
+Action inputs:
+
+- `request-approvals: "true"`
+- `approval-map-path: .veridion/approval-map.json`
 
 Example:
 
@@ -74,6 +93,12 @@ Example:
 ```
 
 This is useful when an external system maps Veridion roles to real reviewers or change-management approvals.
+
+Outputs:
+
+- `approval_request_status`
+- `requested_reviewers_json`
+- `missing_approval_mappings_json`
 
 ## Consume accepted-risk governance
 
@@ -106,6 +131,20 @@ require_security_owner_for:
   - accepted_risk_present
   - accepted_risk_governance_gap
 ```
+
+## Emit decision events
+
+You can deliver the decision contract to an external system:
+
+```yaml
+webhook-url: ${{ secrets.VERIDION_WEBHOOK_URL }}
+webhook-token: ${{ secrets.VERIDION_WEBHOOK_TOKEN }}
+webhook-event-type: veridion.rdi.decision.v1
+```
+
+Output:
+
+- `webhook_delivery_status`
 
 ## Reference workflows
 

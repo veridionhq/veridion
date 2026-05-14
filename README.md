@@ -121,6 +121,7 @@ GitHub PR
 - [Docs Home](https://getveridion.com/docs/)
 - [Quickstart](docs/QUICKSTART.md)
 - [Automation Guide](docs/AUTOMATION_GUIDE.md)
+- [Non-GitHub Producers](docs/NON_GITHUB.md)
 - [Evaluation Guide](docs/EVALUATION_GUIDE.md)
 - [Evaluation Checklist](docs/EVALUATION_CHECKLIST.md)
 - [Design Partner Guide](docs/DESIGN_PARTNER.md)
@@ -221,6 +222,12 @@ For downstream automation, the action now exposes:
 - `blocking_categories_json`
 - `accepted_risk_present`
 - `decision_contract_path`
+
+Optional integrations on top of the decision contract now include:
+
+- GitHub reviewer requests from role-based approval maps
+- outbound webhook delivery of the decision contract
+- generic CI producers that build `operational-context.json` without GitHub event payloads
 
 For contributor/local development only, an editable install also works:
 

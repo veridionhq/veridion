@@ -1,5 +1,6 @@
 from veridion.analysis import build_analysis_bundle
 from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
+from veridion.context import RuntimeSignals, TrustBaseline
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.risk import extract_risk_features, score_analysis_bundle
 
@@ -20,6 +21,8 @@ def test_extract_risk_features_counts_introduced_findings_and_context() -> None:
     assert features.has_dependency_changes is True
     assert features.has_lockfile_changes is True
     assert features.has_infrastructure_changes is True
+    assert features.public_exposure is False
+    assert features.high_blast_radius is False
 
 
 def test_score_analysis_bundle_returns_conditional_go_for_high_risk_changes() -> None:
@@ -175,6 +178,64 @@ def test_score_analysis_bundle_emits_reason_for_medium_findings() -> None:
     result = score_analysis_bundle(bundle)
 
     assert "1 new medium-severity issue detected" in result.reasons
+
+
+def test_score_analysis_bundle_applies_contextual_risk_penalties() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.high",
+                title="High issue",
+                severity="high",
+                location=NormalizedLocation(path="app/routes.py", start_line=12, end_line=12),
+            )
+        ],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="app/routes.py",
+                    change_type="modified",
+                    added_lines=3,
+                    removed_lines=1,
+                    signals=("application_code",),
+                    previous_path="app/routes.py",
+                ),
+                ParsedFileChange(
+                    path="deploy/prod/service.yaml",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=1,
+                    signals=("production_surface", "public_exposure", "resource_limit_risk"),
+                    previous_path="deploy/prod/service.yaml",
+                ),
+                ParsedFileChange(
+                    path="k8s/deployment.yaml",
+                    change_type="modified",
+                    added_lines=2,
+                    removed_lines=0,
+                    signals=("infrastructure", "privileged_container", "direct_rollout"),
+                    previous_path="k8s/deployment.yaml",
+                ),
+            )
+        ),
+        runtime_signals=RuntimeSignals(
+            public_exposure=True,
+            blast_radius="high",
+            deployment_window="after_hours",
+        ),
+        trust_baseline=TrustBaseline(
+            rollback_readiness="weak",
+            test_coverage_level="low",
+        ),
+    )
+
+    result = score_analysis_bundle(bundle)
+
+    assert result.score == 44
+    assert result.decision == "NO GO"
 
 
 def _bundle_with_high_code_and_dependency_risk():

@@ -84,6 +84,26 @@ inputs:
     description: "Comma-separated decisions allowed to pass when enforce-decision is true"
     required: false
     default: "GO,CONDITIONAL GO"
+  approval-map-path:
+    description: "Path to optional approval role map JSON for GitHub reviewer requests"
+    required: false
+    default: ""
+  request-approvals:
+    description: "Whether to request mapped GitHub reviewers for required approvals"
+    required: false
+    default: "false"
+  webhook-url:
+    description: "Optional external webhook URL for decision contract delivery"
+    required: false
+    default: ""
+  webhook-token:
+    description: "Optional bearer token for webhook delivery"
+    required: false
+    default: ""
+  webhook-event-type:
+    description: "Logical event type for webhook delivery"
+    required: false
+    default: "veridion.rdi.decision.v1"
   github-token:
     description: "GitHub token used to upsert the PR comment"
     required: false
@@ -146,6 +166,18 @@ outputs:
   accepted_risk_present:
     description: "Whether active accepted-risk suppressions are present in the change"
     value: ${{ steps.run-rdi.outputs.accepted_risk_present }}
+  approval_request_status:
+    description: "Reviewer request status for required approval roles"
+    value: ${{ steps.request-approvals.outputs.approval_request_status }}
+  requested_reviewers_json:
+    description: "JSON object of requested reviewer users and teams"
+    value: ${{ steps.request-approvals.outputs.requested_reviewers_json }}
+  missing_approval_mappings_json:
+    description: "JSON array of approval roles with no reviewer mapping"
+    value: ${{ steps.request-approvals.outputs.missing_approval_mappings_json }}
+  webhook_delivery_status:
+    description: "Webhook delivery status for the emitted decision contract"
+    value: ${{ steps.emit-event.outputs.webhook_delivery_status }}
   comment_id:
     description: "GitHub comment id when comment posting is enabled"
     value: ${{ steps.comment-rdi.outputs.comment_id }}
@@ -294,6 +326,50 @@ runs:
           --decision-contract-path "${INPUT_DECISION_CONTRACT_PATH}" \
           --enforce-decision "${INPUT_ENFORCE_DECISION}" \
           --allowed-decisions "${INPUT_ALLOWED_DECISIONS}"
+    - name: Request required GitHub approvals
+      id: request-approvals
+      if: ${{ always() && inputs.request-approvals == 'true' && inputs.github-token != '' && inputs.repository != '' && inputs.pull-request-number != '' && inputs.approval-map-path != '' }}
+      shell: bash
+      env:
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        INPUT_PULL_REQUEST_NUMBER: ${{ inputs.pull-request-number }}
+        INPUT_APPROVAL_MAP_PATH: ${{ inputs.approval-map-path }}
+        REQUIRED_APPROVALS_JSON: ${{ steps.run-rdi.outputs.required_approvals_json }}
+        PYTHONPATH: ${{ github.action_path }}/src
+      run: |
+        set -euo pipefail
+        python3 -m veridion.action.github_approvals \
+          --repository "${INPUT_REPOSITORY}" \
+          --pull-request-number "${INPUT_PULL_REQUEST_NUMBER}" \
+          --github-token "${INPUT_GITHUB_TOKEN}" \
+          --required-approvals-json "${REQUIRED_APPROVALS_JSON}" \
+          --approval-map-path "${INPUT_APPROVAL_MAP_PATH}"
+    - name: Emit decision event
+      id: emit-event
+      if: ${{ always() && inputs.webhook-url != '' }}
+      shell: bash
+      env:
+        INPUT_WEBHOOK_URL: ${{ inputs.webhook-url }}
+        INPUT_WEBHOOK_TOKEN: ${{ inputs.webhook-token }}
+        INPUT_WEBHOOK_EVENT_TYPE: ${{ inputs.webhook-event-type }}
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        INPUT_PULL_REQUEST_NUMBER: ${{ inputs.pull-request-number }}
+        INPUT_DECISION_CONTRACT_PATH: ${{ inputs.decision-contract-path }}
+        PYTHONPATH: ${{ github.action_path }}/src
+      run: |
+        set -euo pipefail
+        pr_args=()
+        if [[ -n "${INPUT_PULL_REQUEST_NUMBER}" ]]; then
+          pr_args+=(--pull-request-number "${INPUT_PULL_REQUEST_NUMBER}")
+        fi
+        python3 -m veridion.action.event_emitter \
+          --webhook-url "${INPUT_WEBHOOK_URL}" \
+          --decision-contract-path "${INPUT_DECISION_CONTRACT_PATH}" \
+          --event-type "${INPUT_WEBHOOK_EVENT_TYPE}" \
+          --repository "${INPUT_REPOSITORY}" \
+          --token "${INPUT_WEBHOOK_TOKEN}" \
+          "${pr_args[@]}"
     - name: Post Veridion PR comment
       id: comment-rdi
       if: ${{ inputs.post-comment == 'true' }}

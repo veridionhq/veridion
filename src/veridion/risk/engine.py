@@ -22,6 +22,17 @@ class RiskFeatures:
     has_dependency_changes: bool
     has_lockfile_changes: bool
     has_infrastructure_changes: bool
+    public_exposure: bool
+    high_blast_radius: bool
+    after_hours_deploy: bool
+    weak_rollback_readiness: bool
+    low_test_coverage: bool
+    broad_iam_changes: bool
+    privileged_container_changes: bool
+    direct_rollout_changes: bool
+    healthcheck_risk_changes: bool
+    resource_limit_risk_changes: bool
+    autoscaling_changes: bool
 
 
 @dataclass(frozen=True)
@@ -52,6 +63,17 @@ def extract_risk_features(bundle: AnalysisBundle) -> RiskFeatures:
         has_dependency_changes=bundle.summary.dependency_changes,
         has_lockfile_changes=bundle.summary.lockfile_changes,
         has_infrastructure_changes=bundle.summary.infrastructure_changes,
+        public_exposure=bundle.runtime_signals.public_exposure,
+        high_blast_radius=bundle.runtime_signals.blast_radius in {"high", "critical"},
+        after_hours_deploy=bundle.runtime_signals.deployment_window == "after_hours",
+        weak_rollback_readiness=bundle.trust_baseline.rollback_readiness in {"partial", "weak"},
+        low_test_coverage=bundle.trust_baseline.test_coverage_level == "low",
+        broad_iam_changes=bundle.change_context.has_broad_iam_changes,
+        privileged_container_changes=bundle.change_context.has_privileged_container_changes,
+        direct_rollout_changes=bundle.change_context.has_direct_rollout_changes,
+        healthcheck_risk_changes=bundle.change_context.has_healthcheck_risk_changes,
+        resource_limit_risk_changes=bundle.change_context.has_resource_limit_risk_changes,
+        autoscaling_changes=bundle.change_context.has_autoscaling_changes,
     )
 
 
@@ -79,6 +101,29 @@ def score_analysis_bundle(bundle: AnalysisBundle) -> RdiResult:
 
     if features.has_lockfile_changes and features.introduced_dependency_findings:
         score -= 4
+
+    if features.public_exposure and features.introduced_findings:
+        score -= 5
+    if features.high_blast_radius and features.introduced_findings:
+        score -= 7
+    if features.after_hours_deploy and features.introduced_findings:
+        score -= 4
+    if features.weak_rollback_readiness and features.introduced_findings:
+        score -= 6
+    if features.low_test_coverage and features.introduced_findings:
+        score -= 4
+    if features.broad_iam_changes:
+        score -= 6
+    if features.privileged_container_changes:
+        score -= 6
+    if features.direct_rollout_changes:
+        score -= 5
+    if features.healthcheck_risk_changes:
+        score -= 5
+    if features.resource_limit_risk_changes:
+        score -= 4
+    if features.autoscaling_changes:
+        score -= 3
 
     score = max(0, min(100, score))
 

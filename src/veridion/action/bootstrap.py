@@ -299,6 +299,7 @@ jobs:
           trust-profile-source-path: .veridion/trust-profile.source.json
           trust-catalog-source-path: .veridion/trust-catalog.source.json
           suppression-path: .veridion/suppressions.json
+          approval-map-path: .veridion/approval-map.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           decision-contract-path: veridion-decision.json
@@ -354,12 +355,22 @@ def build_bootstrap_files(
         "schema_version": 1,
         "suppressions": [],
     }
+    approval_map = {
+        "schema_version": 1,
+        "roles": {
+            "platform_owner": {"teams": ["platform-team"]},
+            "security_owner": {"teams": ["security-team"]},
+            "service_owner": {"users": []},
+            "sre_owner": {"teams": ["sre-team"]},
+        },
+    }
 
     return {
         ".veridion/policy.yaml": POLICY_PACKS[preset],
         ".veridion/trust-profile.source.json": json.dumps(trust_profile, indent=2) + "\n",
         ".veridion/trust-catalog.source.json": json.dumps(trust_catalog, indent=2) + "\n",
         ".veridion/suppressions.json": json.dumps(suppressions, indent=2) + "\n",
+        ".veridion/approval-map.json": json.dumps(approval_map, indent=2) + "\n",
         ".github/workflows/veridion-rdi.yml": WORKFLOW_TEMPLATE.format(action_ref=action_ref),
     }
 
