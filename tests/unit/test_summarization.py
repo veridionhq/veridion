@@ -102,6 +102,34 @@ def test_summarize_comment_request_captures_http_error_body(monkeypatch) -> None
     assert trace.error == 'HTTP 429: {"error":{"type":"insufficient_quota","message":"Quota exceeded"}}'
 
 
+def test_summarize_comment_request_rejects_non_https_endpoint() -> None:
+    summarizer = build_comment_summarizer(
+        provider="openai",
+        model="gpt-5-mini",
+        api_key="test-key",
+        base_url="http://example.test/v1",
+    )
+    assert summarizer is not None
+
+    result, trace = summarize_comment_request(
+        SummarizationRequest(
+            decision="NO GO",
+            score=0,
+            confidence="high",
+            primary_drivers=("policy max_severity exceeded",),
+            threats=(),
+            contextual_risk=(),
+            required_approvals=("security_owner",),
+            required_next_steps=("Block release until introduced risk is remediated or policy is adjusted",),
+        ),
+        summarizer,
+    )
+
+    assert result is None
+    assert trace.mode == "deterministic"
+    assert trace.error == "summarization endpoint must use https"
+
+
 def test_bedrock_summarizer_uses_boto3_client(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

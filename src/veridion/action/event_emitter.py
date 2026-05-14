@@ -82,14 +82,14 @@ def _post_json(*, url: str, payload: dict[str, object], token: str) -> Any:
 
     # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
     # URL is validated by _validate_webhook_url() before reaching this sink.
-    req = request.Request(
+    req = request.Request(  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         url=url,
         data=json.dumps(payload).encode("utf-8"),
         headers=headers,
         method="POST",
     )
     try:
-        with request.urlopen(req) as response:
+        with request.urlopen(req) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             body = response.read().decode("utf-8")
         return json.loads(body) if body else {}
     except error.HTTPError as exc:

@@ -6,8 +6,13 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Protocol
 from urllib import error, request
+from urllib.parse import urlsplit, urlunsplit
 
-from veridion.report.threats import ThreatExplanation
+
+class ThreatPayload(Protocol):
+    """Minimal threat shape needed by the summarization layer."""
+
+    def to_dict(self) -> dict[str, object]: ...
 
 
 @dataclass(frozen=True)
@@ -18,7 +23,7 @@ class SummarizationRequest:
     score: int
     confidence: str
     primary_drivers: tuple[str, ...]
-    threats: tuple[ThreatExplanation, ...]
+    threats: tuple[ThreatPayload, ...]
     contextual_risk: tuple[str, ...]
     required_approvals: tuple[str, ...]
     required_next_steps: tuple[str, ...]
@@ -272,8 +277,13 @@ def _post_json(
     timeout_seconds: int,
 ) -> dict[str, object]:
     body = json.dumps(payload).encode("utf-8")
-    http_request = request.Request(url, data=body, headers=headers, method="POST")
+    validated_url = _validate_https_url(url, label="summarization endpoint")
+    # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+    # URL is validated by _validate_https_url() before reaching this sink.
+    http_request = request.Request(validated_url, data=body, headers=headers, method="POST")
     try:
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+        # Request target is constrained to a validated HTTPS endpoint.
         with request.urlopen(http_request, timeout=timeout_seconds) as response:
             return json.loads(response.read())
     except error.HTTPError as exc:
@@ -432,3 +442,16 @@ def _format_http_error(exc: error.HTTPError) -> str:
         compact_body = " ".join(body.split())
         return f"HTTP {status}: {compact_body}"
     return f"HTTP {status}: {exc.reason}"
+
+
+def _validate_https_url(url: str, *, label: str) -> str:
+    parsed = urlsplit(url.strip())
+    if parsed.scheme != "https":
+        raise RuntimeError(f"{label} must use https")
+    if not parsed.netloc:
+        raise RuntimeError(f"{label} must include a hostname")
+    if parsed.username or parsed.password:
+        raise RuntimeError(f"{label} must not contain embedded credentials")
+    if parsed.fragment:
+        raise RuntimeError(f"{label} must not include a fragment")
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path or "/", parsed.query, ""))

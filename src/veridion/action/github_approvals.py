@@ -186,9 +186,14 @@ def _github_request(
 
     # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
     # URL is constrained to the GitHub API host by _build_requested_reviewers_url().
-    req = request.Request(url=url, data=data, headers=headers, method=method)
+    req = request.Request(  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+        url=url,
+        data=data,
+        headers=headers,
+        method=method,
+    )
     try:
-        with request.urlopen(req) as response:
+        with request.urlopen(req) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             payload = response.read().decode("utf-8")
         return json.loads(payload) if payload else {}
     except error.HTTPError as exc:
