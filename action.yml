@@ -92,6 +92,10 @@ inputs:
     description: "Whether to request mapped GitHub reviewers for required approvals"
     required: false
     default: "false"
+  verify-approvals:
+    description: "Whether to evaluate whether mapped GitHub approvals are currently satisfied"
+    required: false
+    default: "false"
   webhook-url:
     description: "Optional external webhook URL for decision contract delivery"
     required: false
@@ -175,6 +179,21 @@ outputs:
   missing_approval_mappings_json:
     description: "JSON array of approval roles with no reviewer mapping"
     value: ${{ steps.request-approvals.outputs.missing_approval_mappings_json }}
+  approval_satisfaction_status:
+    description: "Approval satisfaction state for required approval roles"
+    value: ${{ steps.verify-approvals.outputs.approval_satisfaction_status }}
+  approvals_satisfied:
+    description: "Whether required approval roles are currently satisfied"
+    value: ${{ steps.verify-approvals.outputs.approvals_satisfied }}
+  satisfied_approvals_json:
+    description: "JSON array of required approval roles currently satisfied"
+    value: ${{ steps.verify-approvals.outputs.satisfied_approvals_json }}
+  unsatisfied_approvals_json:
+    description: "JSON array of required approval roles not yet satisfied"
+    value: ${{ steps.verify-approvals.outputs.unsatisfied_approvals_json }}
+  approval_state_json:
+    description: "JSON array describing per-role approval satisfaction state"
+    value: ${{ steps.verify-approvals.outputs.approval_state_json }}
   webhook_delivery_status:
     description: "Webhook delivery status for the emitted decision contract"
     value: ${{ steps.emit-event.outputs.webhook_delivery_status }}
@@ -345,6 +364,27 @@ runs:
           --github-token "${INPUT_GITHUB_TOKEN}" \
           --required-approvals-json "${REQUIRED_APPROVALS_JSON}" \
           --approval-map-path "${INPUT_APPROVAL_MAP_PATH}"
+    - name: Verify required GitHub approvals
+      id: verify-approvals
+      if: ${{ always() && inputs.verify-approvals == 'true' && inputs.github-token != '' && inputs.repository != '' && inputs.pull-request-number != '' && inputs.approval-map-path != '' }}
+      shell: bash
+      env:
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        INPUT_PULL_REQUEST_NUMBER: ${{ inputs.pull-request-number }}
+        INPUT_APPROVAL_MAP_PATH: ${{ inputs.approval-map-path }}
+        INPUT_DECISION_CONTRACT_PATH: ${{ inputs.decision-contract-path }}
+        REQUIRED_APPROVALS_JSON: ${{ steps.run-rdi.outputs.required_approvals_json }}
+        PYTHONPATH: ${{ github.action_path }}/src
+      run: |
+        set -euo pipefail
+        python3 -m veridion.action.github_approval_state \
+          --repository "${INPUT_REPOSITORY}" \
+          --pull-request-number "${INPUT_PULL_REQUEST_NUMBER}" \
+          --github-token "${INPUT_GITHUB_TOKEN}" \
+          --required-approvals-json "${REQUIRED_APPROVALS_JSON}" \
+          --approval-map-path "${INPUT_APPROVAL_MAP_PATH}" \
+          --decision-contract-path "${INPUT_DECISION_CONTRACT_PATH}"
     - name: Emit decision event
       id: emit-event
       if: ${{ always() && inputs.webhook-url != '' }}

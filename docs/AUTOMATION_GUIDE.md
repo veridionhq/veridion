@@ -107,6 +107,25 @@ Outputs:
 - `requested_reviewers_json`
 - `missing_approval_mappings_json`
 
+## Verify approval satisfaction
+
+The action can also evaluate whether mapped approval roles are currently satisfied on the pull request.
+
+Action inputs:
+
+- `verify-approvals: "true"`
+- `approval-map-path: .veridion/approval-map.json`
+
+Outputs:
+
+- `approval_satisfaction_status`
+- `approvals_satisfied`
+- `satisfied_approvals_json`
+- `unsatisfied_approvals_json`
+- `approval_state_json`
+
+When `decision-contract-path` is set, the same approval satisfaction state is written back into `veridion-decision.json` under `automation`.
+
 ## Consume accepted-risk governance
 
 Accepted risk is visible in both `veridion-result.json` and `veridion-decision.json`.

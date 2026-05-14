@@ -25,21 +25,23 @@ jobs:
           trust-profile-source-path: .veridion/trust-profile.source.json
           trust-catalog-source-path: .veridion/trust-catalog.source.json
           suppression-path: .veridion/suppressions.json
+          approval-map-path: .veridion/approval-map.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           decision-contract-path: veridion-decision.json
           enforce-decision: "true"
           allowed-decisions: "GO"
+          verify-approvals: "true"
           post-comment: "true"
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
           pull-request-number: ${{ github.event.pull_request.number }}
 
-      - name: Fail fast on required approvals
-        if: ${{ steps.run-rdi.outputs.required_approvals_json != '[]' }}
+      - name: Fail fast on unsatisfied approvals
+        if: ${{ steps.run-rdi.outputs.approvals_satisfied == 'false' }}
         shell: bash
         run: |
-          echo "Approvals required: ${{ steps.run-rdi.outputs.required_approvals_json }}"
+          echo "Unsatisfied approvals: ${{ steps.run-rdi.outputs.unsatisfied_approvals_json }}"
           exit 1
 
       - name: Show next steps for reviewers

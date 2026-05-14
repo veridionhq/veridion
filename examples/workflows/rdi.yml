@@ -135,6 +135,7 @@ jobs:
           json-output-path: veridion-result.json
           decision-contract-path: veridion-decision.json
           request-approvals: "true"
+          verify-approvals: "true"
           post-comment: "true"
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
@@ -150,6 +151,8 @@ jobs:
           echo "Decision allowed: ${{ steps.run-rdi.outputs.decision_allowed }}"
           echo "Blocking categories: ${{ steps.run-rdi.outputs.blocking_categories_json }}"
           echo "Required approvals JSON: ${{ steps.run-rdi.outputs.required_approvals_json }}"
+          echo "Approval satisfaction: ${{ steps.run-rdi.outputs.approval_satisfaction_status }}"
+          echo "Unsatisfied approvals: ${{ steps.run-rdi.outputs.unsatisfied_approvals_json }}"
           echo "Comment identifier: ${{ steps.run-rdi.outputs.comment_identifier }}"
           echo "Comment mode: ${{ steps.run-rdi.outputs.comment_mode }}"
           echo "Comment id: ${{ steps.run-rdi.outputs.comment_id }}"

@@ -233,6 +233,7 @@ For downstream automation, the action now exposes:
 Optional integrations on top of the decision contract now include:
 
 - GitHub reviewer requests from role-based approval maps
+- GitHub approval satisfaction checks for mapped approval roles
 - outbound webhook delivery of the decision contract
 - generic CI producers that build `operational-context.json` without GitHub event payloads
 
@@ -243,6 +244,8 @@ python3 -m pip install -e /path/to/veridion
 ```
 
 These metadata-driven AI, historical, and trust-baseline signals are currently non-scoring by default. They affect explanation, recommendations, and approval requirements before they affect score.
+
+The next product step is approval satisfaction: not just which roles must approve, but whether those mapped approval roles are currently satisfied on the pull request.
 
 The current policy surface can also drive metadata-based approvals, for example:
 
