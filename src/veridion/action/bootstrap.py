@@ -300,6 +300,8 @@ jobs:
           trust-catalog-source-path: .veridion/trust-catalog.source.json
           suppression-path: .veridion/suppressions.json
           approval-map-path: .veridion/approval-map.json
+          request-approvals: "true"
+          verify-approvals: "true"
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           decision-contract-path: veridion-decision.json

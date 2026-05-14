@@ -28,6 +28,8 @@ def test_build_bootstrap_files_scaffolds_expected_paths() -> None:
     assert "policy-path: .veridion/policy.yaml" in files[".github/workflows/veridion-rdi.yml"]
     assert "suppression-path: .veridion/suppressions.json" in files[".github/workflows/veridion-rdi.yml"]
     assert "approval-map-path: .veridion/approval-map.json" in files[".github/workflows/veridion-rdi.yml"]
+    assert 'request-approvals: "true"' in files[".github/workflows/veridion-rdi.yml"]
+    assert 'verify-approvals: "true"' in files[".github/workflows/veridion-rdi.yml"]
     assert "decision-contract-path: veridion-decision.json" in files[".github/workflows/veridion-rdi.yml"]
 
 
