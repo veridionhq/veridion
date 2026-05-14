@@ -50,6 +50,13 @@ The action can now consume a versioned operational-context artifact as its prima
 
 The comment is now only one view of the product. Veridion also emits a first-class machine contract at `veridion-decision.json` so downstream workflow steps can gate, route approvals, and audit accepted risk without scraping prose.
 
+`veridion-result.json` and `veridion-decision.json` are intentionally different:
+
+- `veridion-result.json` is the full execution envelope from the action runner
+- `veridion-decision.json` is the stable machine-facing automation contract
+
+Consumers should build automation against `veridion-decision.json`, not the larger runner envelope.
+
 The current GitHub path still builds from two source inputs:
 
 - PR metadata for request-scoped signals like title, body, labels, and commit history

@@ -5,7 +5,8 @@ from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.policy import PolicyConfig, evaluate_release
 from veridion.report import render_pr_comment, render_pr_comment_result
-from veridion.report.pr_comment import _is_required_next_step
+from veridion.report.pr_comment import _is_primary_driver, _is_required_next_step, _merge_headline_summary
+from veridion.report.threats import ThreatExplanation
 from veridion.summarization import SummarizationResult
 
 
@@ -361,9 +362,46 @@ def test_render_pr_comment_compacts_clean_context_heavy_change() -> None:
 def test_required_next_step_classification_keeps_high_consequence_surface_checks_required() -> None:
     assert _is_required_next_step("Block release until introduced risk is remediated or policy is adjusted") is True
     assert _is_required_next_step("Validate migration safety and data rollback steps before deployment") is True
+    assert _is_required_next_step("Validate data-handling and tenant-safety before production rollout") is True
     assert _is_required_next_step("Verify payment-impact monitoring and rollback safeguards before release") is True
     assert _is_required_next_step("Run authentication and access-control regression checks before deployment") is True
     assert _is_required_next_step("Use heightened review for this high-criticality repository") is False
+
+
+def test_primary_driver_classification_matches_policy_no_go_threshold_reason() -> None:
+    assert _is_primary_driver("policy no_go threshold triggered at score 60") is True
+    assert _is_primary_driver("policy no_go threshold_override was applied") is False
+
+
+def test_merge_headline_summary_keeps_distinct_ai_blocker_line_with_same_prefix() -> None:
+    bundle = _bundle_with_iac_and_dependency_risk()
+    decision = evaluate_release(bundle, PolicyConfig())
+    threats = (
+        ThreatExplanation(
+            source="grype",
+            threat_type="dependency",
+            severity="high",
+            subject="urllib3 2.2.2",
+            location="requirements.txt",
+            summary="introduces vulnerable dependency risk",
+            why_not_safe="the change introduces vulnerable package versions",
+            advisory_count=1,
+        ),
+    )
+
+    merged = _merge_headline_summary(
+        bundle=bundle,
+        decision=decision,
+        introduced_threats=threats,
+        rendered_primary_drivers=(
+            "this change cannot ship because it introduces high vulnerable dependencies",
+            "this change cannot ship because it also expands privileged infrastructure access",
+        ),
+    )
+
+    assert merged[0] == "this change cannot ship because it introduces high vulnerable dependencies"
+    assert "this change cannot ship because it also expands privileged infrastructure access" in merged
+    assert len(merged) == 2
 
 
 def _bundle_with_iac_and_dependency_risk():

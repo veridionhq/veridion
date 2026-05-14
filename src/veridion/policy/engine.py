@@ -292,6 +292,8 @@ def _align_decision_with_release_gates(
 
 
 def _has_required_operational_gates(recommendations: tuple[str, ...]) -> bool:
+    # Keep this list aligned with report.pr_comment.REQUIRED_NEXT_STEP_PREFIXES so
+    # machine gating and comment rendering agree on which recommendations are required.
     required_gate_prefixes = (
         "Run staging smoke tests",
         "Review newly introduced dependencies",

@@ -2,6 +2,13 @@
 
 Veridion now emits a machine-facing decision contract at `veridion-decision.json` and a matching set of GitHub Action outputs. The PR comment is presentation. Automation should consume the contract and outputs directly.
 
+`veridion-result.json` is still available, but it serves a different purpose:
+
+- `veridion-result.json`: full runner envelope, analysis payload, comment text, and embedded decision contract
+- `veridion-decision.json`: stable machine-facing contract for gates, approvals, and external integrations
+
+If you are writing workflow logic, approval routing, or webhook consumers, prefer `veridion-decision.json`.
+
 ## Core outputs
 
 - `gate_status`: `pass`, `review`, or `block`

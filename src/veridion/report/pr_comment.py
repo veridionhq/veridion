@@ -19,6 +19,9 @@ MAX_THREAT_ITEMS = 3
 MAX_CONTEXTUAL_RISK_ITEMS = 4
 MAX_REQUIRED_NEXT_STEP_ITEMS = 6
 MAX_ADVISORY_GUIDANCE_ITEMS = 4
+_SEVERITY_ISSUE_REASON_RE = re.compile(
+    r"^\d+ new (critical|high|medium|low|info|unknown)-severity (?:issues?|issue\(s\)) detected$"
+)
 REQUIRED_NEXT_STEP_PREFIXES = (
     "Block release",
     "Run staging smoke tests",
@@ -30,6 +33,7 @@ REQUIRED_NEXT_STEP_PREFIXES = (
     "Validate migration safety",
     "Verify payment-impact",
     "Run authentication and access-control",
+    "Validate data-handling and tenant-safety",
 )
 
 
@@ -237,8 +241,6 @@ def _merge_headline_summary(
     headline_key = _normalize_driver_line(headline)
     for line in rendered_primary_drivers:
         if _normalize_driver_line(line) == headline_key:
-            continue
-        if line.lower().startswith(("this change cannot ship because", "this change needs review because")):
             continue
         if line not in merged:
             merged.append(line)
@@ -531,15 +533,10 @@ def _is_primary_driver(reason: str) -> bool:
         "the change includes infrastructure updates",
         "the change introduces vulnerable dependencies",
         "policy max_severity",
-        "policy no_go threshold",
+        "policy no_go threshold triggered",
         "policy does not allow conditional releases",
     )
     return reason.startswith(primary_markers)
-
-
-_SEVERITY_ISSUE_REASON_RE = re.compile(
-    r"^\d+ new (critical|high|medium|low|info|unknown)-severity (?:issues?|issue\(s\)) detected$"
-)
 
 
 def _filter_recommendations(

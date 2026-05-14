@@ -42,7 +42,12 @@ class ActionResult:
     comment_identifier: str = "veridion:rdi"
 
     def to_dict(self) -> dict[str, object]:
-        """Convert the result to plain Python objects."""
+        """Convert the result to the full runner envelope.
+
+        This intentionally differs from `veridion-decision.json`:
+        - `veridion-result.json` is the full execution/result envelope
+        - `veridion-decision.json` is the machine-facing decision contract
+        """
 
         return {
             "analysis": self.bundle.to_dict(),
