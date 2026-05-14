@@ -550,10 +550,19 @@ def test_parse_policy_yaml_accepts_accepted_risk_triggers() -> None:
 require_security_owner_for:
   - accepted_risk_present
   - accepted_risk_governance_gap
+  - accepted_risk_pending_review
+  - accepted_risk_renewal_pending
+  - accepted_risk_expiring_soon
 """
     )
 
-    assert policy.require_security_owner_for == ("accepted_risk_present", "accepted_risk_governance_gap")
+    assert policy.require_security_owner_for == (
+        "accepted_risk_present",
+        "accepted_risk_governance_gap",
+        "accepted_risk_pending_review",
+        "accepted_risk_renewal_pending",
+        "accepted_risk_expiring_soon",
+    )
 
 
 def test_evaluate_release_can_apply_policy_to_inferred_change_surfaces() -> None:

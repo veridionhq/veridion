@@ -106,18 +106,44 @@ def build_decision_contract(
             "present": bool(bundle.summary.suppressed_findings),
             "suppressed_findings_count": bundle.summary.suppressed_findings,
             "expired_suppressions": bundle.summary.expired_suppressions,
+            "pending_review": bundle.suppression_report.pending_review,
+            "renewal_pending": bundle.suppression_report.renewal_pending,
+            "expiring_soon": bundle.suppression_report.expiring_soon,
             "governance_gaps": list(bundle.suppression_report.governance_gaps),
+            "lifecycle_events": list(bundle.suppression_report.lifecycle_events),
+            "exceptions": [
+                {
+                    "exception_id": item.exception_id,
+                    "status": item.status,
+                    "reason": item.reason,
+                    "owner": item.owner or "",
+                    "approved_by": item.approved_by or "",
+                    "ticket": item.ticket or "",
+                    "created_at": item.created_at or "",
+                    "reviewed_at": item.reviewed_at or "",
+                    "renewal_of": item.renewal_of or "",
+                    "expires_on": item.expires_on or "",
+                    "expired": item.expired,
+                    "expiring_soon": item.expiring_soon,
+                    "active": item.active,
+                }
+                for item in bundle.suppression_report.exceptions
+            ],
             "suppressed_findings": [
                 {
                     "fingerprint": item.fingerprint,
                     "rule_id": item.rule_id,
                     "title": item.title,
                     "severity": item.severity,
+                    "exception_id": item.exception_id or "",
+                    "status": item.status,
                     "reason": item.reason,
                     "owner": item.owner or "",
                     "approved_by": item.approved_by or "",
                     "ticket": item.ticket or "",
                     "created_at": item.created_at or "",
+                    "reviewed_at": item.reviewed_at or "",
+                    "renewal_of": item.renewal_of or "",
                     "expires_on": item.expires_on or "",
                 }
                 for item in bundle.suppression_report.suppressed_findings
@@ -128,7 +154,13 @@ def build_decision_contract(
             "comment_summary": comment_summary,
             "requires_human_review": decision.decision in {"NO GO", "CONDITIONAL GO"} or bool(decision.required_approvals),
             "requires_approvals": bool(decision.required_approvals),
-            "requires_exception_review": bool(bundle.summary.suppressed_findings),
+            "requires_exception_review": bool(
+                bundle.summary.suppressed_findings
+                or bundle.suppression_report.pending_review
+                or bundle.suppression_report.renewal_pending
+                or bundle.suppression_report.governance_gaps
+                or bundle.summary.expired_suppressions
+            ),
         },
         "policy": {
             "max_severity": decision.policy.max_severity,
@@ -325,6 +357,12 @@ def _blocking_categories(bundle: AnalysisBundle, decision: PolicyDecision) -> li
         categories.append("accepted_risk_present")
     if bundle.summary.suppression_governance_gaps:
         categories.append("accepted_risk_governance_gap")
+    if bundle.suppression_report.pending_review:
+        categories.append("accepted_risk_pending_review")
+    if bundle.suppression_report.renewal_pending:
+        categories.append("accepted_risk_renewal_pending")
+    if bundle.suppression_report.expiring_soon:
+        categories.append("accepted_risk_expiring_soon")
     if bundle.summary.expired_suppressions:
         categories.append("expired_accepted_risk")
     if any(reason.startswith("policy max_severity") for reason in decision.reasons):

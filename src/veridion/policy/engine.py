@@ -298,6 +298,15 @@ def _recommendations(
     if bundle.summary.suppression_governance_gaps:
         recommendations.append("Fill suppression owner, approval, and ticket metadata before release")
 
+    if bundle.suppression_report.pending_review:
+        recommendations.append("Review pending accepted-risk proposals before release")
+
+    if bundle.suppression_report.renewal_pending:
+        recommendations.append("Approve or reject accepted-risk renewal requests before release")
+
+    if bundle.suppression_report.expiring_soon:
+        recommendations.append("Renew or close accepted-risk exceptions expiring soon")
+
     if not recommendations:
         recommendations.append("Proceed with normal review and deployment checks")
 
@@ -342,6 +351,9 @@ def _has_required_operational_gates(recommendations: tuple[str, ...]) -> bool:
         "Run authentication and access-control",
         "Validate data-handling and tenant-safety",
         "Define a service owner",
+        "Review pending accepted-risk proposals",
+        "Approve or reject accepted-risk renewal requests",
+        "Renew or close accepted-risk exceptions expiring soon",
     )
     return any(item.startswith(required_gate_prefixes) for item in recommendations)
 
@@ -385,6 +397,12 @@ def _accepted_risk_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
         reasons.append(f"{bundle.summary.suppressed_findings} finding(s) are suppressed as accepted risk")
     if bundle.summary.expired_suppressions:
         reasons.append(f"{bundle.summary.expired_suppressions} accepted-risk suppression rule(s) are expired")
+    if bundle.suppression_report.pending_review:
+        reasons.append(f"{bundle.suppression_report.pending_review} accepted-risk proposal(s) are pending review")
+    if bundle.suppression_report.renewal_pending:
+        reasons.append(f"{bundle.suppression_report.renewal_pending} accepted-risk renewal request(s) are pending review")
+    if bundle.suppression_report.expiring_soon:
+        reasons.append(f"{bundle.suppression_report.expiring_soon} accepted-risk exception(s) expire soon")
 
     return tuple(reasons)
 
@@ -572,6 +590,9 @@ def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
         "data_surface": bundle.change_context.touches_data_surface,
         "accepted_risk_present": bool(bundle.summary.suppressed_findings),
         "accepted_risk_governance_gap": bool(bundle.summary.suppression_governance_gaps),
+        "accepted_risk_pending_review": bool(bundle.suppression_report.pending_review),
+        "accepted_risk_renewal_pending": bool(bundle.suppression_report.renewal_pending),
+        "accepted_risk_expiring_soon": bool(bundle.suppression_report.expiring_soon),
     }
     return checks.get(trigger, False) if trigger in VALID_POLICY_TRIGGERS else False
 

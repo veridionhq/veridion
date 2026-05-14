@@ -3,9 +3,11 @@ import json
 from veridion.analysis import build_analysis_bundle
 from veridion.action.runner import _parse_allowed_decisions, _write_github_outputs, run_action
 from veridion.change_context.diff_parser import ParsedChangeContext
+from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.decision_contract import build_decision_contract, evaluate_gate
 from veridion.policy import PolicyConfig, evaluate_release
 from veridion.report.threats import ThreatExplanation
+from veridion.suppression import parse_suppressions_payload
 
 
 def test_evaluate_gate_maps_decisions_to_stable_statuses() -> None:
@@ -118,6 +120,65 @@ def test_decision_contract_surfaces_runtime_release_gates() -> None:
     assert contract["signals"]["runtime"]["canary_health"] == "failing"
     assert contract["signals"]["runtime"]["rollback_viability"] == "blocked"
     assert "deployment_freeze_active" in contract["signals"]["runtime"]["active_runtime_gates"]
+
+
+def test_decision_contract_surfaces_accepted_risk_lifecycle() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="trivy",
+                finding_type="dependency",
+                rule_id="CVE-2025-99999",
+                title="Temporary dependency issue",
+                severity="high",
+                package_name="urllib3",
+                package_version="1.25.8",
+                location=NormalizedLocation(path="requirements.txt"),
+            )
+        ],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        suppression_rules=parse_suppressions_payload(
+            {
+                "schema_version": 1,
+                "suppressions": [
+                    {
+                        "exception_id": "AR-300",
+                        "status": "renewal_requested",
+                        "finding_type": "dependency",
+                        "package_name": "urllib3",
+                        "package_version": "1.25.8",
+                        "reason": "renewal under review",
+                        "owner": "platform-security",
+                        "approved_by": "security-owner",
+                        "ticket": "SEC-300",
+                        "created_at": "2026-05-01T00:00:00Z",
+                        "reviewed_at": "2026-05-02T00:00:00Z",
+                        "renewal_of": "AR-100",
+                        "expires_on": "2026-05-20",
+                    }
+                ],
+            }
+        ),
+    )
+    decision = evaluate_release(bundle, PolicyConfig())
+    contract = build_decision_contract(
+        bundle=bundle,
+        decision=decision,
+        threats=(),
+        comment_identifier="veridion:rdi",
+        comment_summary={"mode": "deterministic", "provider": "none", "model": "", "error": ""},
+        gate=evaluate_gate(decision.decision, allowed_decisions=("GO", "CONDITIONAL GO")),
+    )
+
+    accepted_risk = contract["accepted_risk"]
+    assert accepted_risk["present"] is True
+    assert accepted_risk["renewal_pending"] == 1
+    assert accepted_risk["expiring_soon"] == 1
+    assert accepted_risk["exceptions"][0]["exception_id"] == "AR-300"
+    assert accepted_risk["exceptions"][0]["status"] == "renewal_requested"
+    assert "accepted-risk renewal pending review: AR-300" in accepted_risk["lifecycle_events"]
+    assert contract["automation"]["requires_exception_review"] is True
 
 
 def test_build_decision_contract_deduplicates_equivalent_threats() -> None:

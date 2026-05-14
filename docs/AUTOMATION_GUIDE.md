@@ -160,12 +160,25 @@ Use:
 - `accepted_risk_present`
 - `accepted_risk.governance_gaps`
 - `accepted_risk.suppressed_findings`
+- `accepted_risk.exceptions`
+- `accepted_risk.lifecycle_events`
+- `accepted_risk.pending_review`
+- `accepted_risk.renewal_pending`
+- `accepted_risk.expiring_soon`
 
 to distinguish:
 
 - a clean change
 - a change with reviewed accepted risk
 - a change with incomplete suppression governance metadata
+- a change with pending exception proposals or renewals
+
+Accepted-risk lifecycle statuses:
+
+- `proposed`: request exists but does not suppress findings yet
+- `approved`: active accepted-risk exception
+- `renewal_requested`: active exception that needs renewal review
+- `rejected`: closed exception request that no longer suppresses findings
 
 ## Harden accepted-risk governance
 

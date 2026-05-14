@@ -189,9 +189,14 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
         },
         "suppression_report": {
             "suppressed_findings": [],
+            "exceptions": [],
             "suppressed_baseline_findings": 0,
             "expired_rules": 0,
+            "pending_review": 0,
+            "renewal_pending": 0,
+            "expiring_soon": 0,
             "governance_gaps": [],
+            "lifecycle_events": [],
         },
         "change_context": {"files": []},
         "baseline_comparison": {

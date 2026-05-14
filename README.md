@@ -210,7 +210,7 @@ The GitHub Action can build `operational-context.json` internally from repo-loca
 
 Bootstrap also creates `.veridion/suppressions.json` so teams have a first-class accepted-risk feedback loop instead of ad hoc ignore behavior.
 
-Each suppression can now carry governance metadata such as owner, approver, and ticket so accepted risk remains auditable instead of becoming silent ignore state.
+Each suppression can now carry lifecycle metadata such as exception ID, status, owner, approver, review timestamp, ticket, and expiry so accepted risk remains auditable instead of becoming silent ignore state.
 
 Optional AI wording can sit on top of the deterministic decision engine. If you configure a provider, Veridion still decides deterministically and only uses the model to rewrite structured threat facts into shorter operator-facing English.
 

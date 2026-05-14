@@ -86,6 +86,8 @@ Example:
   "schema_version": 1,
   "suppressions": [
     {
+      "exception_id": "AR-2026-001",
+      "status": "approved",
       "rule_id": "CVE-2024-1234",
       "package_name": "urllib3",
       "package_version": "1.25.8",
@@ -94,11 +96,21 @@ Example:
       "approved_by": "security-owner",
       "ticket": "SEC-1234",
       "created_at": "2026-05-13T00:00:00Z",
+      "reviewed_at": "2026-05-13T01:00:00Z",
       "expires_on": "2026-06-30"
     }
   ]
 }
 ```
+
+Lifecycle fields:
+
+- `exception_id`
+- `status`: `proposed`, `approved`, `renewal_requested`, or `rejected`
+- `reviewed_at`
+- `renewal_of` for renewal requests
+
+Rules with `status: proposed` do not suppress findings yet. They remain visible until approved.
 
 If you want suppressions to block release when audit metadata is incomplete, set:
 

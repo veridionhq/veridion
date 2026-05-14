@@ -32,7 +32,8 @@ class PolicyConfig:
     # shared_platform_surface, database_migration_surface, data_surface.
     require_sre_owner_for: tuple[str, ...] = ()
     # Valid values: sensitive_repo, public_exposure, dependency_reputation_risk, payments_surface, auth_surface,
-    # data_surface, accepted_risk_present, accepted_risk_governance_gap, active_incident, firing_alerts.
+    # data_surface, accepted_risk_present, accepted_risk_governance_gap, accepted_risk_pending_review,
+    # accepted_risk_renewal_pending, accepted_risk_expiring_soon, active_incident, firing_alerts.
     require_security_owner_for: tuple[str, ...] = ()
     require_complete_accepted_risk_metadata: bool = False
     historical_instability_score_penalty: int = 0

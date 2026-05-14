@@ -218,6 +218,12 @@ Exit criteria:
 - Accepted risk is managed as a first-class workflow rather than repo-local ignore state
 - Exception state is queryable and auditable over time
 
+Status:
+
+- Started on `develop` with lifecycle-aware accepted-risk exceptions: explicit IDs, statuses, renewal tracking, expiry pressure, and audit events in `veridion-decision.json`
+- Proposed and rejected exceptions now remain visible instead of silently suppressing findings, while approved and renewal-pending exceptions stay machine-auditable
+- Follow-up remains for external exception systems, approver identity verification against real org systems, and long-lived audit storage beyond repo-local JSON
+
 ## M10: Multi-Surface Adapters
 
 Target:
