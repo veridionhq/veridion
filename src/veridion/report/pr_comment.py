@@ -505,6 +505,7 @@ def _normalize_driver_line(line: str) -> str:
     replacements = (
         (" into a public-facing path", ""),
         (" into a public-facing service", ""),
+        (" into a publicly exposed service", ""),
         (" in a high-blast-radius path", ""),
         ("this change cannot ship because ", ""),
         ("this change needs review because ", ""),

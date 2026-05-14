@@ -408,6 +408,34 @@ def test_merge_headline_summary_keeps_distinct_ai_blocker_line_with_same_prefix(
     assert len(merged) == 2
 
 
+def test_merge_headline_summary_deduplicates_equivalent_public_exposure_phrasing() -> None:
+    bundle = _bundle_with_iac_and_dependency_risk()
+    decision = evaluate_release(bundle, PolicyConfig())
+    threats = (
+        ThreatExplanation(
+            source="grype",
+            threat_type="dependency",
+            severity="high",
+            subject="urllib3 2.2.2",
+            location="requirements.txt",
+            summary="introduces vulnerable dependency risk",
+            why_not_safe="the change introduces vulnerable package versions",
+            advisory_count=1,
+        ),
+    )
+
+    merged = _merge_headline_summary(
+        bundle=bundle,
+        decision=decision,
+        introduced_threats=threats,
+        rendered_primary_drivers=(
+            "this change cannot ship because it introduces high vulnerable dependencies into a publicly exposed service",
+        ),
+    )
+
+    assert merged == ("this change cannot ship because it introduces high vulnerable dependencies",)
+
+
 def _bundle_with_iac_and_dependency_risk():
     baseline = [
         NormalizedFinding(
