@@ -185,6 +185,7 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "suppressed_findings": [],
             "suppressed_baseline_findings": 0,
             "expired_rules": 0,
+            "governance_gaps": [],
         },
         "change_context": {"files": []},
         "baseline_comparison": {
@@ -211,6 +212,7 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "inventory_packages": 0,
             "suppressed_findings": 0,
             "expired_suppressions": 0,
+            "suppression_governance_gaps": 0,
             "ai_change_signals": 0,
             "ai_authored_commits": 0,
             "historical_risk_signals": 0,

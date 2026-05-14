@@ -1,0 +1,53 @@
+name: veridion-deploy-gate
+
+on:
+  pull_request:
+
+jobs:
+  release-decision-intelligence:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Veridion RDI
+        id: run-rdi
+        uses: veridionhq/veridion@main
+        with:
+          diff-path: pr.diff
+          reports: ${{ vars.VERIDION_REPORTS }}
+          baseline-reports: ${{ vars.VERIDION_BASELINE_REPORTS }}
+          policy-path: .veridion/policy.yaml
+          trust-profile-source-path: .veridion/trust-profile.source.json
+          trust-catalog-source-path: .veridion/trust-catalog.source.json
+          suppression-path: .veridion/suppressions.json
+          approval-map-path: .veridion/approval-map.json
+          comment-path: veridion-pr-comment.md
+          json-output-path: veridion-result.json
+          decision-contract-path: veridion-decision.json
+          enforce-decision: "true"
+          allowed-decisions: "GO"
+          verify-approvals: "true"
+          post-comment: "true"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          pull-request-number: ${{ github.event.pull_request.number }}
+
+      - name: Fail fast on unsatisfied approvals
+        if: ${{ steps.run-rdi.outputs.approvals_satisfied == 'false' }}
+        shell: bash
+        run: |
+          echo "Unsatisfied approvals: ${{ steps.run-rdi.outputs.unsatisfied_approvals_json }}"
+          exit 1
+
+      - name: Show next steps for reviewers
+        if: always()
+        shell: bash
+        run: |
+          echo "Gate status: ${{ steps.run-rdi.outputs.gate_status }}"
+          echo "Blocking categories: ${{ steps.run-rdi.outputs.blocking_categories_json }}"
+          echo "Required next steps: ${{ steps.run-rdi.outputs.required_next_steps_json }}"

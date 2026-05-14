@@ -9,6 +9,7 @@ from veridion.context.history import HistoricalSignals, parse_historical_signals
 from veridion.context.operational_context_artifact import (
     SUPPORTED_OPERATIONAL_CONTEXT_SCHEMA_VERSION,
     build_operational_context_artifact,
+    build_operational_context_artifact_from_sections,
     extract_operational_context_sections,
     validate_operational_context_payload,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "TrustBaseline",
     "TrustProfileMetadata",
     "build_operational_context_artifact",
+    "build_operational_context_artifact_from_sections",
     "derive_runtime_signals",
     "extract_operational_context_sections",
     "parse_historical_signals",

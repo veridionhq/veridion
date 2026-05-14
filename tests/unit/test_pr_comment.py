@@ -4,8 +4,22 @@ from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileC
 from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals, TrustBaseline
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.policy import PolicyConfig, evaluate_release
-from veridion.report import render_pr_comment
-from veridion.report.pr_comment import _is_required_next_step
+from veridion.report import render_pr_comment, render_pr_comment_result
+from veridion.report.pr_comment import _is_primary_driver, _is_required_next_step, _merge_headline_summary
+from veridion.report.threats import ThreatExplanation
+from veridion.summarization import SummarizationResult
+
+
+class _StaticSummarizer:
+    provider = "test"
+    model_name = "stub"
+
+    def summarize(self, summary_request):
+        return SummarizationResult(
+            driver_summary=("this change introduces release risk that still needs review",),
+            threat_summaries=("app/main.py uses subprocess with shell=True, which can allow command injection",),
+            contextual_summary=("this change also affects a production-facing path",),
+        )
 
 
 def test_render_pr_comment_renders_policy_decision_for_high_risk_change() -> None:
@@ -24,24 +38,25 @@ def test_render_pr_comment_renders_policy_decision_for_high_risk_change() -> Non
     comment = render_pr_comment(bundle, decision)
 
     assert comment.startswith("<!-- veridion:rdi:start -->\n## Release Decision Intelligence")
-    assert "**Decision:** NO GO" in comment
-    assert "**RDI Score:** 38" in comment
+    assert "### ❌ NO GO" in comment
+    assert "**RDI Score:** 38 | **Confidence:** HIGH" in comment
     assert "### Why this is blocked" in comment
+    assert "- this change cannot ship because it introduces high code risk in app/routes.py" in comment
     assert "- 2 new high-severity issues detected" in comment
     assert "- the change includes infrastructure updates" in comment
-    assert "- the change introduces vulnerable dependencies" in comment
-    assert "### New threats detected" in comment
+    assert "- the change introduces vulnerable dependencies" not in comment
+    assert "### Key threats" in comment
     assert "- high code risk in app/routes.py: New code issue" in comment
-    assert "- high dependency risk: urllib3 2.2.2 in requirements.txt (New dependency issue)" in comment
+    assert "- high dependency risk in requirements.txt: urllib3 2.2.2 (New dependency issue)" in comment
     assert "### Required Approvals" in comment
     assert "- platform owner" in comment
     assert "- security owner" in comment
     assert "### What must happen next" in comment
     assert "- Block release until introduced risk is remediated or policy is adjusted" in comment
-    assert "### Introduced Severity" in comment
-    assert "- high: 2" in comment
-    assert "### Introduced Finding Types" in comment
-    assert "- dependency: 1" in comment
+    assert "### Recommended rollout" not in comment
+    assert "### Why this matters" not in comment
+    assert "### Introduced Severity" not in comment
+    assert "### Introduced Finding Types" not in comment
     assert comment.endswith("<!-- veridion:rdi:end -->\n")
 
 
@@ -69,7 +84,7 @@ def test_render_pr_comment_handles_clean_change_without_approvals() -> None:
 
     comment = render_pr_comment(bundle, decision)
 
-    assert "**Decision:** GO" in comment
+    assert "### ✅ GO" in comment
     assert "**Summary:** Introduced findings: 0 | Existing findings: 0 | Unattributed findings: 0 | Suppressed findings: 0 | Changed files: 1" in comment
     assert "### Required Approvals" not in comment
     assert "- Proceed with normal review and deployment checks" in comment
@@ -92,10 +107,7 @@ def test_render_pr_comment_includes_ai_attribution_when_present() -> None:
 
     comment = render_pr_comment(bundle_with_ai, decision)
 
-    assert "### AI Signals" in comment
-    assert "- AI-origin signals detected: 1" in comment
-    assert "- Sources: pr_body" in comment
-    assert "- Indicators: Cursor" in comment
+    assert "### AI Signals" not in comment
     assert "### Why this is allowed" in comment
 
 
@@ -122,10 +134,8 @@ def test_render_pr_comment_includes_historical_trust_signals_when_present() -> N
     comment = render_pr_comment(bundle, decision)
 
     assert "### Key Context" in comment
-    assert "- history: repo criticality: high | service criticality: critical | rollback rate: 18% | failure rate: 22% | incidents: 4 | flaky service | sensitive repo" in comment
-    assert "### Why this matters" in comment
-    assert "- repository criticality is high" in comment
-    assert "- 30d change failure rate is elevated at 22%" in comment
+    assert "- historically unstable release surface: high-criticality service path, 18% rollback rate, 22% failure rate, 4 recent incidents" in comment
+    assert "### Why this matters" not in comment
 
 
 def test_render_pr_comment_includes_policy_score_adjustments_when_present() -> None:
@@ -185,8 +195,8 @@ def test_render_pr_comment_includes_runtime_and_ownership_sections_when_present(
     comment = render_pr_comment(bundle, decision)
 
     assert "### Key Context" in comment
-    assert "- runtime: target: production | public exposure | blast radius: high | window: after hours | rollout: direct" in comment
-    assert "- ownership: team: payments-platform | review: cross team | team trust: degrading" in comment
+    assert "- runtime sensitivity: production deployment, publicly exposed, high blast radius, scheduled after hours, direct rollout" in comment
+    assert "- release controls need human verification: cross-team approval path, degrading team trust" in comment
 
 
 def test_render_pr_comment_includes_trust_baseline_section_when_present() -> None:
@@ -208,7 +218,7 @@ def test_render_pr_comment_includes_trust_baseline_section_when_present() -> Non
     comment = render_pr_comment(bundle, decision)
 
     assert "### Key Context" in comment
-    assert "- baseline: repo stability: fragile | service stability: watch | test coverage: low | rollback: partial | dependency risk: high" in comment
+    assert "- release controls need human verification: partial rollback readiness, low baseline test coverage, fragile service baseline" in comment
 
 
 def test_render_pr_comment_truncates_verbose_sections() -> None:
@@ -259,8 +269,8 @@ def test_render_pr_comment_truncates_verbose_sections() -> None:
 
     assert "### Key Context" in comment
     assert "### What must happen next" in comment
-    assert "### Recommended rollout" in comment
     assert "### Why this needs review" in comment
+    assert "### Recommended rollout" not in comment
 
 
 def test_render_pr_comment_surfaces_plain_english_threat_details() -> None:
@@ -269,10 +279,32 @@ def test_render_pr_comment_surfaces_plain_english_threat_details() -> None:
 
     comment = render_pr_comment(bundle, decision)
 
-    assert "### New threats detected" in comment
+    assert "### Key threats" in comment
     assert "- high code risk in app/routes.py: New code issue" in comment
-    assert "- high dependency risk: urllib3 2.2.2 in requirements.txt (New dependency issue)" in comment
-    assert "### Why this matters" in comment
+    assert "- high dependency risk in requirements.txt: urllib3 2.2.2 (New dependency issue)" in comment
+
+
+def test_render_pr_comment_can_use_optional_ai_wording_layer() -> None:
+    bundle = _bundle_with_iac_and_dependency_risk()
+    decision = evaluate_release(bundle, PolicyConfig(allow_conditional=True))
+
+    comment = render_pr_comment(bundle, decision, summarizer=_StaticSummarizer())
+
+    assert "### Key threats" in comment
+    assert "- this change introduces release risk that still needs review" in comment
+    assert "- app/main.py uses subprocess with shell=True, which can allow command injection" in comment
+    assert "- this change also affects a production-facing path" not in comment
+
+
+def test_render_pr_comment_result_exposes_deterministic_summary_trace() -> None:
+    bundle = _bundle_with_iac_and_dependency_risk()
+    decision = evaluate_release(bundle, PolicyConfig(allow_conditional=True))
+
+    rendered = render_pr_comment_result(bundle, decision)
+
+    assert rendered.summary_trace.mode == "deterministic"
+    assert rendered.summary_trace.provider == "none"
+    assert rendered.summary_trace.model == ""
 
 
 def test_render_pr_comment_compacts_clean_context_heavy_change() -> None:
@@ -319,20 +351,96 @@ def test_render_pr_comment_compacts_clean_context_heavy_change() -> None:
     comment = render_pr_comment(bundle, decision)
 
     assert "### Key Context" in comment
-    assert "- historical: repo criticality: high | service criticality: critical | rollback rate: 12%" in comment
-    assert "- runtime: target: production | public exposure | blast radius: high" in comment
+    assert "- historically unstable release surface: high-criticality service path, 12% rollback rate, 18% failure rate, 3 recent incidents" in comment
+    assert "- runtime sensitivity: production deployment, publicly exposed, high blast radius, scheduled after hours, canary rollout" in comment
+    assert "- release controls need human verification: cross-team approval path, degrading team trust, partial rollback readiness, low baseline test coverage, fragile service baseline" in comment
+    assert (
+        "- no new findings were introduced, but this release still requires approvals and operational checks"
+        in comment
+    )
+    assert "- no introduced findings detected" not in comment
+    assert "- release still requires explicit approvals or operational checks" not in comment
     assert "### Why this matters" not in comment
     assert "### Recommended rollout" not in comment
     assert "### What must happen next" in comment
+    assert "- Run staging smoke tests for infrastructure-affecting changes" not in comment
     assert "- Verify rollback ownership and on-call coverage before deployment" in comment
+    assert "- Use a staged rollout with a validated rollback plan for this production deployment" in comment
+    assert "- Confirm staffed on-call coverage for this after-hours deployment" in comment
+    assert "- Schedule deployment during staffed hours with active operational monitoring" not in comment
 
 
 def test_required_next_step_classification_keeps_high_consequence_surface_checks_required() -> None:
     assert _is_required_next_step("Block release until introduced risk is remediated or policy is adjusted") is True
     assert _is_required_next_step("Validate migration safety and data rollback steps before deployment") is True
+    assert _is_required_next_step("Validate data-handling and tenant-safety before production rollout") is True
     assert _is_required_next_step("Verify payment-impact monitoring and rollback safeguards before release") is True
     assert _is_required_next_step("Run authentication and access-control regression checks before deployment") is True
     assert _is_required_next_step("Use heightened review for this high-criticality repository") is False
+
+
+def test_primary_driver_classification_matches_policy_no_go_threshold_reason() -> None:
+    assert _is_primary_driver("policy no_go threshold triggered at score 60") is True
+    assert _is_primary_driver("policy no_go threshold_override was applied") is False
+
+
+def test_merge_headline_summary_keeps_distinct_ai_blocker_line_with_same_prefix() -> None:
+    bundle = _bundle_with_iac_and_dependency_risk()
+    decision = evaluate_release(bundle, PolicyConfig())
+    threats = (
+        ThreatExplanation(
+            source="grype",
+            threat_type="dependency",
+            severity="high",
+            subject="urllib3 2.2.2",
+            location="requirements.txt",
+            summary="introduces vulnerable dependency risk",
+            why_not_safe="the change introduces vulnerable package versions",
+            advisory_count=1,
+        ),
+    )
+
+    merged = _merge_headline_summary(
+        bundle=bundle,
+        decision=decision,
+        introduced_threats=threats,
+        rendered_primary_drivers=(
+            "this change cannot ship because it introduces high vulnerable dependencies",
+            "this change cannot ship because it also expands privileged infrastructure access",
+        ),
+    )
+
+    assert merged[0] == "this change cannot ship because it introduces high vulnerable dependencies"
+    assert "this change cannot ship because it also expands privileged infrastructure access" in merged
+    assert len(merged) == 2
+
+
+def test_merge_headline_summary_deduplicates_equivalent_public_exposure_phrasing() -> None:
+    bundle = _bundle_with_iac_and_dependency_risk()
+    decision = evaluate_release(bundle, PolicyConfig())
+    threats = (
+        ThreatExplanation(
+            source="grype",
+            threat_type="dependency",
+            severity="high",
+            subject="urllib3 2.2.2",
+            location="requirements.txt",
+            summary="introduces vulnerable dependency risk",
+            why_not_safe="the change introduces vulnerable package versions",
+            advisory_count=1,
+        ),
+    )
+
+    merged = _merge_headline_summary(
+        bundle=bundle,
+        decision=decision,
+        introduced_threats=threats,
+        rendered_primary_drivers=(
+            "this change cannot ship because it introduces high vulnerable dependencies into a publicly exposed service",
+        ),
+    )
+
+    assert merged == ("this change cannot ship because it introduces high vulnerable dependencies",)
 
 
 def _bundle_with_iac_and_dependency_risk():

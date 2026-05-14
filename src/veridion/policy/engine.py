@@ -85,8 +85,18 @@ def _apply_policy_decision(
     if risk.score < policy.conditional_go_below_score:
         return "CONDITIONAL GO"
 
+    if (
+        policy.require_complete_accepted_risk_metadata
+        and bundle.summary.suppressed_findings
+        and bundle.summary.suppression_governance_gaps
+    ):
+        reasons.append("policy requires complete accepted-risk governance metadata")
+        return "NO GO"
+
     if bundle.summary.suppressed_findings:
         reasons.append("accepted risk is present in the current change")
+        if bundle.summary.suppression_governance_gaps:
+            reasons.append("accepted risk governance metadata is incomplete")
         return "CONDITIONAL GO"
 
     return risk.decision
@@ -256,6 +266,9 @@ def _recommendations(
     if bundle.summary.expired_suppressions:
         recommendations.append("Remove or renew expired accepted-risk suppressions before release")
 
+    if bundle.summary.suppression_governance_gaps:
+        recommendations.append("Fill suppression owner, approval, and ticket metadata before release")
+
     if not recommendations:
         recommendations.append("Proceed with normal review and deployment checks")
 
@@ -279,6 +292,8 @@ def _align_decision_with_release_gates(
 
 
 def _has_required_operational_gates(recommendations: tuple[str, ...]) -> bool:
+    # Keep this list aligned with report.pr_comment.REQUIRED_NEXT_STEP_PREFIXES so
+    # machine gating and comment rendering agree on which recommendations are required.
     required_gate_prefixes = (
         "Run staging smoke tests",
         "Review newly introduced dependencies",
@@ -475,6 +490,8 @@ def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
         "payments_surface": bundle.change_context.touches_payments_surface,
         "auth_surface": bundle.change_context.touches_auth_surface,
         "data_surface": bundle.change_context.touches_data_surface,
+        "accepted_risk_present": bool(bundle.summary.suppressed_findings),
+        "accepted_risk_governance_gap": bool(bundle.summary.suppression_governance_gaps),
     }
     return checks.get(trigger, False) if trigger in VALID_POLICY_TRIGGERS else False
 

@@ -35,6 +35,34 @@ def build_operational_context_artifact(
     }
 
 
+def build_operational_context_artifact_from_sections(
+    *,
+    metadata_payload: dict[str, object] | None = None,
+    historical_payload: dict[str, object] | None = None,
+    runtime_payload: dict[str, object] | None = None,
+    ownership_payload: dict[str, object] | None = None,
+    trust_baseline_payload: dict[str, object] | None = None,
+    trust_profile_metadata_payload: dict[str, object] | None = None,
+    source: str = "",
+    generated_at: str = "",
+) -> dict[str, object]:
+    """Build an operational-context artifact directly from normalized sections."""
+
+    return {
+        "schema_version": SUPPORTED_OPERATIONAL_CONTEXT_SCHEMA_VERSION,
+        "provenance": {
+            "source": source or "veridion-generic-builder",
+            "generated_at": generated_at or _utc_now(),
+        },
+        "metadata": _as_object(metadata_payload),
+        "historical": _as_object(historical_payload),
+        "runtime": _as_object(runtime_payload),
+        "ownership": _as_object(ownership_payload),
+        "trust_baseline": _as_object(trust_baseline_payload),
+        "trust_profile_metadata": _as_object(trust_profile_metadata_payload),
+    }
+
+
 def extract_operational_context_sections(payload: dict[str, object]) -> dict[str, object]:
     """Extract normalized context sections from a validated artifact payload."""
 

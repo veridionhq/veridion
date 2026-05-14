@@ -32,6 +32,10 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert result.decision.decision == "NO GO"
     assert result.decision.score < 60
     assert result.bundle.summary.introduced_findings == 2
+    assert len(result.to_dict()["threats"]) == 2
+    assert result.comment_summary_mode == "deterministic"
+    assert result.comment_summary_provider == "none"
+    assert result.comment_summary_model == ""
     assert result.bundle.summary.inventory_packages == 1
     assert result.bundle.summary.ai_change_signals == 4
     assert result.bundle.summary.ai_authored_commits == 1
@@ -48,14 +52,17 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
         "sre_owner",
     )
     assert result.comment_identifier == "veridion:rdi"
+    assert result.gate_status == "block"
+    assert result.decision_allowed is False
+    assert result.allowed_decisions == ("GO", "CONDITIONAL GO")
     assert result.decision.score_adjustments == ()
     assert "## Release Decision Intelligence" in result.comment_markdown
-    assert "**Decision:** NO GO" in result.comment_markdown
-    assert "### AI Signals" in result.comment_markdown
+    assert "### ❌ NO GO" in result.comment_markdown
+    assert "### AI Signals" not in result.comment_markdown
     assert "### Key Context" in result.comment_markdown
     assert "### Why this is blocked" in result.comment_markdown
-    assert "### New threats detected" in result.comment_markdown
-    assert "### Why this matters" in result.comment_markdown
+    assert "### Key threats" in result.comment_markdown
+    assert "### Why this matters" not in result.comment_markdown
     assert "- platform owner" in result.comment_markdown
     assert "- security owner" in result.comment_markdown
     assert "- service owner" in result.comment_markdown
@@ -64,12 +71,38 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert "Block release until introduced risk is remediated or policy is adjusted" in result.comment_markdown
     assert "Run staging smoke tests for infrastructure-affecting changes" in result.comment_markdown
     assert "### What must happen next" in result.comment_markdown
-    assert "### Recommended rollout" in result.comment_markdown
-    assert "... " in result.comment_markdown
-    assert "more contextual risks" in result.comment_markdown or "more contextual risk" in result.comment_markdown
-    assert "more guidance items" in result.comment_markdown or "more guidance item" in result.comment_markdown
+    assert "### Recommended rollout" not in result.comment_markdown
     assert "Unattributed findings: 0" in result.comment_markdown
     assert result.comment_markdown.startswith("<!-- veridion:rdi:start -->\n")
+    assert result.to_dict()["comment_summary"]["mode"] == "deterministic"
+    decision_contract = result.to_dict()["decision_contract"]
+    assert decision_contract["schema_version"] == 1
+    assert decision_contract["source"] == "veridion/action"
+    assert decision_contract["contract_version_source"] == "veridion.decision_contract@1"
+    assert decision_contract["decision"]["verdict"] == "NO GO"
+    assert decision_contract["decision"]["gate_status"] == "block"
+    assert decision_contract["decision"]["blocking_categories"] == [
+        "introduced_critical_findings",
+        "introduced_high_findings",
+        "infrastructure_risk",
+        "dependency_risk",
+        "public_exposure",
+        "large_blast_radius",
+        "policy_max_severity_exceeded",
+    ]
+    assert decision_contract["actions"]["required_approvals"] == [
+        "platform_owner",
+        "security_owner",
+        "service_owner",
+        "sre_owner",
+    ]
+    assert decision_contract["actions"]["required_approval_labels"] == [
+        "platform owner",
+        "security owner",
+        "service owner",
+        "sre owner",
+    ]
+    assert "rollback readiness" in " ".join(decision_contract["signals"]["trust_baseline"]["elevated"])
 
 
 def test_action_result_to_dict_is_json_serializable() -> None:
@@ -85,6 +118,7 @@ def test_action_result_to_dict_is_json_serializable() -> None:
 
     assert '"decision": "GO"' in rendered
     assert '"comment_identifier": "veridion:rdi"' in rendered
+    assert '"decision_contract"' in rendered
 
 
 def test_run_action_accepts_versioned_operational_context_artifact() -> None:
@@ -133,9 +167,10 @@ def test_run_action_accepts_versioned_operational_context_artifact() -> None:
     )
     assert "### Key Context" in result.comment_markdown
     assert "### What must happen next" in result.comment_markdown
-    assert "### Recommended rollout" in result.comment_markdown
+    assert "### Recommended rollout" not in result.comment_markdown
     assert "### Why this is blocked" in result.comment_markdown
-    assert "### Why this matters" in result.comment_markdown
+    assert "### Why this matters" not in result.comment_markdown
+    assert "### Key threats" in result.comment_markdown
     assert "- platform owner" in result.comment_markdown
     assert "- security owner" in result.comment_markdown
     assert "- service owner" in result.comment_markdown
@@ -187,6 +222,7 @@ def test_run_action_applies_accepted_risk_suppressions() -> None:
     )
 
     assert result.bundle.summary.suppressed_findings == 1
+    assert result.bundle.summary.suppression_governance_gaps == 3
     assert result.bundle.summary.introduced_findings == 1
     assert result.bundle.summary.expired_suppressions == 0
     assert result.decision.score > initial.decision.score
@@ -195,6 +231,13 @@ def test_run_action_applies_accepted_risk_suppressions() -> None:
     assert "accepted risk suppressions: -" in "\n".join(result.decision.score_adjustments)
     assert "1 finding(s) are suppressed as accepted risk" in result.decision.reasons
     assert "policy no_go threshold triggered at score 60" in result.decision.reasons
+    assert "Fill suppression owner, approval, and ticket metadata before release" in result.decision.recommendations
     assert "### Accepted Risk" in result.comment_markdown
     assert "- suppressed findings: 1" in result.comment_markdown
     assert "temporary vendor exception while upstream patch is pending (1 finding(s)) (expires 2026-12-31)" in result.comment_markdown
+    assert "governance gaps: approval metadata missing, owner missing, tracking ticket missing" in result.comment_markdown
+    assert result.to_dict()["decision_contract"]["accepted_risk"]["governance_gaps"] == [
+        "approval metadata missing",
+        "owner missing",
+        "tracking ticket missing",
+    ]

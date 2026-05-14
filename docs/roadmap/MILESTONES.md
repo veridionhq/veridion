@@ -156,6 +156,93 @@ Status:
 - Started on `main` with repo-local accepted-risk suppressions, visible exception reporting, and expiration-aware suppression governance
 - Follow-up remains for stronger policy controls over suppressions, richer review-feedback capture, and real decision acceptance telemetry
 
+## M7: Approval Satisfaction and Enforcement
+
+Target:
+Move from approval requirements to verifiable approval state.
+
+Scope:
+
+- Role-to-reviewer mapping contracts
+- GitHub approval satisfaction checks
+- Unsatisfied approval outputs and contract enrichment
+- Approval-state aware workflow examples
+
+Exit criteria:
+
+- Veridion can say both who must approve and whether those mapped approvals are currently satisfied
+- Unsatisfied approvals are machine-readable without scraping PR comments
+- Approval-state checks are demonstrated in automation examples and tests
+
+Status:
+
+- Started on `develop` with mapped GitHub reviewer requests and approval satisfaction checks for role-mapped pull requests
+- Follow-up remains for broader change-management integrations, richer team-resolution semantics, and policy enforcement based on satisfied versus pending approvals
+
+## M8: Runtime Release Gates
+
+Target:
+Incorporate live release-readiness signals beyond static metadata.
+
+Scope:
+
+- Deployment freeze windows
+- Active incidents and alert state
+- Canary or staged rollout health
+- Rollback viability checks
+
+Exit criteria:
+
+- Veridion can ingest live runtime readiness state and include it in gating decisions
+- Runtime blockers are reflected in the machine decision contract and recommendations
+
+## M9: Accepted-Risk Lifecycle
+
+Target:
+Turn suppressions into a governed exception workflow.
+
+Scope:
+
+- Exception proposal and renewal lifecycle
+- Owner and approver verification
+- Expiration enforcement and audit trail
+
+Exit criteria:
+
+- Accepted risk is managed as a first-class workflow rather than repo-local ignore state
+- Exception state is queryable and auditable over time
+
+## M10: Multi-Surface Adapters
+
+Target:
+Make the decision engine portable beyond GitHub Actions.
+
+Scope:
+
+- Additional CI/CD adapters
+- External deployment and release system hooks
+- Shared operational-context ingestion contracts
+
+Exit criteria:
+
+- The same decision engine can run through multiple adapter surfaces with a stable contract
+
+## M11: Policy Productization and Trust Memory
+
+Target:
+Evolve from repo-local config into an organizational trust control plane.
+
+Scope:
+
+- Policy templates and override management
+- Policy simulation and rollout history
+- Longitudinal service, team, and dependency trust memory
+
+Exit criteria:
+
+- Teams can manage policy as product surface, not just YAML files
+- Veridion can reason across historical trust state, not only per-change snapshots
+
 ## Execution Notes
 
 - Finish one milestone to a defensible level before widening scope.

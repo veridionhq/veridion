@@ -37,4 +37,6 @@ VALID_POLICY_TRIGGERS = (
     "payments_surface",
     "auth_surface",
     "data_surface",
+    "accepted_risk_present",
+    "accepted_risk_governance_gap",
 )

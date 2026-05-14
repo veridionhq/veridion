@@ -36,6 +36,7 @@ class AnalysisSummary:
     inventory_packages: int
     suppressed_findings: int
     expired_suppressions: int
+    suppression_governance_gaps: int
     ai_change_signals: int
     ai_authored_commits: int
     historical_risk_signals: int
@@ -173,6 +174,7 @@ def _build_summary(
         inventory_packages=len(current_inventory),
         suppressed_findings=len(suppression_report.suppressed_findings),
         expired_suppressions=suppression_report.expired_rules,
+        suppression_governance_gaps=len(suppression_report.governance_gaps),
         ai_change_signals=ai_attribution.signal_count,
         ai_authored_commits=ai_attribution.ai_authored_commits,
         historical_risk_signals=len(historical_signals.elevated_signals),

@@ -124,8 +124,18 @@ jobs:
           trust-profile-source-path: examples/trust/trust-profile.source.json
           trust-catalog-source-path: examples/trust/trust-catalog.source.json
           suppression-path: .veridion/suppressions.json
+          approval-map-path: .veridion/approval-map.json
+          comment-summary-provider: ${{ vars.VERIDION_COMMENT_SUMMARY_PROVIDER }}
+          comment-summary-model: ${{ vars.VERIDION_COMMENT_SUMMARY_MODEL }}
+          comment-summary-api-key: ${{ secrets.VERIDION_COMMENT_SUMMARY_API_KEY }}
+          comment-summary-base-url: ${{ vars.VERIDION_COMMENT_SUMMARY_BASE_URL }}
+          comment-summary-region: ${{ vars.VERIDION_COMMENT_SUMMARY_REGION }}
+          comment-summary-style: terse
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
+          decision-contract-path: veridion-decision.json
+          request-approvals: "true"
+          verify-approvals: "true"
           post-comment: "true"
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
@@ -137,6 +147,12 @@ jobs:
           echo "Decision: ${{ steps.run-rdi.outputs.decision }}"
           echo "Score: ${{ steps.run-rdi.outputs.score }}"
           echo "Confidence: ${{ steps.run-rdi.outputs.confidence }}"
+          echo "Gate status: ${{ steps.run-rdi.outputs.gate_status }}"
+          echo "Decision allowed: ${{ steps.run-rdi.outputs.decision_allowed }}"
+          echo "Blocking categories: ${{ steps.run-rdi.outputs.blocking_categories_json }}"
+          echo "Required approvals JSON: ${{ steps.run-rdi.outputs.required_approvals_json }}"
+          echo "Approval satisfaction: ${{ steps.run-rdi.outputs.approval_satisfaction_status }}"
+          echo "Unsatisfied approvals: ${{ steps.run-rdi.outputs.unsatisfied_approvals_json }}"
           echo "Comment identifier: ${{ steps.run-rdi.outputs.comment_identifier }}"
           echo "Comment mode: ${{ steps.run-rdi.outputs.comment_mode }}"
           echo "Comment id: ${{ steps.run-rdi.outputs.comment_id }}"
@@ -156,3 +172,4 @@ jobs:
           path: |
             veridion-pr-comment.md
             veridion-result.json
+            veridion-decision.json

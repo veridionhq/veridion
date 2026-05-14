@@ -48,6 +48,15 @@ It is the operational trust layer that decides whether a change should safely mo
 
 The action can now consume a versioned operational-context artifact as its primary context contract. That artifact can be produced by GitHub workflows today, and later by other CI/CD or platform integrations without changing the decision engine.
 
+The comment is now only one view of the product. Veridion also emits a first-class machine contract at `veridion-decision.json` so downstream workflow steps can gate, route approvals, and audit accepted risk without scraping prose.
+
+`veridion-result.json` and `veridion-decision.json` are intentionally different:
+
+- `veridion-result.json` is the full execution envelope from the action runner
+- `veridion-decision.json` is the stable machine-facing automation contract
+
+Consumers should build automation against `veridion-decision.json`, not the larger runner envelope.
+
 The current GitHub path still builds from two source inputs:
 
 - PR metadata for request-scoped signals like title, body, labels, and commit history
@@ -118,6 +127,8 @@ GitHub PR
 - [Website](https://getveridion.com)
 - [Docs Home](https://getveridion.com/docs/)
 - [Quickstart](docs/QUICKSTART.md)
+- [Automation Guide](docs/AUTOMATION_GUIDE.md)
+- [Non-GitHub Producers](docs/NON_GITHUB.md)
 - [Evaluation Guide](docs/EVALUATION_GUIDE.md)
 - [Evaluation Checklist](docs/EVALUATION_CHECKLIST.md)
 - [Design Partner Guide](docs/DESIGN_PARTNER.md)
@@ -156,6 +167,7 @@ The current `main` branch already includes:
 - Initial historical trust signals for criticality, rollback rate, incidents, and flaky services
 - Initial trust-baseline signals for repo fragility, service stability, rollback readiness, and dependency reputation
 - A versioned `operational-context` contract for non-GitHub producers
+- A versioned `decision contract` for downstream workflow automation and gating
 - Starter policy packs for application teams, platform teams, and regulated services
 
 The current MVP has also been validated in an external canary repository with:
@@ -195,6 +207,36 @@ The GitHub Action can build `operational-context.json` internally from repo-loca
 
 Bootstrap also creates `.veridion/suppressions.json` so teams have a first-class accepted-risk feedback loop instead of ad hoc ignore behavior.
 
+Each suppression can now carry governance metadata such as owner, approver, and ticket so accepted risk remains auditable instead of becoming silent ignore state.
+
+Optional AI wording can sit on top of the deterministic decision engine. If you configure a provider, Veridion still decides deterministically and only uses the model to rewrite structured threat facts into shorter operator-facing English.
+
+For an OpenAI-backed setup in GitHub Actions, add:
+
+- repository variable: `VERIDION_COMMENT_SUMMARY_PROVIDER=openai`
+- repository variable: `VERIDION_COMMENT_SUMMARY_MODEL=gpt-5-mini`
+- repository secret: `VERIDION_COMMENT_SUMMARY_API_KEY`
+
+OpenAI's model guide says to choose a smaller variant such as `gpt-5-mini` when you are optimizing for latency and cost, which fits this wording-only layer well: [OpenAI Models](https://developers.openai.com/api/docs/models).
+
+For downstream automation, the action now exposes:
+
+- `gate_status`: `pass`, `review`, or `block`
+- `decision_allowed`: whether the configured gate permits the final verdict
+- `required_approvals_json`
+- `required_next_steps_json`
+- `blocking_reasons_json`
+- `blocking_categories_json`
+- `accepted_risk_present`
+- `decision_contract_path`
+
+Optional integrations on top of the decision contract now include:
+
+- GitHub reviewer requests from role-based approval maps
+- GitHub approval satisfaction checks for mapped approval roles
+- outbound webhook delivery of the decision contract
+- generic CI producers that build `operational-context.json` without GitHub event payloads
+
 For contributor/local development only, an editable install also works:
 
 ```bash
@@ -202,6 +244,8 @@ python3 -m pip install -e /path/to/veridion
 ```
 
 These metadata-driven AI, historical, and trust-baseline signals are currently non-scoring by default. They affect explanation, recommendations, and approval requirements before they affect score.
+
+The next product step is approval satisfaction: not just which roles must approve, but whether those mapped approval roles are currently satisfied on the pull request.
 
 The current policy surface can also drive metadata-based approvals, for example:
 

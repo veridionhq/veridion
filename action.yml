@@ -40,6 +40,30 @@ inputs:
     description: "Path to optional accepted-risk suppression JSON"
     required: false
     default: ""
+  comment-summary-provider:
+    description: "Optional wording model provider for PR comment summarization: openai, anthropic, or bedrock"
+    required: false
+    default: ""
+  comment-summary-model:
+    description: "Optional wording model id used when comment-summary-provider is enabled"
+    required: false
+    default: ""
+  comment-summary-api-key:
+    description: "Optional API key for OpenAI or Anthropic comment summarization"
+    required: false
+    default: ""
+  comment-summary-base-url:
+    description: "Optional API base URL override for OpenAI-compatible or Anthropic comment summarization"
+    required: false
+    default: ""
+  comment-summary-region:
+    description: "Optional AWS region for Bedrock comment summarization"
+    required: false
+    default: ""
+  comment-summary-style:
+    description: "Optional wording style for AI comment summarization: terse or expanded"
+    required: false
+    default: "terse"
   comment-path:
     description: "Path to write the rendered PR comment markdown"
     required: false
@@ -48,6 +72,42 @@ inputs:
     description: "Path to write structured JSON output"
     required: false
     default: "veridion-result.json"
+  decision-contract-path:
+    description: "Path to write machine-facing decision contract JSON"
+    required: false
+    default: "veridion-decision.json"
+  enforce-decision:
+    description: "Whether to fail the action when the final decision is not allowed"
+    required: false
+    default: "false"
+  allowed-decisions:
+    description: "Comma-separated decisions allowed to pass when enforce-decision is true"
+    required: false
+    default: "GO,CONDITIONAL GO"
+  approval-map-path:
+    description: "Path to optional approval role map JSON for GitHub reviewer requests"
+    required: false
+    default: ""
+  request-approvals:
+    description: "Whether to request mapped GitHub reviewers for required approvals"
+    required: false
+    default: "false"
+  verify-approvals:
+    description: "Whether to evaluate whether mapped GitHub approvals are currently satisfied"
+    required: false
+    default: "false"
+  webhook-url:
+    description: "Optional external webhook URL for decision contract delivery"
+    required: false
+    default: ""
+  webhook-token:
+    description: "Optional bearer token for webhook delivery"
+    required: false
+    default: ""
+  webhook-event-type:
+    description: "Logical event type for webhook delivery"
+    required: false
+    default: "veridion.rdi.decision.v1"
   github-token:
     description: "GitHub token used to upsert the PR comment"
     required: false
@@ -83,9 +143,60 @@ outputs:
   json_output_path:
     description: "Path to structured JSON result"
     value: ${{ steps.run-rdi.outputs.json_output_path }}
+  decision_contract_path:
+    description: "Path to machine-facing decision contract JSON"
+    value: ${{ steps.run-rdi.outputs.decision_contract_path }}
   comment_identifier:
     description: "Stable comment identifier"
     value: ${{ steps.run-rdi.outputs.comment_identifier }}
+  gate_status:
+    description: "Stable gate status for workflow automation: pass, review, or block"
+    value: ${{ steps.run-rdi.outputs.gate_status }}
+  decision_allowed:
+    description: "Whether the final decision is allowed by the configured action gate"
+    value: ${{ steps.run-rdi.outputs.decision_allowed }}
+  required_approvals_json:
+    description: "JSON array of required approval roles"
+    value: ${{ steps.run-rdi.outputs.required_approvals_json }}
+  required_next_steps_json:
+    description: "JSON array of required next steps"
+    value: ${{ steps.run-rdi.outputs.required_next_steps_json }}
+  blocking_reasons_json:
+    description: "JSON array of blocking reasons"
+    value: ${{ steps.run-rdi.outputs.blocking_reasons_json }}
+  blocking_categories_json:
+    description: "JSON array of normalized blocking categories"
+    value: ${{ steps.run-rdi.outputs.blocking_categories_json }}
+  accepted_risk_present:
+    description: "Whether active accepted-risk suppressions are present in the change"
+    value: ${{ steps.run-rdi.outputs.accepted_risk_present }}
+  approval_request_status:
+    description: "Reviewer request status for required approval roles"
+    value: ${{ steps.request-approvals.outputs.approval_request_status }}
+  requested_reviewers_json:
+    description: "JSON object of requested reviewer users and teams"
+    value: ${{ steps.request-approvals.outputs.requested_reviewers_json }}
+  missing_approval_mappings_json:
+    description: "JSON array of approval roles with no reviewer mapping"
+    value: ${{ steps.request-approvals.outputs.missing_approval_mappings_json }}
+  approval_satisfaction_status:
+    description: "Approval satisfaction state for required approval roles"
+    value: ${{ steps.verify-approvals.outputs.approval_satisfaction_status }}
+  approvals_satisfied:
+    description: "Whether required approval roles are currently satisfied"
+    value: ${{ steps.verify-approvals.outputs.approvals_satisfied }}
+  satisfied_approvals_json:
+    description: "JSON array of required approval roles currently satisfied"
+    value: ${{ steps.verify-approvals.outputs.satisfied_approvals_json }}
+  unsatisfied_approvals_json:
+    description: "JSON array of required approval roles not yet satisfied"
+    value: ${{ steps.verify-approvals.outputs.unsatisfied_approvals_json }}
+  approval_state_json:
+    description: "JSON array describing per-role approval satisfaction state"
+    value: ${{ steps.verify-approvals.outputs.approval_state_json }}
+  webhook_delivery_status:
+    description: "Webhook delivery status for the emitted decision contract"
+    value: ${{ steps.emit-event.outputs.webhook_delivery_status }}
   comment_id:
     description: "GitHub comment id when comment posting is enabled"
     value: ${{ steps.comment-rdi.outputs.comment_id }}
@@ -148,8 +259,17 @@ runs:
         INPUT_METADATA_PATH: ${{ inputs.metadata-path }}
         INPUT_TRUST_PROFILE_PATH: ${{ inputs.trust-profile-path }}
         INPUT_SUPPRESSION_PATH: ${{ inputs.suppression-path }}
+        INPUT_COMMENT_SUMMARY_PROVIDER: ${{ inputs.comment-summary-provider }}
+        INPUT_COMMENT_SUMMARY_MODEL: ${{ inputs.comment-summary-model }}
+        INPUT_COMMENT_SUMMARY_API_KEY: ${{ inputs.comment-summary-api-key }}
+        INPUT_COMMENT_SUMMARY_BASE_URL: ${{ inputs.comment-summary-base-url }}
+        INPUT_COMMENT_SUMMARY_REGION: ${{ inputs.comment-summary-region }}
+        INPUT_COMMENT_SUMMARY_STYLE: ${{ inputs.comment-summary-style }}
         INPUT_COMMENT_PATH: ${{ inputs.comment-path }}
         INPUT_JSON_OUTPUT_PATH: ${{ inputs.json-output-path }}
+        INPUT_DECISION_CONTRACT_PATH: ${{ inputs.decision-contract-path }}
+        INPUT_ENFORCE_DECISION: ${{ inputs.enforce-decision }}
+        INPUT_ALLOWED_DECISIONS: ${{ inputs.allowed-decisions }}
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
         INPUT_REPOSITORY: ${{ inputs.repository }}
         INPUT_PULL_REQUEST_NUMBER: ${{ inputs.pull-request-number }}
@@ -191,6 +311,25 @@ runs:
         if [[ -n "${INPUT_SUPPRESSION_PATH}" ]]; then
           suppression_args+=(--suppression-path "${INPUT_SUPPRESSION_PATH}")
         fi
+        summary_args=()
+        if [[ -n "${INPUT_COMMENT_SUMMARY_PROVIDER}" ]]; then
+          summary_args+=(--comment-summary-provider "${INPUT_COMMENT_SUMMARY_PROVIDER}")
+        fi
+        if [[ -n "${INPUT_COMMENT_SUMMARY_MODEL}" ]]; then
+          summary_args+=(--comment-summary-model "${INPUT_COMMENT_SUMMARY_MODEL}")
+        fi
+        if [[ -n "${INPUT_COMMENT_SUMMARY_API_KEY}" ]]; then
+          summary_args+=(--comment-summary-api-key "${INPUT_COMMENT_SUMMARY_API_KEY}")
+        fi
+        if [[ -n "${INPUT_COMMENT_SUMMARY_BASE_URL}" ]]; then
+          summary_args+=(--comment-summary-base-url "${INPUT_COMMENT_SUMMARY_BASE_URL}")
+        fi
+        if [[ -n "${INPUT_COMMENT_SUMMARY_REGION}" ]]; then
+          summary_args+=(--comment-summary-region "${INPUT_COMMENT_SUMMARY_REGION}")
+        fi
+        if [[ -n "${INPUT_COMMENT_SUMMARY_STYLE}" ]]; then
+          summary_args+=(--comment-summary-style "${INPUT_COMMENT_SUMMARY_STYLE}")
+        fi
         python3 -m veridion.action \
           --diff-path "${INPUT_DIFF_PATH}" \
           "${reports_args[@]}" \
@@ -200,8 +339,77 @@ runs:
           "${metadata_args[@]}" \
           "${trust_profile_args[@]}" \
           "${suppression_args[@]}" \
+          "${summary_args[@]}" \
           --comment-path "${INPUT_COMMENT_PATH}" \
-          --json-output-path "${INPUT_JSON_OUTPUT_PATH}"
+          --json-output-path "${INPUT_JSON_OUTPUT_PATH}" \
+          --decision-contract-path "${INPUT_DECISION_CONTRACT_PATH}" \
+          --enforce-decision "${INPUT_ENFORCE_DECISION}" \
+          --allowed-decisions "${INPUT_ALLOWED_DECISIONS}"
+    - name: Request required GitHub approvals
+      id: request-approvals
+      if: ${{ always() && inputs.request-approvals == 'true' && inputs.github-token != '' && inputs.repository != '' && inputs.pull-request-number != '' && inputs.approval-map-path != '' }}
+      shell: bash
+      env:
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        INPUT_PULL_REQUEST_NUMBER: ${{ inputs.pull-request-number }}
+        INPUT_APPROVAL_MAP_PATH: ${{ inputs.approval-map-path }}
+        REQUIRED_APPROVALS_JSON: ${{ steps.run-rdi.outputs.required_approvals_json }}
+        PYTHONPATH: ${{ github.action_path }}/src
+      run: |
+        set -euo pipefail
+        python3 -m veridion.action.github_approvals \
+          --repository "${INPUT_REPOSITORY}" \
+          --pull-request-number "${INPUT_PULL_REQUEST_NUMBER}" \
+          --github-token "${INPUT_GITHUB_TOKEN}" \
+          --required-approvals-json "${REQUIRED_APPROVALS_JSON}" \
+          --approval-map-path "${INPUT_APPROVAL_MAP_PATH}"
+    - name: Verify required GitHub approvals
+      id: verify-approvals
+      if: ${{ always() && inputs.verify-approvals == 'true' && inputs.github-token != '' && inputs.repository != '' && inputs.pull-request-number != '' && inputs.approval-map-path != '' }}
+      shell: bash
+      env:
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        INPUT_PULL_REQUEST_NUMBER: ${{ inputs.pull-request-number }}
+        INPUT_APPROVAL_MAP_PATH: ${{ inputs.approval-map-path }}
+        INPUT_DECISION_CONTRACT_PATH: ${{ inputs.decision-contract-path }}
+        REQUIRED_APPROVALS_JSON: ${{ steps.run-rdi.outputs.required_approvals_json }}
+        PYTHONPATH: ${{ github.action_path }}/src
+      run: |
+        set -euo pipefail
+        python3 -m veridion.action.github_approval_state \
+          --repository "${INPUT_REPOSITORY}" \
+          --pull-request-number "${INPUT_PULL_REQUEST_NUMBER}" \
+          --github-token "${INPUT_GITHUB_TOKEN}" \
+          --required-approvals-json "${REQUIRED_APPROVALS_JSON}" \
+          --approval-map-path "${INPUT_APPROVAL_MAP_PATH}" \
+          --decision-contract-path "${INPUT_DECISION_CONTRACT_PATH}"
+    - name: Emit decision event
+      id: emit-event
+      if: ${{ always() && inputs.webhook-url != '' }}
+      shell: bash
+      env:
+        INPUT_WEBHOOK_URL: ${{ inputs.webhook-url }}
+        INPUT_WEBHOOK_TOKEN: ${{ inputs.webhook-token }}
+        INPUT_WEBHOOK_EVENT_TYPE: ${{ inputs.webhook-event-type }}
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        INPUT_PULL_REQUEST_NUMBER: ${{ inputs.pull-request-number }}
+        INPUT_DECISION_CONTRACT_PATH: ${{ inputs.decision-contract-path }}
+        PYTHONPATH: ${{ github.action_path }}/src
+      run: |
+        set -euo pipefail
+        pr_args=()
+        if [[ -n "${INPUT_PULL_REQUEST_NUMBER}" ]]; then
+          pr_args+=(--pull-request-number "${INPUT_PULL_REQUEST_NUMBER}")
+        fi
+        python3 -m veridion.action.event_emitter \
+          --webhook-url "${INPUT_WEBHOOK_URL}" \
+          --decision-contract-path "${INPUT_DECISION_CONTRACT_PATH}" \
+          --event-type "${INPUT_WEBHOOK_EVENT_TYPE}" \
+          --repository "${INPUT_REPOSITORY}" \
+          --token "${INPUT_WEBHOOK_TOKEN}" \
+          "${pr_args[@]}"
     - name: Post Veridion PR comment
       id: comment-rdi
       if: ${{ inputs.post-comment == 'true' }}

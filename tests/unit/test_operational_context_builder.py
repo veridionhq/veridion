@@ -1,4 +1,4 @@
-from veridion.action.operational_context_builder import _resolve_metadata_payload
+from veridion.action.operational_context_builder import _has_section_inputs, _resolve_metadata_payload
 
 
 def test_resolve_metadata_payload_prefers_prebuilt_metadata(monkeypatch) -> None:
@@ -71,3 +71,14 @@ def test_resolve_metadata_payload_returns_empty_without_inputs() -> None:
     )
 
     assert payload == {}
+
+
+def test_has_section_inputs_detects_non_github_section_mode() -> None:
+    class _Args:
+        historical_path = "historical.json"
+        runtime_path = None
+        ownership_path = None
+        trust_baseline_path = None
+        trust_profile_metadata_path = None
+
+    assert _has_section_inputs(_Args()) is True

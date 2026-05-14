@@ -2,19 +2,26 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+import re
+
 from veridion.analysis import AnalysisBundle
-from veridion.normalize.models import NormalizedFinding
 from veridion.policy.engine import PolicyDecision
 from veridion.policy.labels import APPROVAL_LABELS
+from veridion.report.threats import ThreatExplanation, explain_introduced_threats, render_threat_line
+from veridion.summarization import CommentSummarizer, SummarizationRequest, SummarizationTrace, summarize_comment_request
 
 COMMENT_MARKER_START = "<!-- veridion:rdi:start -->"
 COMMENT_MARKER_END = "<!-- veridion:rdi:end -->"
 MAX_AI_ITEMS = 3
-MAX_PRIMARY_DRIVER_ITEMS = 6
-MAX_THREAT_ITEMS = 4
+MAX_PRIMARY_DRIVER_ITEMS = 3
+MAX_THREAT_ITEMS = 3
 MAX_CONTEXTUAL_RISK_ITEMS = 4
 MAX_REQUIRED_NEXT_STEP_ITEMS = 6
 MAX_ADVISORY_GUIDANCE_ITEMS = 4
+_SEVERITY_ISSUE_REASON_RE = re.compile(
+    r"^\d+ new (critical|high|medium|low|info|unknown)-severity (?:issues?|issue\(s\)) detected$"
+)
 REQUIRED_NEXT_STEP_PREFIXES = (
     "Block release",
     "Run staging smoke tests",
@@ -26,19 +33,48 @@ REQUIRED_NEXT_STEP_PREFIXES = (
     "Validate migration safety",
     "Verify payment-impact",
     "Run authentication and access-control",
+    "Validate data-handling and tenant-safety",
 )
 
 
-def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
+@dataclass(frozen=True)
+class RenderedComment:
+    """Rendered PR comment plus wording telemetry."""
+
+    markdown: str
+    summary_trace: SummarizationTrace
+
+
+def render_pr_comment(
+    bundle: AnalysisBundle,
+    decision: PolicyDecision,
+    *,
+    summarizer: CommentSummarizer | None = None,
+    summary_style: str = "terse",
+) -> str:
+    return render_pr_comment_result(
+        bundle,
+        decision,
+        summarizer=summarizer,
+        summary_style=summary_style,
+    ).markdown
+
+
+def render_pr_comment_result(
+    bundle: AnalysisBundle,
+    decision: PolicyDecision,
+    *,
+    summarizer: CommentSummarizer | None = None,
+    summary_style: str = "terse",
+) -> RenderedComment:
     """Render a deterministic PR comment for the current release decision."""
 
     lines: list[str] = []
 
     lines.append("## Release Decision Intelligence")
     lines.append("")
-    lines.append(f"**Decision:** {decision.decision}")
-    lines.append(f"**RDI Score:** {decision.score}")
-    lines.append(f"**Confidence:** {decision.confidence.upper()}")
+    lines.append(f"### {_decision_icon(decision.decision)} {decision.decision}")
+    lines.append(f"**RDI Score:** {decision.score} | **Confidence:** {decision.confidence.upper()}")
     lines.append("")
 
     summary_parts = [
@@ -53,29 +89,55 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
 
     primary_drivers, contextual_risk = _split_reasons(decision.reasons)
     compact_render = _should_use_compact_render(bundle, decision, primary_drivers, contextual_risk)
+    introduced_threat_explanations = explain_introduced_threats(bundle)
+    required_next_steps, advisory_guidance = _split_recommendations(
+        _filter_recommendations(decision.recommendations, decision.required_approvals)
+    )
+    next_steps = _select_next_steps(
+        bundle=bundle,
+        decision=decision,
+        required_next_steps=required_next_steps,
+        advisory_guidance=advisory_guidance,
+    )
+    summarized_primary_drivers, summarized_threats, _summarized_contextual, summary_trace = _summarize_comment_sections(
+        summarizer=summarizer,
+        decision=decision,
+        primary_drivers=primary_drivers,
+        introduced_threats=introduced_threat_explanations,
+        contextual_risk=contextual_risk,
+        required_next_steps=required_next_steps,
+        summary_style=summary_style,
+    )
 
-    if bundle.ai_attribution.detected and not compact_render:
-        lines.extend(_section("AI Signals", _truncate_items(_format_ai_attribution(bundle), MAX_AI_ITEMS, "detail")))
-    key_context = _format_key_context(bundle, compact=compact_render)
+    key_context = (
+        _format_release_context(bundle)
+        if _is_clean_review_case(bundle, decision)
+        else _format_key_context(bundle, compact=compact_render)
+    )
     if key_context:
         lines.extend(_section("Key Context", key_context))
     if bundle.summary.suppressed_findings or bundle.summary.expired_suppressions:
         lines.extend(_section("Accepted Risk", _format_suppressions(bundle)))
 
-    lines.extend(
-        _section(
-            _drivers_title(decision.decision),
-            _truncate_items(primary_drivers, MAX_PRIMARY_DRIVER_ITEMS, "driver"),
-        )
+    rendered_primary_drivers = _merge_headline_summary(
+        bundle=bundle,
+        decision=decision,
+        introduced_threats=introduced_threat_explanations,
+        rendered_primary_drivers=summarized_primary_drivers or primary_drivers,
     )
-    introduced_threats = _format_introduced_threats(bundle)
-    if introduced_threats:
-        lines.extend(_section("New threats detected", _truncate_items(introduced_threats, MAX_THREAT_ITEMS, "threat")))
-    if contextual_risk and not compact_render:
+    if rendered_primary_drivers:
         lines.extend(
             _section(
-                "Why this matters",
-                _truncate_items(contextual_risk, MAX_CONTEXTUAL_RISK_ITEMS, "contextual risk"),
+                _drivers_title(decision.decision),
+                rendered_primary_drivers[:MAX_PRIMARY_DRIVER_ITEMS],
+            )
+        )
+    introduced_threats = summarized_threats or tuple(render_threat_line(item) for item in introduced_threat_explanations)
+    if introduced_threats:
+        lines.extend(
+            _section(
+                _threats_title(),
+                _truncate_items(introduced_threats, MAX_THREAT_ITEMS, "threat"),
             )
         )
 
@@ -86,33 +148,32 @@ def render_pr_comment(bundle: AnalysisBundle, decision: PolicyDecision) -> str:
         approvals = tuple(_format_approval(name) for name in decision.required_approvals)
         lines.extend(_section("Required Approvals", approvals))
 
-    required_next_steps, advisory_guidance = _split_recommendations(
-        _filter_recommendations(decision.recommendations, decision.required_approvals)
-    )
     lines.extend(
         _section(
             "What must happen next",
-            _truncate_items(required_next_steps, MAX_REQUIRED_NEXT_STEP_ITEMS, "required step"),
+            _truncate_items(next_steps, MAX_REQUIRED_NEXT_STEP_ITEMS, "required step"),
         )
     )
-    if advisory_guidance and not compact_render:
-        lines.extend(
-            _section(
-                "Recommended rollout",
-                _truncate_items(advisory_guidance, MAX_ADVISORY_GUIDANCE_ITEMS, "guidance item"),
-            )
-        )
-    if bundle.summary.introduced_findings:
-        lines.extend(_section("Introduced Severity", _format_counts(bundle.summary.introduced_by_severity)))
-        lines.extend(_section("Introduced Finding Types", _format_counts(bundle.summary.introduced_by_finding_type)))
 
-    return wrap_pr_comment("\n".join(lines).rstrip() + "\n")
+    return RenderedComment(
+        markdown=wrap_pr_comment("\n".join(lines).rstrip() + "\n"),
+        summary_trace=summary_trace,
+    )
 
 
 def wrap_pr_comment(body: str) -> str:
     """Wrap a rendered PR comment with stable Veridion markers."""
 
     return f"{COMMENT_MARKER_START}\n{body.rstrip()}\n{COMMENT_MARKER_END}\n"
+
+
+def _decision_icon(decision: str) -> str:
+    icons = {
+        "NO GO": "❌",
+        "CONDITIONAL GO": "🟡",
+        "GO": "✅",
+    }
+    return icons.get(decision, "ℹ️")
 
 
 def _section(title: str, items: tuple[str, ...] | list[str]) -> list[str]:
@@ -129,33 +190,6 @@ def _format_approval(value: str) -> str:
     return APPROVAL_LABELS.get(value, value.replace("_", " "))
 
 
-def _format_counts(counts: dict[str, int]) -> tuple[str, ...]:
-    return tuple(f"{key}: {value}" for key, value in counts.items())
-
-
-def _format_introduced_threats(bundle: AnalysisBundle) -> tuple[str, ...]:
-    introduced = sorted(
-        bundle.baseline_comparison.introduced,
-        key=lambda finding: (
-            _severity_rank(finding.severity),
-            finding.finding_type,
-            finding.title.lower(),
-            finding.location.path or "",
-        ),
-    )
-    seen: set[str] = set()
-    items: list[str] = []
-
-    for finding in introduced:
-        description = _describe_introduced_threat(finding)
-        if description in seen:
-            continue
-        seen.add(description)
-        items.append(description)
-
-    return tuple(items)
-
-
 def _drivers_title(decision: str) -> str:
     if decision == "NO GO":
         return "Why this is blocked"
@@ -164,39 +198,151 @@ def _drivers_title(decision: str) -> str:
     return "Why this is allowed"
 
 
-def _severity_rank(severity: str) -> int:
-    order = {
-        "critical": 0,
-        "high": 1,
-        "medium": 2,
-        "low": 3,
-        "info": 4,
-        "unknown": 5,
-    }
-    return order.get(severity, 6)
+def _threats_title() -> str:
+    return "Key threats"
 
 
-def _describe_introduced_threat(finding: NormalizedFinding) -> str:
-    location = _normalize_location(finding.location.path)
-    severity = finding.severity.replace("-", " ")
+def _default_driver_summary(
+    bundle: AnalysisBundle,
+    decision: PolicyDecision,
+    introduced_threats: tuple[ThreatExplanation, ...],
+) -> tuple[str, ...]:
+    no_introduced_findings = "no introduced findings detected" in decision.reasons
+    requires_release_gates = "release still requires explicit approvals or operational checks" in decision.reasons
+    if no_introduced_findings and requires_release_gates:
+        return ("no new findings were introduced, but this release still requires approvals and operational checks",)
+    if no_introduced_findings:
+        return ("no introduced findings detected",)
+    if requires_release_gates:
+        return ("release still requires explicit approvals or operational checks",)
+    if decision.decision == "NO GO" and introduced_threats:
+        return (_headline_blocker_summary(bundle, introduced_threats),) + tuple(
+            item
+            for item in (
+                _severity_summary(bundle),
+                "the change includes infrastructure updates" if bundle.summary.infrastructure_changes else "",
+                "the change introduces vulnerable dependencies" if bundle.summary.introduced_by_finding_type.get("dependency") else "",
+            )
+            if item
+        )
+    if decision.decision == "CONDITIONAL GO" and introduced_threats:
+        return (_headline_review_summary(bundle, introduced_threats),) + tuple(
+            item
+            for item in (
+                _severity_summary(bundle),
+                "the change includes infrastructure updates" if bundle.summary.infrastructure_changes else "",
+            )
+            if item
+        )
+    return ()
 
-    if finding.finding_type == "dependency":
-        package = " ".join(part for part in (finding.package_name, finding.package_version) if part)
-        package_label = package or finding.rule_id
-        if location:
-            return f"{severity} dependency risk: {package_label} in {location} ({finding.title})"
-        return f"{severity} dependency risk: {package_label} ({finding.title})"
 
-    threat_label = finding.title.strip() or finding.rule_id
-    if location:
-        return f"{severity} {finding.finding_type} risk in {location}: {threat_label}"
-    return f"{severity} {finding.finding_type} risk: {threat_label}"
+def _merge_headline_summary(
+    *,
+    bundle: AnalysisBundle,
+    decision: PolicyDecision,
+    introduced_threats: tuple[ThreatExplanation, ...],
+    rendered_primary_drivers: tuple[str, ...],
+) -> tuple[str, ...]:
+    fallback = _default_driver_summary(bundle, decision, introduced_threats)
+    if not fallback:
+        return rendered_primary_drivers or fallback
+    if not rendered_primary_drivers:
+        return fallback
+    headline = fallback[0]
+    merged = [headline]
+    headline_key = _normalize_driver_line(headline)
+    subsumed_driver_keys = _subsumed_driver_keys(headline_key)
+    for line in rendered_primary_drivers:
+        normalized_line = _normalize_driver_line(line)
+        if normalized_line == headline_key or normalized_line in subsumed_driver_keys:
+            continue
+        if line not in merged:
+            merged.append(line)
+    return tuple(merged)
 
 
-def _normalize_location(path: str | None) -> str:
-    if not path:
+def _subsumed_driver_keys(headline_key: str) -> set[str]:
+    if headline_key == "no new findings were introduced, but this release still requires approvals and operational checks":
+        return {
+            "no introduced findings detected",
+            "release still requires explicit approvals or operational checks",
+        }
+    return set()
+
+
+def _summarize_comment_sections(
+    *,
+    summarizer: CommentSummarizer | None,
+    decision: PolicyDecision,
+    primary_drivers: tuple[str, ...],
+    introduced_threats: tuple[ThreatExplanation, ...],
+    contextual_risk: tuple[str, ...],
+    required_next_steps: tuple[str, ...],
+    summary_style: str,
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], SummarizationTrace]:
+    if summarizer is None or not introduced_threats:
+        return primary_drivers, (), (), SummarizationTrace(mode="deterministic", provider="none", model="")
+    result, trace = summarize_comment_request(
+        SummarizationRequest(
+            decision=decision.decision,
+            score=decision.score,
+            confidence=decision.confidence,
+            primary_drivers=primary_drivers,
+            threats=tuple(introduced_threats),
+            contextual_risk=contextual_risk,
+            required_approvals=decision.required_approvals,
+            required_next_steps=required_next_steps,
+            style=summary_style,
+        ),
+        summarizer,
+    )
+    if result is None:
+        return primary_drivers, (), (), trace
+    rendered_primary = result.driver_summary or primary_drivers
+    return rendered_primary, result.threat_summaries, result.contextual_summary, trace
+
+
+def _headline_blocker_summary(bundle: AnalysisBundle, threats: tuple[ThreatExplanation, ...]) -> str:
+    top = threats[0]
+    if top.threat_type == "dependency":
+        summary = f"this change cannot ship because it introduces {top.severity} vulnerable dependencies"
+    else:
+        location = f" in {top.location}" if top.location else ""
+        summary = f"this change cannot ship because it introduces {top.severity} {top.threat_type} risk{location}"
+    if bundle.runtime_signals.public_exposure:
+        summary += " into a public-facing service"
+    elif bundle.runtime_signals.blast_radius in {"high", "critical"}:
+        summary += " in a high-blast-radius path"
+    return summary
+
+
+def _headline_review_summary(bundle: AnalysisBundle, threats: tuple[ThreatExplanation, ...]) -> str:
+    top = threats[0]
+    if top.location:
+        summary = f"this change needs review because {top.location} {top.summary}"
+    else:
+        summary = f"this change needs review because it introduces {top.severity} {top.threat_type} risk"
+    if bundle.summary.infrastructure_changes:
+        summary += " and it also changes infrastructure"
+    return summary
+
+
+def _severity_summary(bundle: AnalysisBundle) -> str:
+    parts: list[str] = []
+    severities = bundle.summary.introduced_by_severity
+    if severities.get("critical"):
+        count = severities["critical"]
+        parts.append(f"{count} critical issue" + ("" if count == 1 else "s"))
+    if severities.get("high"):
+        count = severities["high"]
+        parts.append(f"{count} high-severity issue" + ("" if count == 1 else "s"))
+    if severities.get("medium"):
+        count = severities["medium"]
+        parts.append(f"{count} medium-severity issue" + ("" if count == 1 else "s"))
+    if not parts:
         return ""
-    return path.removeprefix("/workspace/")
+    return "new risk includes " + ", ".join(parts)
 
 
 def _should_use_compact_render(
@@ -215,61 +361,67 @@ def _should_use_compact_render(
     )
     return all(
         (
-            bundle.summary.introduced_findings == 0,
+            _is_clean_review_case(bundle, decision),
             bundle.summary.suppressed_findings == 0,
             bundle.summary.expired_suppressions == 0,
             not decision.score_adjustments,
-            primary_drivers == ("no introduced findings detected",),
             contextual_domains >= 3,
-            len(contextual_risk) >= 5,
         )
     )
 
 
 def _format_release_context(bundle: AnalysisBundle) -> tuple[str, ...]:
     items: list[str] = []
+    history = bundle.historical_signals
+    runtime = bundle.runtime_signals
+    ownership = bundle.ownership_signals
+    baseline = bundle.trust_baseline
 
-    historical_parts: list[str] = []
-    if bundle.historical_signals.repo_criticality:
-        historical_parts.append(f"repo criticality: {bundle.historical_signals.repo_criticality}")
-    if bundle.historical_signals.service_criticality:
-        historical_parts.append(f"service criticality: {bundle.historical_signals.service_criticality}")
-    if bundle.historical_signals.rollback_rate_30d is not None:
-        historical_parts.append(f"rollback rate: {bundle.historical_signals.rollback_rate_30d:.0%}")
-    if historical_parts:
-        items.append("historical: " + " | ".join(historical_parts))
+    if (
+        history.repo_criticality in {"high", "critical"}
+        or history.service_criticality in {"high", "critical"}
+        or history.rollback_rate_30d is not None
+        or history.change_failure_rate_30d is not None
+        or history.incident_count_30d
+    ):
+        historical_parts: list[str] = []
+        if history.repo_criticality in {"high", "critical"} or history.service_criticality in {"high", "critical"}:
+            historical_parts.append("high-criticality service path")
+        if history.rollback_rate_30d is not None:
+            historical_parts.append(f"{history.rollback_rate_30d:.0%} rollback rate")
+        if history.change_failure_rate_30d is not None:
+            historical_parts.append(f"{history.change_failure_rate_30d:.0%} failure rate")
+        if history.incident_count_30d:
+            historical_parts.append(f"{history.incident_count_30d} recent incidents")
+        items.append("historically unstable release surface: " + ", ".join(historical_parts))
 
     runtime_parts: list[str] = []
-    if bundle.runtime_signals.environment:
-        runtime_parts.append(f"target: {bundle.runtime_signals.environment}")
-    if bundle.runtime_signals.public_exposure:
-        runtime_parts.append("public exposure")
-    if bundle.runtime_signals.blast_radius:
-        runtime_parts.append(f"blast radius: {bundle.runtime_signals.blast_radius}")
+    if runtime.environment == "production":
+        runtime_parts.append("production deployment")
+    if runtime.public_exposure:
+        runtime_parts.append("publicly exposed")
+    if runtime.blast_radius in {"high", "critical"}:
+        runtime_parts.append(f"{runtime.blast_radius} blast radius")
+    if runtime.deployment_window == "after_hours":
+        runtime_parts.append("scheduled after hours")
+    if runtime.rollout_strategy:
+        runtime_parts.append(runtime.rollout_strategy.replace("_", " ") + " rollout")
     if runtime_parts:
-        items.append("runtime: " + " | ".join(runtime_parts))
+        items.append("runtime sensitivity: " + ", ".join(runtime_parts))
 
-    ownership_parts: list[str] = []
-    if bundle.ownership_signals.service_owner:
-        ownership_parts.append(f"service owner: {bundle.ownership_signals.service_owner}")
-    if bundle.ownership_signals.owning_team:
-        ownership_parts.append(f"team: {bundle.ownership_signals.owning_team}")
-    if bundle.ownership_signals.review_coverage:
-        ownership_parts.append(
-            "review coverage: " + bundle.ownership_signals.review_coverage.replace("_", " ")
-        )
-    if ownership_parts:
-        items.append("ownership: " + " | ".join(ownership_parts))
-
-    baseline_parts: list[str] = []
-    if bundle.trust_baseline.service_stability:
-        baseline_parts.append(f"service stability: {bundle.trust_baseline.service_stability}")
-    if bundle.trust_baseline.rollback_readiness:
-        baseline_parts.append(f"rollback readiness: {bundle.trust_baseline.rollback_readiness}")
-    if bundle.trust_baseline.test_coverage_level:
-        baseline_parts.append(f"test coverage: {bundle.trust_baseline.test_coverage_level}")
-    if baseline_parts:
-        items.append("baseline: " + " | ".join(baseline_parts))
+    control_parts: list[str] = []
+    if ownership.review_coverage == "cross_team":
+        control_parts.append("cross-team approval path")
+    if ownership.team_trust_level in {"low", "degrading"}:
+        control_parts.append("degrading team trust")
+    if baseline.rollback_readiness in {"partial", "weak"}:
+        control_parts.append(f"{baseline.rollback_readiness} rollback readiness")
+    if baseline.test_coverage_level == "low":
+        control_parts.append("low baseline test coverage")
+    if baseline.service_stability in {"watch", "fragile"} or baseline.repo_stability in {"watch", "fragile"}:
+        control_parts.append("fragile service baseline")
+    if control_parts:
+        items.append("release controls need human verification: " + ", ".join(control_parts))
 
     return tuple(items)
 
@@ -346,6 +498,8 @@ def _format_suppressions(bundle: AnalysisBundle) -> tuple[str, ...]:
     if bundle.summary.suppressed_findings:
         items.append(f"suppressed findings: {bundle.summary.suppressed_findings}")
         items.extend(_aggregate_suppression_reasons(bundle))
+        if bundle.suppression_report.governance_gaps:
+            items.append("governance gaps: " + ", ".join(bundle.suppression_report.governance_gaps))
     if bundle.summary.expired_suppressions:
         items.append(f"expired suppression rules: {bundle.summary.expired_suppressions}")
     return tuple(items)
@@ -372,140 +526,19 @@ def _truncate_items(items: tuple[str, ...], limit: int, noun: str) -> tuple[str,
     return items[:limit] + (f"... {remaining} more {suffix}",)
 
 
-def _format_ai_attribution(bundle: AnalysisBundle) -> tuple[str, ...]:
-    items = [f"AI-origin signals detected: {bundle.ai_attribution.signal_count}"]
-
-    if bundle.ai_attribution.ai_authored_commits:
-        items.append(f"AI-attributed commits: {bundle.ai_attribution.ai_authored_commits}")
-    if bundle.ai_attribution.sources:
-        items.append("Sources: " + ", ".join(bundle.ai_attribution.sources))
-    if bundle.ai_attribution.indicators:
-        items.append("Indicators: " + ", ".join(bundle.ai_attribution.indicators))
-
-    return tuple(items)
-
-
-def _format_historical_signals(bundle: AnalysisBundle) -> tuple[str, ...]:
-    historical = bundle.historical_signals
-    items: list[str] = []
-
-    criticality_parts: list[str] = []
-    if historical.repo_criticality:
-        criticality_parts.append(f"repo criticality: {historical.repo_criticality}")
-    if historical.service_criticality:
-        criticality_parts.append(f"service criticality: {historical.service_criticality}")
-    if criticality_parts:
-        items.append(" | ".join(criticality_parts))
-
-    instability_parts: list[str] = []
-    if historical.rollback_rate_30d is not None:
-        instability_parts.append(f"30d rollback rate: {historical.rollback_rate_30d:.0%}")
-    if historical.change_failure_rate_30d is not None:
-        instability_parts.append(f"30d change failure rate: {historical.change_failure_rate_30d:.0%}")
-    if historical.incident_count_30d:
-        instability_parts.append(f"30d incidents: {historical.incident_count_30d}")
-    if instability_parts:
-        items.append("Historical instability: " + " | ".join(instability_parts))
-
-    flags: list[str] = []
-    if historical.flaky_service:
-        flags.append("service marked flaky")
-    if historical.sensitive_repo:
-        flags.append("repository marked sensitive")
-    if flags:
-        items.append("Operational flags: " + " | ".join(flags))
-
-    return tuple(items)
-
-
-def _format_runtime_signals(bundle: AnalysisBundle) -> tuple[str, ...]:
-    runtime = bundle.runtime_signals
-    items: list[str] = []
-
-    surface_parts: list[str] = []
-    if runtime.environment:
-        surface_parts.append(f"deployment target: {runtime.environment}")
-    if runtime.public_exposure:
-        surface_parts.append("service is publicly exposed")
-    if runtime.blast_radius:
-        surface_parts.append(f"blast radius: {runtime.blast_radius}")
-    if surface_parts:
-        items.append(" | ".join(surface_parts))
-
-    execution_parts: list[str] = []
-    if runtime.deployment_window:
-        execution_parts.append("deployment window: " + runtime.deployment_window.replace("_", " "))
-    if runtime.rollout_strategy:
-        execution_parts.append("rollout strategy: " + runtime.rollout_strategy.replace("_", " "))
-    if execution_parts:
-        items.append("Execution plan: " + " | ".join(execution_parts))
-
-    return tuple(items)
-
-
-def _format_ownership_signals(bundle: AnalysisBundle) -> tuple[str, ...]:
-    ownership = bundle.ownership_signals
-    items: list[str] = []
-
-    identity_parts: list[str] = []
-    if "service owner missing" in ownership.elevated_signals:
-        identity_parts.append("service owner missing")
-    elif ownership.service_owner:
-        identity_parts.append("service owner: " + ownership.service_owner)
-    if ownership.owning_team:
-        identity_parts.append("owning team: " + ownership.owning_team)
-    if identity_parts:
-        items.append(" | ".join(identity_parts))
-
-    coordination_parts: list[str] = []
-    if ownership.review_coverage:
-        coordination_parts.append("review coverage: " + ownership.review_coverage.replace("_", " "))
-    if ownership.team_trust_level:
-        coordination_parts.append("team trust: " + ownership.team_trust_level)
-    if coordination_parts:
-        items.append("Coordination: " + " | ".join(coordination_parts))
-
-    if "on-call coverage missing" in ownership.elevated_signals:
-        items.append("Operational readiness: on-call coverage missing")
-
-    return tuple(items)
-
-
-def _format_trust_baseline(bundle: AnalysisBundle) -> tuple[str, ...]:
-    baseline = bundle.trust_baseline
-    items: list[str] = []
-
-    stability_parts: list[str] = []
-    if baseline.repo_stability:
-        stability_parts.append("repository stability: " + baseline.repo_stability)
-    if baseline.service_stability:
-        stability_parts.append("service stability: " + baseline.service_stability)
-    if stability_parts:
-        items.append(" | ".join(stability_parts))
-
-    execution_parts: list[str] = []
-    if baseline.team_deploy_safety:
-        execution_parts.append("team deploy safety: " + baseline.team_deploy_safety)
-    if baseline.test_coverage_level:
-        execution_parts.append("test coverage: " + baseline.test_coverage_level)
-    if baseline.rollback_readiness:
-        execution_parts.append("rollback readiness: " + baseline.rollback_readiness)
-    if baseline.dependency_reputation_risk:
-        execution_parts.append("dependency reputation risk: " + baseline.dependency_reputation_risk)
-    if execution_parts:
-        items.append("Execution baseline: " + " | ".join(execution_parts))
-
-    profile_parts: list[str] = []
-    if bundle.trust_profile_metadata.repo_id:
-        profile_parts.append(bundle.trust_profile_metadata.repo_id)
-    if bundle.trust_profile_metadata.service_id:
-        profile_parts.append(bundle.trust_profile_metadata.service_id)
-    if bundle.trust_profile_metadata.team_id:
-        profile_parts.append(bundle.trust_profile_metadata.team_id)
-    if profile_parts:
-        items.append("Trust profile: " + " | ".join(profile_parts))
-
-    return tuple(items)
+def _normalize_driver_line(line: str) -> str:
+    normalized = line.strip().lower().rstrip(".")
+    replacements = (
+        (" into a public-facing path", ""),
+        (" into a public-facing service", ""),
+        (" into a publicly exposed service", ""),
+        (" in a high-blast-radius path", ""),
+        ("this change cannot ship because ", ""),
+        ("this change needs review because ", ""),
+    )
+    for old, new in replacements:
+        normalized = normalized.replace(old, new)
+    return " ".join(normalized.split())
 
 
 def _split_reasons(reasons: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -522,14 +555,16 @@ def _split_reasons(reasons: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str
 
 
 def _is_primary_driver(reason: str) -> bool:
-    if " introduced " in reason:
+    if _SEVERITY_ISSUE_REASON_RE.match(reason):
         return True
 
     primary_markers = (
-        "infrastructure changes",
-        "new dependency vulnerability",
+        "no introduced findings detected",
+        "release still requires explicit approvals or operational checks",
+        "the change includes infrastructure updates",
+        "the change introduces vulnerable dependencies",
         "policy max_severity",
-        "policy no_go threshold",
+        "policy no_go threshold triggered",
         "policy does not allow conditional releases",
     )
     return reason.startswith(primary_markers)
@@ -558,3 +593,42 @@ def _split_recommendations(recommendations: tuple[str, ...]) -> tuple[tuple[str,
 
 def _is_required_next_step(recommendation: str) -> bool:
     return recommendation.startswith(REQUIRED_NEXT_STEP_PREFIXES)
+
+
+def _select_next_steps(
+    *,
+    bundle: AnalysisBundle,
+    decision: PolicyDecision,
+    required_next_steps: tuple[str, ...],
+    advisory_guidance: tuple[str, ...],
+) -> tuple[str, ...]:
+    if bundle.summary.introduced_findings == 0 and decision.decision == "CONDITIONAL GO":
+        ranked_prefixes = (
+            "Run staging smoke tests",
+            "Use a staged rollout",
+            "Require and verify a rollback path",
+            "Verify rollback ownership and on-call coverage",
+            "Confirm staffed on-call coverage",
+            "Schedule deployment during staffed hours",
+            "Coordinate sign-off across owning teams",
+            "Run targeted regression coverage",
+            "Increase manual validation",
+        )
+        pool = required_next_steps + advisory_guidance
+        ranked: list[str] = []
+        for prefix in ranked_prefixes:
+            for item in pool:
+                if item.startswith(prefix) and item not in ranked:
+                    ranked.append(item)
+                    break
+        if ranked:
+            return tuple(ranked[:4])
+    return required_next_steps or advisory_guidance or ("Proceed with normal review and deployment checks",)
+
+
+def _is_clean_review_case(bundle: AnalysisBundle, decision: PolicyDecision) -> bool:
+    return (
+        bundle.summary.introduced_findings == 0
+        and decision.decision == "CONDITIONAL GO"
+        and "release still requires explicit approvals or operational checks" in decision.reasons
+    )

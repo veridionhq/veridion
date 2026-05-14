@@ -16,6 +16,10 @@ class SuppressionRule:
     """Rule describing a finding that should be treated as accepted risk."""
 
     reason: str
+    owner: str | None = None
+    approved_by: str | None = None
+    ticket: str | None = None
+    created_at: str | None = None
     fingerprint: str | None = None
     dedup_key: str | None = None
     rule_id: str | None = None
@@ -80,6 +84,10 @@ class SuppressedFinding:
     title: str
     severity: str
     reason: str
+    owner: str | None = None
+    approved_by: str | None = None
+    ticket: str | None = None
+    created_at: str | None = None
     expires_on: str | None = None
 
 
@@ -90,6 +98,7 @@ class SuppressionReport:
     suppressed_findings: tuple[SuppressedFinding, ...] = ()
     suppressed_baseline_findings: int = 0
     expired_rules: int = 0
+    governance_gaps: tuple[str, ...] = ()
 
 
 def parse_suppressions_payload(payload: dict[str, object]) -> tuple[SuppressionRule, ...]:
@@ -117,6 +126,10 @@ def parse_suppressions_payload(payload: dict[str, object]) -> tuple[SuppressionR
             raise ValueError("suppression rule reason is required")
         rule = SuppressionRule(
             reason=reason,
+            owner=optional_string(raw_rule.get("owner")),
+            approved_by=optional_string(raw_rule.get("approved_by")),
+            ticket=optional_string(raw_rule.get("ticket")),
+            created_at=optional_string(raw_rule.get("created_at")),
             fingerprint=optional_string(raw_rule.get("fingerprint")),
             dedup_key=optional_string(raw_rule.get("dedup_key")),
             rule_id=optional_string(raw_rule.get("rule_id")),
@@ -164,12 +177,14 @@ def apply_suppressions(
     filtered_baseline: list[NormalizedFinding] = []
     suppressed_current: list[SuppressedFinding] = []
     suppressed_baseline_count = 0
+    governance_gaps: set[str] = set()
 
     for finding in current_findings:
         matched_rule = _match_rule(finding, active_rules)
         if matched_rule is None:
             filtered_current.append(finding)
             continue
+        governance_gaps.update(_governance_gaps_for_rule(matched_rule))
         suppressed_current.append(
             SuppressedFinding(
                 fingerprint=finding.fingerprint,
@@ -177,6 +192,10 @@ def apply_suppressions(
                 title=finding.title,
                 severity=finding.severity,
                 reason=matched_rule.reason,
+                owner=matched_rule.owner,
+                approved_by=matched_rule.approved_by,
+                ticket=matched_rule.ticket,
+                created_at=matched_rule.created_at,
                 expires_on=matched_rule.expires_on,
             )
         )
@@ -191,6 +210,7 @@ def apply_suppressions(
         suppressed_findings=tuple(suppressed_current),
         suppressed_baseline_findings=suppressed_baseline_count,
         expired_rules=expired_rules,
+        governance_gaps=tuple(sorted(governance_gaps)),
     )
 
 
@@ -199,3 +219,14 @@ def _match_rule(finding: NormalizedFinding, rules: list[SuppressionRule]) -> Sup
         if rule.matches(finding):
             return rule
     return None
+
+
+def _governance_gaps_for_rule(rule: SuppressionRule) -> tuple[str, ...]:
+    gaps: list[str] = []
+    if not rule.owner:
+        gaps.append("owner missing")
+    if not rule.approved_by:
+        gaps.append("approval metadata missing")
+    if not rule.ticket:
+        gaps.append("tracking ticket missing")
+    return tuple(gaps)
