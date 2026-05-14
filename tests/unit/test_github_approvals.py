@@ -58,3 +58,21 @@ def test_parse_approval_map_validates_schema() -> None:
         assert "approval map schema_version must be 1" in str(exc)
     else:
         raise AssertionError("expected invalid schema to fail")
+
+
+def test_build_requested_reviewers_url_validates_repository_format() -> None:
+    try:
+        github_approvals._build_requested_reviewers_url("bad/repo/path", 7)
+    except github_approvals.GitHubApprovalError as exc:
+        assert "owner/repo format" in str(exc)
+    else:
+        raise AssertionError("expected invalid repository to fail")
+
+
+def test_build_requested_reviewers_url_validates_pull_request_number() -> None:
+    try:
+        github_approvals._build_requested_reviewers_url("acme/veridion", 0)
+    except github_approvals.GitHubApprovalError as exc:
+        assert "must be positive" in str(exc)
+    else:
+        raise AssertionError("expected invalid pull request number to fail")

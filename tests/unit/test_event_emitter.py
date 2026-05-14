@@ -30,3 +30,21 @@ def test_emit_decision_event_posts_contract(monkeypatch) -> None:
         "pull_request_number": 7,
         "decision_contract": {"decision": {"verdict": "NO GO"}},
     }
+
+
+def test_validate_webhook_url_requires_https() -> None:
+    try:
+        event_emitter._validate_webhook_url("http://example.test/webhook")
+    except ValueError as exc:
+        assert "must use https" in str(exc)
+    else:
+        raise AssertionError("expected non-https webhook URL to fail")
+
+
+def test_validate_webhook_url_rejects_credentials() -> None:
+    try:
+        event_emitter._validate_webhook_url("https://user:pass@example.test/webhook")
+    except ValueError as exc:
+        assert "embedded credentials" in str(exc)
+    else:
+        raise AssertionError("expected credential-bearing webhook URL to fail")

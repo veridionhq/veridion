@@ -30,10 +30,14 @@ jobs:
 
       - name: Generate diff artifact
         shell: bash
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             git diff --no-ext-diff --unified=0 \
-              "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" > pr.diff
+              "${PR_BASE_SHA}...${PR_HEAD_SHA}" > pr.diff
           elif git rev-parse HEAD^ >/dev/null 2>&1; then
             git diff --no-ext-diff --unified=0 HEAD^ HEAD > pr.diff
           else
@@ -44,10 +48,11 @@ jobs:
         shell: bash
         env:
           PYTHONPATH: src
+          BASE_REF: ${{ github.base_ref }}
         run: |
           python3 -m veridion.action.metadata_builder \
             --event-path "${GITHUB_EVENT_PATH}" \
-            --base-ref "${{ github.base_ref }}" \
+            --base-ref "${BASE_REF}" \
             --output-path pr-metadata.json
 
       - name: Build trust profile artifact
@@ -64,19 +69,23 @@ jobs:
         shell: bash
         env:
           PYTHONPATH: src
+          BASE_REF: ${{ github.base_ref }}
         run: |
           python3 -m veridion.action.operational_context_builder \
             --event-path "${GITHUB_EVENT_PATH}" \
-            --base-ref "${{ github.base_ref }}" \
+            --base-ref "${BASE_REF}" \
             --trust-profile-path trust-profile.json \
             --output-path operational-context.json
 
       - name: Prepare baseline worktree
         shell: bash
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           mkdir -p artifacts
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git worktree add --detach ../veridion-base "${{ github.event.pull_request.base.sha }}"
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            git worktree add --detach ../veridion-base "${PR_BASE_SHA}"
           elif git rev-parse HEAD^ >/dev/null 2>&1; then
             git worktree add --detach ../veridion-base HEAD^
           else

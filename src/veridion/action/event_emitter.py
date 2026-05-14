@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib import error, request
+from urllib.parse import urlsplit, urlunsplit
 
 
 @dataclass(frozen=True)
@@ -35,14 +36,15 @@ def emit_decision_event(
 ) -> EventDeliveryResult:
     """POST the decision contract to an external webhook endpoint."""
 
+    validated_webhook_url = _validate_webhook_url(webhook_url)
     envelope = {
         "event_type": event_type,
         "repository": repository,
         "pull_request_number": pull_request_number,
         "decision_contract": decision_contract,
     }
-    _post_json(url=webhook_url, payload=envelope, token=token)
-    return EventDeliveryResult(status="delivered", event_type=event_type, destination=webhook_url)
+    _post_json(url=validated_webhook_url, payload=envelope, token=token)
+    return EventDeliveryResult(status="delivered", event_type=event_type, destination=validated_webhook_url)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -78,6 +80,8 @@ def _post_json(*, url: str, payload: dict[str, object], token: str) -> Any:
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
+    # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+    # URL is validated by _validate_webhook_url() before reaching this sink.
     req = request.Request(
         url=url,
         data=json.dumps(payload).encode("utf-8"),
@@ -93,6 +97,19 @@ def _post_json(*, url: str, payload: dict[str, object], token: str) -> Any:
         raise EventEmitterError(f"webhook POST {url} failed with HTTP {exc.code}: {payload or exc.reason}") from exc
     except error.URLError as exc:
         raise EventEmitterError(f"webhook POST {url} failed: {exc.reason}") from exc
+
+
+def _validate_webhook_url(url: str) -> str:
+    parsed = urlsplit(url.strip())
+    if parsed.scheme != "https":
+        raise ValueError("webhook-url must use https")
+    if not parsed.netloc:
+        raise ValueError("webhook-url must include a hostname")
+    if parsed.username or parsed.password:
+        raise ValueError("webhook-url must not contain embedded credentials")
+    if parsed.fragment:
+        raise ValueError("webhook-url must not include a fragment")
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path or "/", parsed.query, ""))
 
 
 def _write_github_outputs(result: EventDeliveryResult) -> None:

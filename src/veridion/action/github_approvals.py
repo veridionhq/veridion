@@ -5,10 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib import error, request
+
+_GITHUB_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 @dataclass(frozen=True)
@@ -154,7 +157,7 @@ def _request_reviewers(
     users: tuple[str, ...],
     teams: tuple[str, ...],
 ) -> dict[str, Any]:
-    url = f"https://api.github.com/repos/{repository}/pulls/{pull_request_number}/requested_reviewers"
+    url = _build_requested_reviewers_url(repository, pull_request_number)
     return _github_request(
         url=url,
         method="POST",
@@ -181,6 +184,8 @@ def _github_request(
         data = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"
 
+    # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+    # URL is constrained to the GitHub API host by _build_requested_reviewers_url().
     req = request.Request(url=url, data=data, headers=headers, method=method)
     try:
         with request.urlopen(req) as response:
@@ -192,6 +197,15 @@ def _github_request(
         raise GitHubApprovalError(f"GitHub API {method} {url} failed with HTTP {exc.code}: {detail}") from exc
     except error.URLError as exc:
         raise GitHubApprovalError(f"GitHub API {method} {url} failed: {exc.reason}") from exc
+
+
+def _build_requested_reviewers_url(repository: str, pull_request_number: int) -> str:
+    normalized_repository = repository.strip()
+    if not _GITHUB_REPOSITORY_RE.fullmatch(normalized_repository):
+        raise GitHubApprovalError("repository must be in owner/repo format")
+    if pull_request_number <= 0:
+        raise GitHubApprovalError("pull request number must be positive")
+    return f"https://api.github.com/repos/{normalized_repository}/pulls/{pull_request_number}/requested_reviewers"
 
 
 def _parse_required_approvals_json(text: str) -> tuple[str, ...]:
