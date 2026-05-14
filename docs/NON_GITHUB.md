@@ -24,6 +24,7 @@ python3 -m veridion.action.operational_context_builder \
   --runtime-path runtime.json \
   --ownership-path ownership.json \
   --trust-baseline-path trust-baseline.json \
+  --trust-memory-path trust-memory.json \
   --trust-profile-metadata-path trust-profile-metadata.json \
   --source generic-ci \
   --output-path operational-context.json

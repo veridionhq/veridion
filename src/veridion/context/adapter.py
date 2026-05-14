@@ -13,6 +13,7 @@ from veridion.context.operational_context_artifact import (
 )
 from veridion.context.ownership import OwnershipSignals, parse_ownership_signals
 from veridion.context.runtime import RuntimeSignals, derive_runtime_signals, parse_runtime_signals
+from veridion.context.trust_memory import TrustMemorySignals, parse_trust_memory_signals
 from veridion.context.trust_profile_artifact import merge_metadata_with_trust_profile
 from veridion.context.trust import (
     TrustBaseline,
@@ -32,6 +33,7 @@ class ResolvedOperationalContext:
     ownership_signals: OwnershipSignals
     trust_profile_metadata: TrustProfileMetadata
     trust_baseline: TrustBaseline
+    trust_memory_signals: TrustMemorySignals
 
 
 def resolve_operational_context(
@@ -53,6 +55,7 @@ def resolve_operational_context(
         ownership_signals=parse_ownership_signals(merged_payload),
         trust_profile_metadata=parse_trust_profile_metadata(merged_payload),
         trust_baseline=parse_trust_baseline(merged_payload),
+        trust_memory_signals=parse_trust_memory_signals(merged_payload),
     )
 
 
@@ -81,4 +84,5 @@ def resolve_operational_context_artifact(
         ownership_signals=parse_ownership_signals(merged_payload),
         trust_profile_metadata=parse_trust_profile_metadata(merged_payload),
         trust_baseline=parse_trust_baseline(merged_payload),
+        trust_memory_signals=parse_trust_memory_signals(merged_payload),
     )

@@ -261,6 +261,13 @@ Exit criteria:
 - Teams can manage policy as product surface, not just YAML files
 - Veridion can reason across historical trust state, not only per-change snapshots
 
+Status:
+
+- Started on `develop` with policy-pack metadata, a policy simulation CLI, and trust-memory signals carried through `operational-context.json`, analysis, decisioning, and `veridion-decision.json`
+- Policy simulation can now compare named packs side by side before changing live enforcement
+- Trust memory can now escalate decisions based on repeated no-go outcomes, repeated policy overrides, accepted-risk backlog, and low recent decision quality
+- Follow-up remains for policy rollout history storage, org-wide pack catalogs, UI/API management of overrides, and deeper longitudinal trust sources beyond repo-local JSON
+
 ## Execution Notes
 
 - Finish one milestone to a defensible level before widening scope.

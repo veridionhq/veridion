@@ -78,6 +78,7 @@ Those are merged into one versioned operational-context artifact:
   "runtime": {},
   "ownership": {},
   "trust_baseline": {},
+  "trust_memory": {},
   "trust_profile_metadata": {}
 }
 ```
@@ -132,6 +133,7 @@ GitHub PR
 - [Automation Guide](docs/AUTOMATION_GUIDE.md)
 - [Non-GitHub Producers](docs/NON_GITHUB.md)
 - [GitLab Adapter](docs/GITLAB.md)
+- [Policy Simulation](docs/POLICY_SIMULATION.md)
 - [Evaluation Guide](docs/EVALUATION_GUIDE.md)
 - [Evaluation Checklist](docs/EVALUATION_CHECKLIST.md)
 - [Design Partner Guide](docs/DESIGN_PARTNER.md)
@@ -172,6 +174,9 @@ The current `main` branch already includes:
 - A versioned `operational-context` contract for non-GitHub producers
 - A versioned `decision contract` for downstream workflow automation and gating
 - Live runtime release gates for freezes, incidents, alert pressure, canary health, and rollback viability
+- Accepted-risk lifecycle states, renewals, and expiry pressure in the decision contract
+- Policy pack metadata and side-by-side policy simulation
+- Trust memory signals for repeated no-go decisions, overrides, accepted-risk backlog, and low decision quality
 - GitLab merge-request metadata and note adapters
 - Starter policy packs for application teams, platform teams, and regulated services
 
@@ -241,6 +246,7 @@ Optional integrations on top of the decision contract now include:
 - GitHub approval satisfaction checks for mapped approval roles
 - outbound webhook delivery of the decision contract
 - generic CI producers that build `operational-context.json` without GitHub event payloads
+- policy simulation across multiple policy packs before changing live enforcement
 
 For contributor/local development only, an editable install also works:
 
@@ -248,9 +254,15 @@ For contributor/local development only, an editable install also works:
 python3 -m pip install -e /path/to/veridion
 ```
 
-These metadata-driven AI, historical, and trust-baseline signals are currently non-scoring by default. They affect explanation, recommendations, and approval requirements before they affect score.
+These metadata-driven AI signals are currently non-scoring by default. Historical posture, trust-baseline posture, runtime gates, and trust-memory pressure can now affect score, gating, approvals, and required actions depending on the selected policy pack.
 
-The next product step is approval satisfaction: not just which roles must approve, but whether those mapped approval roles are currently satisfied on the pull request.
+The current product direction beyond the GitHub wedge is:
+
+- approval satisfaction and enforcement
+- runtime release gating from live operational state
+- accepted-risk lifecycle governance
+- policy simulation and rollout management
+- portable adapter surfaces such as GitLab and generic CI
 
 The current policy surface can also drive metadata-based approvals, for example:
 

@@ -26,6 +26,7 @@ def test_merge_metadata_with_trust_profile_preserves_pr_fields_and_overrides_con
             "runtime": {"environment": "production", "rollout_strategy": "canary"},
             "ownership": {"owning_team": "payments-platform"},
             "trust_baseline": {"repo_stability": "fragile"},
+            "trust_memory": {"policy_override_count_30d": 2},
         },
     )
 
@@ -48,6 +49,7 @@ def test_merge_metadata_with_trust_profile_preserves_pr_fields_and_overrides_con
             "service_owner": "payments-owner",
         },
         "trust_baseline": {"repo_stability": "fragile"},
+        "trust_memory": {"policy_override_count_30d": 2},
     }
 
 

@@ -25,6 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--runtime-path", help="Path to normalized runtime context JSON")
     parser.add_argument("--ownership-path", help="Path to normalized ownership context JSON")
     parser.add_argument("--trust-baseline-path", help="Path to normalized trust-baseline JSON")
+    parser.add_argument("--trust-memory-path", help="Path to normalized trust-memory JSON")
     parser.add_argument("--trust-profile-metadata-path", help="Path to trust-profile metadata JSON")
     parser.add_argument("--source", help="Optional provenance source override")
     parser.add_argument("--generated-at", help="Optional generated-at timestamp override")
@@ -37,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
             runtime_payload=_load_optional_json(args.runtime_path, label="runtime"),
             ownership_payload=_load_optional_json(args.ownership_path, label="ownership"),
             trust_baseline_payload=_load_optional_json(args.trust_baseline_path, label="trust baseline"),
+            trust_memory_payload=_load_optional_json(args.trust_memory_path, label="trust memory"),
             trust_profile_metadata_payload=_load_optional_json(
                 args.trust_profile_metadata_path,
                 label="trust profile metadata",
@@ -96,6 +98,7 @@ def _has_section_inputs(args: argparse.Namespace) -> bool:
             args.runtime_path,
             args.ownership_path,
             args.trust_baseline_path,
+            args.trust_memory_path,
             args.trust_profile_metadata_path,
         )
     )

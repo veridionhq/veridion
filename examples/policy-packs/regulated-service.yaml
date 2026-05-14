@@ -1,3 +1,8 @@
+policy_pack_id: regulated-service
+policy_pack_name: Regulated Service Default
+policy_pack_version: 1
+policy_pack_owner: veridion
+policy_rollout_stage: general
 max_severity: critical
 allow_conditional: false
 no_go_below_score: 70

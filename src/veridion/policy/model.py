@@ -33,7 +33,8 @@ class PolicyConfig:
     require_sre_owner_for: tuple[str, ...] = ()
     # Valid values: sensitive_repo, public_exposure, dependency_reputation_risk, payments_surface, auth_surface,
     # data_surface, accepted_risk_present, accepted_risk_governance_gap, accepted_risk_pending_review,
-    # accepted_risk_renewal_pending, accepted_risk_expiring_soon, active_incident, firing_alerts.
+    # accepted_risk_renewal_pending, accepted_risk_expiring_soon, policy_override_burden,
+    # accepted_risk_burden, active_incident, firing_alerts.
     require_security_owner_for: tuple[str, ...] = ()
     require_complete_accepted_risk_metadata: bool = False
     historical_instability_score_penalty: int = 0
@@ -65,42 +66,9 @@ class PolicyConfig:
 def parse_policy_yaml(text: str) -> PolicyConfig:
     """Parse a minimal YAML policy format used by the initial product wedge."""
 
-    parsed: dict[str, object] = {}
-    current_list_key: str | None = None
+    from veridion.policy.pack import parse_policy_pack_yaml
 
-    for raw_line in text.splitlines():
-        line = raw_line.rstrip()
-        stripped = line.strip()
-
-        if not stripped or stripped.startswith("#"):
-            continue
-
-        if stripped.startswith("- "):
-            if current_list_key is None:
-                raise ValueError("list item found before a list key")
-            parsed.setdefault(current_list_key, [])
-            current_value = parsed[current_list_key]
-            if not isinstance(current_value, list):
-                raise ValueError(f"policy key '{current_list_key}' is not a list")
-            current_value.append(stripped[2:].strip())
-            continue
-
-        if ":" not in line:
-            raise ValueError(f"invalid policy line: {raw_line}")
-
-        key, raw_value = line.split(":", maxsplit=1)
-        key = key.strip()
-        value = raw_value.strip()
-
-        if not value:
-            parsed[key] = []
-            current_list_key = key
-            continue
-
-        parsed[key] = _parse_scalar(value)
-        current_list_key = None
-
-    return _policy_from_mapping(parsed)
+    return parse_policy_pack_yaml(text).config
 
 
 def _policy_from_mapping(parsed: dict[str, object]) -> PolicyConfig:

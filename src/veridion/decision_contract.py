@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from veridion.analysis import AnalysisBundle
 from veridion.policy import PolicyDecision
+from veridion.policy.pack import PolicyPackMetadata
 from veridion.report import ThreatExplanation
 
 SUPPORTED_DECISION_SCHEMA_VERSION = 1
@@ -65,6 +66,7 @@ def build_decision_contract(
     comment_identifier: str,
     comment_summary: dict[str, str],
     gate: GateEvaluation,
+    policy_pack_metadata: PolicyPackMetadata | None = None,
 ) -> dict[str, object]:
     """Build the stable decision artifact consumed by downstream automation."""
 
@@ -163,6 +165,11 @@ def build_decision_contract(
             ),
         },
         "policy": {
+            "pack_id": (policy_pack_metadata.pack_id if policy_pack_metadata else ""),
+            "pack_name": (policy_pack_metadata.display_name if policy_pack_metadata else ""),
+            "pack_version": (policy_pack_metadata.version if policy_pack_metadata else ""),
+            "pack_owner": (policy_pack_metadata.owner if policy_pack_metadata else ""),
+            "rollout_stage": (policy_pack_metadata.rollout_stage if policy_pack_metadata else ""),
             "max_severity": decision.policy.max_severity,
             "allow_conditional": decision.policy.allow_conditional,
             "no_go_below_score": decision.policy.no_go_below_score,
@@ -223,6 +230,7 @@ def _operational_signals(bundle: AnalysisBundle) -> dict[str, object]:
     runtime = bundle.runtime_signals
     ownership = bundle.ownership_signals
     trust = bundle.trust_baseline
+    trust_memory = bundle.trust_memory_signals
     change_context = bundle.change_context
 
     runtime_safety_checks: list[str] = []
@@ -278,6 +286,15 @@ def _operational_signals(bundle: AnalysisBundle) -> dict[str, object]:
             "rollback_readiness": trust.rollback_readiness,
             "dependency_reputation_risk": trust.dependency_reputation_risk,
             "elevated": list(trust.elevated_signals),
+        },
+        "trust_memory": {
+            "recent_decisions_30d": trust_memory.recent_decisions_30d,
+            "conditional_go_count_30d": trust_memory.conditional_go_count_30d,
+            "no_go_count_30d": trust_memory.no_go_count_30d,
+            "policy_override_count_30d": trust_memory.policy_override_count_30d,
+            "accepted_risk_exception_count": trust_memory.accepted_risk_exception_count,
+            "mean_rdi_score_30d": trust_memory.mean_rdi_score_30d,
+            "elevated": list(trust_memory.elevated_signals),
         },
     }
 
@@ -365,6 +382,10 @@ def _blocking_categories(bundle: AnalysisBundle, decision: PolicyDecision) -> li
         categories.append("accepted_risk_expiring_soon")
     if bundle.summary.expired_suppressions:
         categories.append("expired_accepted_risk")
+    if bundle.trust_memory_signals.policy_override_count_30d >= 2:
+        categories.append("policy_override_burden")
+    if bundle.trust_memory_signals.accepted_risk_exception_count >= 5:
+        categories.append("accepted_risk_burden")
     if any(reason.startswith("policy max_severity") for reason in decision.reasons):
         categories.append("policy_max_severity_exceeded")
     if any(reason.startswith("policy no_go threshold") for reason in decision.reasons):

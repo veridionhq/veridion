@@ -1,3 +1,8 @@
+policy_pack_id: application-team
+policy_pack_name: Application Team Default
+policy_pack_version: 1
+policy_pack_owner: veridion
+policy_rollout_stage: general
 max_severity: critical
 allow_conditional: true
 no_go_below_score: 60

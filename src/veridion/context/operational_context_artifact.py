@@ -31,6 +31,7 @@ def build_operational_context_artifact(
         "runtime": _as_object(merged_payload.get("runtime")),
         "ownership": _as_object(merged_payload.get("ownership")),
         "trust_baseline": _as_object(merged_payload.get("trust_baseline")),
+        "trust_memory": _as_object(merged_payload.get("trust_memory")),
         "trust_profile_metadata": _as_object(merged_payload.get("trust_profile_metadata")),
     }
 
@@ -42,6 +43,7 @@ def build_operational_context_artifact_from_sections(
     runtime_payload: dict[str, object] | None = None,
     ownership_payload: dict[str, object] | None = None,
     trust_baseline_payload: dict[str, object] | None = None,
+    trust_memory_payload: dict[str, object] | None = None,
     trust_profile_metadata_payload: dict[str, object] | None = None,
     source: str = "",
     generated_at: str = "",
@@ -59,6 +61,7 @@ def build_operational_context_artifact_from_sections(
         "runtime": _as_object(runtime_payload),
         "ownership": _as_object(ownership_payload),
         "trust_baseline": _as_object(trust_baseline_payload),
+        "trust_memory": _as_object(trust_memory_payload),
         "trust_profile_metadata": _as_object(trust_profile_metadata_payload),
     }
 
@@ -72,6 +75,7 @@ def extract_operational_context_sections(payload: dict[str, object]) -> dict[str
         "runtime": _as_object(payload.get("runtime")),
         "ownership": _as_object(payload.get("ownership")),
         "trust_baseline": _as_object(payload.get("trust_baseline")),
+        "trust_memory": _as_object(payload.get("trust_memory")),
         "trust_profile_metadata": _as_object(payload.get("trust_profile_metadata")),
     }
 
@@ -90,6 +94,7 @@ def validate_operational_context_payload(payload: dict[str, object]) -> None:
         "runtime",
         "ownership",
         "trust_baseline",
+        "trust_memory",
         "trust_profile_metadata",
     ):
         value = payload.get(key)

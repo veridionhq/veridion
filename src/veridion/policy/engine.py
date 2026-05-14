@@ -40,6 +40,7 @@ def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None)
     reasons.extend(_change_surface_reasons(bundle))
     reasons.extend(_ownership_context_reasons(bundle))
     reasons.extend(_trust_baseline_reasons(bundle))
+    reasons.extend(_trust_memory_reasons(bundle))
     decision = _apply_policy_decision(risk, bundle, resolved_policy, reasons)
     required_approvals = _required_approvals(bundle, resolved_policy)
     recommendations = _recommendations(bundle, risk, decision, required_approvals)
@@ -292,6 +293,16 @@ def _recommendations(
     if trust_baseline.team_deploy_safety in {"low", "degrading"}:
         recommendations.append("Use an operator-assisted release path for this low-safety team baseline")
 
+    trust_memory = bundle.trust_memory_signals
+    if trust_memory.policy_override_count_30d >= 2:
+        recommendations.append("Review recent policy overrides before expanding autonomous release scope")
+    if trust_memory.accepted_risk_exception_count >= 5:
+        recommendations.append("Reduce accepted-risk backlog before increasing release autonomy")
+    if trust_memory.no_go_count_30d >= 3:
+        recommendations.append("Review recent blocked releases to identify repeated trust failures")
+    if trust_memory.mean_rdi_score_30d is not None and trust_memory.mean_rdi_score_30d < 70:
+        recommendations.append("Treat this service as a low-trust release surface until decision quality improves")
+
     if bundle.summary.expired_suppressions:
         recommendations.append("Remove or renew expired accepted-risk suppressions before release")
 
@@ -541,6 +552,24 @@ def _trust_baseline_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
     return tuple(reasons)
 
 
+def _trust_memory_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
+    memory = bundle.trust_memory_signals
+    reasons: list[str] = []
+
+    if memory.no_go_count_30d >= 3:
+        reasons.append(f"service recorded {memory.no_go_count_30d} no-go decisions in the last 30 days")
+    if memory.conditional_go_count_30d >= 5:
+        reasons.append(f"service recorded {memory.conditional_go_count_30d} conditional-go decisions in the last 30 days")
+    if memory.policy_override_count_30d >= 2:
+        reasons.append(f"policy override count is elevated at {memory.policy_override_count_30d} in the last 30 days")
+    if memory.accepted_risk_exception_count >= 5:
+        reasons.append(f"accepted-risk exception count is elevated at {memory.accepted_risk_exception_count}")
+    if memory.mean_rdi_score_30d is not None and memory.mean_rdi_score_30d < 70:
+        reasons.append(f"mean 30d RDI score is low at {memory.mean_rdi_score_30d:.0f}")
+
+    return tuple(reasons)
+
+
 def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
     historical = bundle.historical_signals
     ownership_present = _has_ownership_metadata(bundle)
@@ -593,6 +622,8 @@ def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
         "accepted_risk_pending_review": bool(bundle.suppression_report.pending_review),
         "accepted_risk_renewal_pending": bool(bundle.suppression_report.renewal_pending),
         "accepted_risk_expiring_soon": bool(bundle.suppression_report.expiring_soon),
+        "policy_override_burden": bundle.trust_memory_signals.policy_override_count_30d >= 2,
+        "accepted_risk_burden": bundle.trust_memory_signals.accepted_risk_exception_count >= 5,
     }
     return checks.get(trigger, False) if trigger in VALID_POLICY_TRIGGERS else False
 

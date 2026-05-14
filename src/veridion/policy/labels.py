@@ -42,6 +42,8 @@ VALID_POLICY_TRIGGERS = (
     "accepted_risk_pending_review",
     "accepted_risk_renewal_pending",
     "accepted_risk_expiring_soon",
+    "policy_override_burden",
+    "accepted_risk_burden",
     "deployment_freeze_active",
     "active_incident",
     "firing_alerts",

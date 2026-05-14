@@ -43,6 +43,7 @@ def build_trust_profile(
         "runtime": _as_object(source_payload.get("runtime")),
         "ownership": _as_object(source_payload.get("ownership")),
         "trust_baseline": _as_object(source_payload.get("trust_baseline")),
+        "trust_memory": _as_object(source_payload.get("trust_memory")),
     }
 
 
@@ -53,7 +54,7 @@ def merge_trust_profile_sources(
     """Merge shared catalog posture with repo-local overrides."""
 
     merged: dict[str, object] = {}
-    for key in ("scope", "provenance", "historical", "runtime", "ownership", "trust_baseline"):
+    for key in ("scope", "provenance", "historical", "runtime", "ownership", "trust_baseline", "trust_memory"):
         base = _as_object(catalog_payload.get(key))
         override = _as_object(repo_payload.get(key))
         merged[key] = {**base, **override}

@@ -15,6 +15,7 @@ from veridion.context.operational_context_artifact import (
 )
 from veridion.context.ownership import OwnershipSignals, parse_ownership_signals
 from veridion.context.runtime import RuntimeSignals, derive_runtime_signals, parse_runtime_signals
+from veridion.context.trust_memory import TrustMemorySignals, parse_trust_memory_signals
 from veridion.context.trust import TrustBaseline, TrustProfileMetadata, parse_trust_baseline, parse_trust_profile_metadata
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "RuntimeSignals",
     "SUPPORTED_OPERATIONAL_CONTEXT_SCHEMA_VERSION",
     "TrustBaseline",
+    "TrustMemorySignals",
     "TrustProfileMetadata",
     "build_operational_context_artifact",
     "build_operational_context_artifact_from_sections",
@@ -33,6 +35,7 @@ __all__ = [
     "parse_ownership_signals",
     "parse_runtime_signals",
     "parse_trust_baseline",
+    "parse_trust_memory_signals",
     "parse_trust_profile_metadata",
     "resolve_operational_context",
     "resolve_operational_context_artifact",
