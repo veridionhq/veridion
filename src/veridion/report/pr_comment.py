@@ -109,7 +109,11 @@ def render_pr_comment_result(
         summary_style=summary_style,
     )
 
-    key_context = _format_key_context(bundle, compact=compact_render)
+    key_context = (
+        _format_release_context(bundle)
+        if _is_clean_review_case(bundle, decision)
+        else _format_key_context(bundle, compact=compact_render)
+    )
     if key_context:
         lines.extend(_section("Key Context", key_context))
     if bundle.summary.suppressed_findings or bundle.summary.expired_suppressions:
@@ -347,11 +351,6 @@ def _should_use_compact_render(
     primary_drivers: tuple[str, ...],
     contextual_risk: tuple[str, ...],
 ) -> bool:
-    clean_release_review = (
-        bundle.summary.introduced_findings == 0
-        and decision.decision == "CONDITIONAL GO"
-        and "release still requires explicit approvals or operational checks" in decision.reasons
-    )
     contextual_domains = sum(
         (
             bool(bundle.historical_signals.elevated_signals),
@@ -362,7 +361,7 @@ def _should_use_compact_render(
     )
     return all(
         (
-            clean_release_review,
+            _is_clean_review_case(bundle, decision),
             bundle.summary.suppressed_findings == 0,
             bundle.summary.expired_suppressions == 0,
             not decision.score_adjustments,
@@ -604,20 +603,32 @@ def _select_next_steps(
     advisory_guidance: tuple[str, ...],
 ) -> tuple[str, ...]:
     if bundle.summary.introduced_findings == 0 and decision.decision == "CONDITIONAL GO":
-        selected: list[str] = []
-        selected.extend(required_next_steps)
-        for item in advisory_guidance:
-            if item.startswith(
-                (
-                    "Schedule deployment during staffed hours",
-                    "Confirm staffed on-call coverage",
-                    "Use a staged rollout",
-                    "Coordinate sign-off across owning teams",
-                    "Increase manual validation",
-                    "Run targeted regression coverage",
-                )
-            ):
-                selected.append(item)
-        if selected:
-            return tuple(dict.fromkeys(selected))
+        ranked_prefixes = (
+            "Run staging smoke tests",
+            "Use a staged rollout",
+            "Require and verify a rollback path",
+            "Verify rollback ownership and on-call coverage",
+            "Confirm staffed on-call coverage",
+            "Schedule deployment during staffed hours",
+            "Coordinate sign-off across owning teams",
+            "Run targeted regression coverage",
+            "Increase manual validation",
+        )
+        pool = required_next_steps + advisory_guidance
+        ranked: list[str] = []
+        for prefix in ranked_prefixes:
+            for item in pool:
+                if item.startswith(prefix) and item not in ranked:
+                    ranked.append(item)
+                    break
+        if ranked:
+            return tuple(ranked[:4])
     return required_next_steps or advisory_guidance or ("Proceed with normal review and deployment checks",)
+
+
+def _is_clean_review_case(bundle: AnalysisBundle, decision: PolicyDecision) -> bool:
+    return (
+        bundle.summary.introduced_findings == 0
+        and decision.decision == "CONDITIONAL GO"
+        and "release still requires explicit approvals or operational checks" in decision.reasons
+    )

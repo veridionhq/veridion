@@ -134,7 +134,7 @@ def test_render_pr_comment_includes_historical_trust_signals_when_present() -> N
     comment = render_pr_comment(bundle, decision)
 
     assert "### Key Context" in comment
-    assert "- history: repo criticality: high | service criticality: critical | rollback rate: 18% | failure rate: 22% | incidents: 4 | flaky service | sensitive repo" in comment
+    assert "- historically unstable release surface: high-criticality service path, 18% rollback rate, 22% failure rate, 4 recent incidents" in comment
     assert "### Why this matters" not in comment
 
 
@@ -195,8 +195,8 @@ def test_render_pr_comment_includes_runtime_and_ownership_sections_when_present(
     comment = render_pr_comment(bundle, decision)
 
     assert "### Key Context" in comment
-    assert "- runtime: target: production | public exposure | blast radius: high | window: after hours | rollout: direct" in comment
-    assert "- ownership: team: payments-platform | review: cross team | team trust: degrading" in comment
+    assert "- runtime sensitivity: production deployment, publicly exposed, high blast radius, scheduled after hours, direct rollout" in comment
+    assert "- release controls need human verification: cross-team approval path, degrading team trust" in comment
 
 
 def test_render_pr_comment_includes_trust_baseline_section_when_present() -> None:
@@ -218,7 +218,7 @@ def test_render_pr_comment_includes_trust_baseline_section_when_present() -> Non
     comment = render_pr_comment(bundle, decision)
 
     assert "### Key Context" in comment
-    assert "- baseline: repo stability: fragile | service stability: watch | test coverage: low | rollback: partial | dependency risk: high" in comment
+    assert "- release controls need human verification: partial rollback readiness, low baseline test coverage, fragile service baseline" in comment
 
 
 def test_render_pr_comment_truncates_verbose_sections() -> None:
@@ -363,9 +363,11 @@ def test_render_pr_comment_compacts_clean_context_heavy_change() -> None:
     assert "### Why this matters" not in comment
     assert "### Recommended rollout" not in comment
     assert "### What must happen next" in comment
+    assert "- Run staging smoke tests for infrastructure-affecting changes" not in comment
     assert "- Verify rollback ownership and on-call coverage before deployment" in comment
-    assert "- Schedule deployment during staffed hours with active operational monitoring" in comment
     assert "- Use a staged rollout with a validated rollback plan for this production deployment" in comment
+    assert "- Confirm staffed on-call coverage for this after-hours deployment" in comment
+    assert "- Schedule deployment during staffed hours with active operational monitoring" not in comment
 
 
 def test_required_next_step_classification_keeps_high_consequence_surface_checks_required() -> None:
