@@ -357,6 +357,8 @@ def test_render_pr_comment_compacts_clean_context_heavy_change() -> None:
         "- no new findings were introduced, but this release still requires approvals and operational checks"
         in comment
     )
+    assert "- no introduced findings detected" not in comment
+    assert "- release still requires explicit approvals or operational checks" not in comment
     assert "### Why this matters" not in comment
     assert "### Recommended rollout" not in comment
     assert "### What must happen next" in comment

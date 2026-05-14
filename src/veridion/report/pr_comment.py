@@ -243,12 +243,23 @@ def _merge_headline_summary(
     headline = fallback[0]
     merged = [headline]
     headline_key = _normalize_driver_line(headline)
+    subsumed_driver_keys = _subsumed_driver_keys(headline_key)
     for line in rendered_primary_drivers:
-        if _normalize_driver_line(line) == headline_key:
+        normalized_line = _normalize_driver_line(line)
+        if normalized_line == headline_key or normalized_line in subsumed_driver_keys:
             continue
         if line not in merged:
             merged.append(line)
     return tuple(merged)
+
+
+def _subsumed_driver_keys(headline_key: str) -> set[str]:
+    if headline_key == "no new findings were introduced, but this release still requires approvals and operational checks":
+        return {
+            "no introduced findings detected",
+            "release still requires explicit approvals or operational checks",
+        }
+    return set()
 
 
 def _summarize_comment_sections(
