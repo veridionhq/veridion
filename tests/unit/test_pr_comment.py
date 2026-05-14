@@ -351,8 +351,9 @@ def test_render_pr_comment_compacts_clean_context_heavy_change() -> None:
     comment = render_pr_comment(bundle, decision)
 
     assert "### Key Context" in comment
-    assert "- history: repo criticality: high | service criticality: critical | rollback rate: 12%" in comment
-    assert "- runtime: target: production | public exposure | blast radius: high | window: after hours | rollout: canary" in comment
+    assert "- historically unstable release surface: high-criticality service path, 12% rollback rate, 18% failure rate, 3 recent incidents" in comment
+    assert "- runtime sensitivity: production deployment, publicly exposed, high blast radius, scheduled after hours, canary rollout" in comment
+    assert "- release controls need human verification: cross-team approval path, degrading team trust, partial rollback readiness, low baseline test coverage, fragile service baseline" in comment
     assert (
         "- no new findings were introduced, but this release still requires approvals and operational checks"
         in comment
@@ -363,6 +364,8 @@ def test_render_pr_comment_compacts_clean_context_heavy_change() -> None:
     assert "### Recommended rollout" not in comment
     assert "### What must happen next" in comment
     assert "- Verify rollback ownership and on-call coverage before deployment" in comment
+    assert "- Schedule deployment during staffed hours with active operational monitoring" in comment
+    assert "- Use a staged rollout with a validated rollback plan for this production deployment" in comment
 
 
 def test_required_next_step_classification_keeps_high_consequence_surface_checks_required() -> None:

@@ -93,7 +93,12 @@ def render_pr_comment_result(
     required_next_steps, advisory_guidance = _split_recommendations(
         _filter_recommendations(decision.recommendations, decision.required_approvals)
     )
-    next_steps = required_next_steps or advisory_guidance or ("Proceed with normal review and deployment checks",)
+    next_steps = _select_next_steps(
+        bundle=bundle,
+        decision=decision,
+        required_next_steps=required_next_steps,
+        advisory_guidance=advisory_guidance,
+    )
     summarized_primary_drivers, summarized_threats, _summarized_contextual, summary_trace = _summarize_comment_sections(
         summarizer=summarizer,
         decision=decision,
@@ -342,6 +347,11 @@ def _should_use_compact_render(
     primary_drivers: tuple[str, ...],
     contextual_risk: tuple[str, ...],
 ) -> bool:
+    clean_release_review = (
+        bundle.summary.introduced_findings == 0
+        and decision.decision == "CONDITIONAL GO"
+        and "release still requires explicit approvals or operational checks" in decision.reasons
+    )
     contextual_domains = sum(
         (
             bool(bundle.historical_signals.elevated_signals),
@@ -352,61 +362,67 @@ def _should_use_compact_render(
     )
     return all(
         (
-            bundle.summary.introduced_findings == 0,
+            clean_release_review,
             bundle.summary.suppressed_findings == 0,
             bundle.summary.expired_suppressions == 0,
             not decision.score_adjustments,
-            primary_drivers == ("no introduced findings detected",),
             contextual_domains >= 3,
-            len(contextual_risk) >= 5,
         )
     )
 
 
 def _format_release_context(bundle: AnalysisBundle) -> tuple[str, ...]:
     items: list[str] = []
+    history = bundle.historical_signals
+    runtime = bundle.runtime_signals
+    ownership = bundle.ownership_signals
+    baseline = bundle.trust_baseline
 
-    historical_parts: list[str] = []
-    if bundle.historical_signals.repo_criticality:
-        historical_parts.append(f"repo criticality: {bundle.historical_signals.repo_criticality}")
-    if bundle.historical_signals.service_criticality:
-        historical_parts.append(f"service criticality: {bundle.historical_signals.service_criticality}")
-    if bundle.historical_signals.rollback_rate_30d is not None:
-        historical_parts.append(f"rollback rate: {bundle.historical_signals.rollback_rate_30d:.0%}")
-    if historical_parts:
-        items.append("historical: " + " | ".join(historical_parts))
+    if (
+        history.repo_criticality in {"high", "critical"}
+        or history.service_criticality in {"high", "critical"}
+        or history.rollback_rate_30d is not None
+        or history.change_failure_rate_30d is not None
+        or history.incident_count_30d
+    ):
+        historical_parts: list[str] = []
+        if history.repo_criticality in {"high", "critical"} or history.service_criticality in {"high", "critical"}:
+            historical_parts.append("high-criticality service path")
+        if history.rollback_rate_30d is not None:
+            historical_parts.append(f"{history.rollback_rate_30d:.0%} rollback rate")
+        if history.change_failure_rate_30d is not None:
+            historical_parts.append(f"{history.change_failure_rate_30d:.0%} failure rate")
+        if history.incident_count_30d:
+            historical_parts.append(f"{history.incident_count_30d} recent incidents")
+        items.append("historically unstable release surface: " + ", ".join(historical_parts))
 
     runtime_parts: list[str] = []
-    if bundle.runtime_signals.environment:
-        runtime_parts.append(f"target: {bundle.runtime_signals.environment}")
-    if bundle.runtime_signals.public_exposure:
-        runtime_parts.append("public exposure")
-    if bundle.runtime_signals.blast_radius:
-        runtime_parts.append(f"blast radius: {bundle.runtime_signals.blast_radius}")
+    if runtime.environment == "production":
+        runtime_parts.append("production deployment")
+    if runtime.public_exposure:
+        runtime_parts.append("publicly exposed")
+    if runtime.blast_radius in {"high", "critical"}:
+        runtime_parts.append(f"{runtime.blast_radius} blast radius")
+    if runtime.deployment_window == "after_hours":
+        runtime_parts.append("scheduled after hours")
+    if runtime.rollout_strategy:
+        runtime_parts.append(runtime.rollout_strategy.replace("_", " ") + " rollout")
     if runtime_parts:
-        items.append("runtime: " + " | ".join(runtime_parts))
+        items.append("runtime sensitivity: " + ", ".join(runtime_parts))
 
-    ownership_parts: list[str] = []
-    if bundle.ownership_signals.service_owner:
-        ownership_parts.append(f"service owner: {bundle.ownership_signals.service_owner}")
-    if bundle.ownership_signals.owning_team:
-        ownership_parts.append(f"team: {bundle.ownership_signals.owning_team}")
-    if bundle.ownership_signals.review_coverage:
-        ownership_parts.append(
-            "review coverage: " + bundle.ownership_signals.review_coverage.replace("_", " ")
-        )
-    if ownership_parts:
-        items.append("ownership: " + " | ".join(ownership_parts))
-
-    baseline_parts: list[str] = []
-    if bundle.trust_baseline.service_stability:
-        baseline_parts.append(f"service stability: {bundle.trust_baseline.service_stability}")
-    if bundle.trust_baseline.rollback_readiness:
-        baseline_parts.append(f"rollback readiness: {bundle.trust_baseline.rollback_readiness}")
-    if bundle.trust_baseline.test_coverage_level:
-        baseline_parts.append(f"test coverage: {bundle.trust_baseline.test_coverage_level}")
-    if baseline_parts:
-        items.append("baseline: " + " | ".join(baseline_parts))
+    control_parts: list[str] = []
+    if ownership.review_coverage == "cross_team":
+        control_parts.append("cross-team approval path")
+    if ownership.team_trust_level in {"low", "degrading"}:
+        control_parts.append("degrading team trust")
+    if baseline.rollback_readiness in {"partial", "weak"}:
+        control_parts.append(f"{baseline.rollback_readiness} rollback readiness")
+    if baseline.test_coverage_level == "low":
+        control_parts.append("low baseline test coverage")
+    if baseline.service_stability in {"watch", "fragile"} or baseline.repo_stability in {"watch", "fragile"}:
+        control_parts.append("fragile service baseline")
+    if control_parts:
+        items.append("release controls need human verification: " + ", ".join(control_parts))
 
     return tuple(items)
 
@@ -578,3 +594,30 @@ def _split_recommendations(recommendations: tuple[str, ...]) -> tuple[tuple[str,
 
 def _is_required_next_step(recommendation: str) -> bool:
     return recommendation.startswith(REQUIRED_NEXT_STEP_PREFIXES)
+
+
+def _select_next_steps(
+    *,
+    bundle: AnalysisBundle,
+    decision: PolicyDecision,
+    required_next_steps: tuple[str, ...],
+    advisory_guidance: tuple[str, ...],
+) -> tuple[str, ...]:
+    if bundle.summary.introduced_findings == 0 and decision.decision == "CONDITIONAL GO":
+        selected: list[str] = []
+        selected.extend(required_next_steps)
+        for item in advisory_guidance:
+            if item.startswith(
+                (
+                    "Schedule deployment during staffed hours",
+                    "Confirm staffed on-call coverage",
+                    "Use a staged rollout",
+                    "Coordinate sign-off across owning teams",
+                    "Increase manual validation",
+                    "Run targeted regression coverage",
+                )
+            ):
+                selected.append(item)
+        if selected:
+            return tuple(dict.fromkeys(selected))
+    return required_next_steps or advisory_guidance or ("Proceed with normal review and deployment checks",)
