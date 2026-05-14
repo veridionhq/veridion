@@ -239,6 +239,12 @@ Exit criteria:
 
 - The same decision engine can run through multiple adapter surfaces with a stable contract
 
+Status:
+
+- Started on `develop` with GitLab merge-request adapters for metadata building and note upsert, alongside the existing generic CLI and webhook surfaces
+- `operational-context.json` remains the shared integration contract across GitHub, GitLab, and generic CI environments
+- Follow-up remains for deeper first-party adapters such as Jenkins, Buildkite, Argo, and deployment-controller-native hooks
+
 ## M11: Policy Productization and Trust Memory
 
 Target:

@@ -9,6 +9,10 @@ You do not need GitHub event payloads to use Veridion. Any CI/CD system can:
 3. build a versioned `operational-context.json`
 4. run the Veridion CLI directly
 
+If you are specifically targeting GitLab merge requests, use the dedicated adapter docs:
+
+- [GitLab Adapter](./GITLAB.md)
+
 ## Build operational context from normalized sections
 
 The builder now supports direct section inputs:

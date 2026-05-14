@@ -131,6 +131,7 @@ GitHub PR
 - [Quickstart](docs/QUICKSTART.md)
 - [Automation Guide](docs/AUTOMATION_GUIDE.md)
 - [Non-GitHub Producers](docs/NON_GITHUB.md)
+- [GitLab Adapter](docs/GITLAB.md)
 - [Evaluation Guide](docs/EVALUATION_GUIDE.md)
 - [Evaluation Checklist](docs/EVALUATION_CHECKLIST.md)
 - [Design Partner Guide](docs/DESIGN_PARTNER.md)
@@ -171,6 +172,7 @@ The current `main` branch already includes:
 - A versioned `operational-context` contract for non-GitHub producers
 - A versioned `decision contract` for downstream workflow automation and gating
 - Live runtime release gates for freezes, incidents, alert pressure, canary health, and rollback viability
+- GitLab merge-request metadata and note adapters
 - Starter policy packs for application teams, platform teams, and regulated services
 
 The current MVP has also been validated in an external canary repository with:
