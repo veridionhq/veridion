@@ -198,9 +198,13 @@ def _default_driver_summary(
     decision: PolicyDecision,
     introduced_threats: tuple[ThreatExplanation, ...],
 ) -> tuple[str, ...]:
-    if "no introduced findings detected" in decision.reasons:
+    no_introduced_findings = "no introduced findings detected" in decision.reasons
+    requires_release_gates = "release still requires explicit approvals or operational checks" in decision.reasons
+    if no_introduced_findings and requires_release_gates:
+        return ("no new findings were introduced, but this release still requires approvals and operational checks",)
+    if no_introduced_findings:
         return ("no introduced findings detected",)
-    if "release still requires explicit approvals or operational checks" in decision.reasons:
+    if requires_release_gates:
         return ("release still requires explicit approvals or operational checks",)
     if decision.decision == "NO GO" and introduced_threats:
         return (_headline_blocker_summary(bundle, introduced_threats),) + tuple(
