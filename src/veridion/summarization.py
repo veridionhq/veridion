@@ -278,13 +278,16 @@ def _post_json(
 ) -> dict[str, object]:
     body = json.dumps(payload).encode("utf-8")
     validated_url = _validate_https_url(url, label="summarization endpoint")
-    # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
     # URL is validated by _validate_https_url() before reaching this sink.
-    http_request = request.Request(validated_url, data=body, headers=headers, method="POST")
+    http_request = request.Request(  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+        validated_url,
+        data=body,
+        headers=headers,
+        method="POST",
+    )
     try:
-        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         # Request target is constrained to a validated HTTPS endpoint.
-        with request.urlopen(http_request, timeout=timeout_seconds) as response:
+        with request.urlopen(http_request, timeout=timeout_seconds) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             return json.loads(response.read())
     except error.HTTPError as exc:
         raise RuntimeError(_format_http_error(exc)) from exc
