@@ -37,7 +37,7 @@ Current schema:
 - `historical`
   Recent operational signals such as rollback rate, incidents, and change failure rate.
 - `runtime`
-  Deployment-time context such as target environment, rollout strategy, public exposure, and blast radius.
+  Deployment-time context such as target environment, rollout strategy, public exposure, blast radius, and live release-readiness gates.
 - `ownership`
   Ownership and coordination data such as service owner, team, review coverage, and on-call status.
 - `trust_baseline`
@@ -60,6 +60,24 @@ Producers should not:
 - embed scanner findings in this artifact
 - mix raw vendor-specific event payloads into top-level keys
 - depend on GitHub-specific naming outside `metadata`
+
+## Runtime Gate Fields
+
+The `runtime` object can now carry live release-readiness signals in addition to static posture:
+
+- `deployment_freeze_active: boolean`
+- `active_incident: boolean`
+- `active_incident_severity: low | medium | high | critical`
+- `alert_state: clear | elevated | firing`
+- `canary_health: healthy | degraded | failing`
+- `rollback_viability: ready | unverified | blocked`
+
+These fields are intended for current-state deployment controls rather than long-lived trust posture:
+
+- active freeze windows
+- incident or alert pressure at release time
+- canary rollout health
+- whether rollback is executable right now
 
 ## Current Reference Producer
 

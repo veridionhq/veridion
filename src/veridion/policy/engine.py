@@ -71,6 +71,11 @@ def _apply_policy_decision(
         reasons.append(f"policy max_severity exceeded by introduced {strongest_introduced} finding(s)")
         return "NO GO"
 
+    runtime_blocker = _runtime_blocking_reason(bundle)
+    if runtime_blocker:
+        reasons.append(runtime_blocker)
+        return "NO GO"
+
     if risk.score < policy.no_go_below_score:
         reasons.append(f"policy no_go threshold triggered at score {policy.no_go_below_score}")
         return "NO GO"
@@ -222,6 +227,30 @@ def _recommendations(
     if runtime.environment == "production" and runtime.blast_radius in {"high", "critical"}:
         recommendations.append("Use a staged rollout with a validated rollback plan for this production deployment")
 
+    if runtime.deployment_freeze_active:
+        recommendations.append("Confirm an explicit deployment-freeze exception before release")
+
+    if runtime.active_incident:
+        if _runtime_incident_blocks_release(runtime):
+            recommendations.append("Resolve the active incident before continuing this release")
+        else:
+            recommendations.append("Review active incident impact before deployment")
+
+    if runtime.alert_state == "firing":
+        recommendations.append("Resolve firing alerts or explicitly waive them before release")
+    elif runtime.alert_state == "elevated":
+        recommendations.append("Review elevated alert state before deployment")
+
+    if runtime.canary_health == "failing":
+        recommendations.append("Stop rollout and restore canary health before release")
+    elif runtime.canary_health == "degraded":
+        recommendations.append("Stabilize degraded canary health before expanding rollout")
+
+    if runtime.rollback_viability == "blocked":
+        recommendations.append("Restore rollback viability before deployment")
+    elif runtime.rollback_viability == "unverified":
+        recommendations.append("Verify the live rollback path is executable before deployment")
+
     if runtime.public_exposure:
         recommendations.append("Verify customer-facing monitoring and alerting before deployment")
 
@@ -300,6 +329,14 @@ def _has_required_operational_gates(recommendations: tuple[str, ...]) -> bool:
         "Prioritize remediation",
         "Verify rollback ownership and on-call coverage",
         "Require and verify a rollback path",
+        "Confirm an explicit deployment-freeze exception",
+        "Resolve the active incident",
+        "Resolve firing alerts",
+        "Review elevated alert state",
+        "Stop rollout and restore canary health",
+        "Stabilize degraded canary health",
+        "Restore rollback viability",
+        "Verify the live rollback path",
         "Validate migration safety",
         "Verify payment-impact",
         "Run authentication and access-control",
@@ -396,8 +433,46 @@ def _runtime_context_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
         reasons.append("deployment is planned for after-hours window")
     if runtime.rollout_strategy in {"direct", "all_at_once"}:
         reasons.append(f"rollout strategy is {runtime.rollout_strategy}")
+    if runtime.deployment_freeze_active:
+        reasons.append("deployment freeze is active")
+    if runtime.active_incident:
+        if runtime.active_incident_severity:
+            reasons.append(f"active incident severity is {runtime.active_incident_severity}")
+        else:
+            reasons.append("active incident is open")
+    if runtime.alert_state in {"elevated", "firing"}:
+        reasons.append(f"alert state is {runtime.alert_state}")
+    if runtime.canary_health in {"degraded", "failing"}:
+        reasons.append(f"canary health is {runtime.canary_health}")
+    if runtime.rollback_viability in {"unverified", "blocked"}:
+        reasons.append(f"runtime rollback viability is {runtime.rollback_viability}")
 
     return tuple(reasons)
+
+
+def _runtime_blocking_reason(bundle: AnalysisBundle) -> str:
+    runtime = bundle.runtime_signals
+
+    if runtime.deployment_freeze_active:
+        return "active deployment freeze blocks this release"
+    if runtime.active_incident and _runtime_incident_blocks_release(runtime):
+        return "active incident blocks this release"
+    if runtime.alert_state == "firing" and _runtime_alerts_block_release(runtime):
+        return "firing alerts block this release"
+    if runtime.canary_health == "failing":
+        return "failing canary health blocks this release"
+    if runtime.rollback_viability == "blocked":
+        return "runtime rollback path is currently blocked"
+
+    return ""
+
+
+def _runtime_incident_blocks_release(runtime) -> bool:
+    return runtime.active_incident_severity in {"high", "critical"} or runtime.environment == "production" or runtime.blast_radius in {"high", "critical"}
+
+
+def _runtime_alerts_block_release(runtime) -> bool:
+    return runtime.environment == "production" or runtime.blast_radius in {"high", "critical"}
 
 
 def _ownership_context_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
@@ -467,6 +542,11 @@ def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
         "public_exposure": bundle.runtime_signals.public_exposure,
         "large_blast_radius": bundle.runtime_signals.blast_radius in {"high", "critical"},
         "after_hours_deploy": bundle.runtime_signals.deployment_window == "after_hours",
+        "deployment_freeze_active": bundle.runtime_signals.deployment_freeze_active,
+        "active_incident": bundle.runtime_signals.active_incident,
+        "firing_alerts": bundle.runtime_signals.alert_state == "firing",
+        "degraded_canary_health": bundle.runtime_signals.canary_health in {"degraded", "failing"},
+        "runtime_rollback_blocked": bundle.runtime_signals.rollback_viability == "blocked",
         "low_team_trust": ownership_present and bundle.ownership_signals.team_trust_level in {"low", "degrading"},
         "unowned_service": (
             ownership_present

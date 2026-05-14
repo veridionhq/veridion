@@ -48,6 +48,8 @@ It is the operational trust layer that decides whether a change should safely mo
 
 The action can now consume a versioned operational-context artifact as its primary context contract. That artifact can be produced by GitHub workflows today, and later by other CI/CD or platform integrations without changing the decision engine.
 
+That same contract now carries both static posture and live release-readiness gates such as active freezes, incidents, canary health, and rollback viability.
+
 The comment is now only one view of the product. Veridion also emits a first-class machine contract at `veridion-decision.json` so downstream workflow steps can gate, route approvals, and audit accepted risk without scraping prose.
 
 `veridion-result.json` and `veridion-decision.json` are intentionally different:
@@ -168,6 +170,7 @@ The current `main` branch already includes:
 - Initial trust-baseline signals for repo fragility, service stability, rollback readiness, and dependency reputation
 - A versioned `operational-context` contract for non-GitHub producers
 - A versioned `decision contract` for downstream workflow automation and gating
+- Live runtime release gates for freezes, incidents, alert pressure, canary health, and rollback viability
 - Starter policy packs for application teams, platform teams, and regulated services
 
 The current MVP has also been validated in an external canary repository with:

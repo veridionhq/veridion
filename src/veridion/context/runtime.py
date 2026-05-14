@@ -16,6 +16,12 @@ class RuntimeSignals:
     public_exposure: bool = False
     blast_radius: str = ""
     rollout_strategy: str = ""
+    deployment_freeze_active: bool = False
+    active_incident: bool = False
+    active_incident_severity: str = ""
+    alert_state: str = ""
+    canary_health: str = ""
+    rollback_viability: str = ""
 
     @property
     def elevated_signals(self) -> tuple[str, ...]:
@@ -31,6 +37,19 @@ class RuntimeSignals:
             signals.append("deployment window: after hours")
         if self.rollout_strategy in {"direct", "all_at_once"}:
             signals.append(f"rollout strategy: {self.rollout_strategy}")
+        if self.deployment_freeze_active:
+            signals.append("deployment freeze is active")
+        if self.active_incident:
+            if self.active_incident_severity:
+                signals.append(f"active incident: {self.active_incident_severity}")
+            else:
+                signals.append("active incident is open")
+        if self.alert_state in {"elevated", "firing"}:
+            signals.append(f"alert state: {self.alert_state}")
+        if self.canary_health in {"degraded", "failing"}:
+            signals.append(f"canary health: {self.canary_health}")
+        if self.rollback_viability in {"unverified", "blocked"}:
+            signals.append(f"runtime rollback viability: {self.rollback_viability}")
 
         return tuple(signals)
 
@@ -47,7 +66,16 @@ def parse_runtime_signals(payload: dict[str, object]) -> RuntimeSignals:
         deployment_window=_normalize_value(raw.get("deployment_window"), {"business_hours", "after_hours"}),
         public_exposure=_as_bool(raw.get("public_exposure")),
         blast_radius=_normalize_value(raw.get("blast_radius"), {"low", "medium", "high", "critical"}),
-        rollout_strategy=_normalize_value(raw.get("rollout_strategy"), {"rolling", "canary", "blue_green", "direct", "all_at_once"}),
+        rollout_strategy=_normalize_value(
+            raw.get("rollout_strategy"),
+            {"rolling", "canary", "blue_green", "direct", "all_at_once"},
+        ),
+        deployment_freeze_active=_as_bool(raw.get("deployment_freeze_active")),
+        active_incident=_as_bool(raw.get("active_incident")),
+        active_incident_severity=_normalize_value(raw.get("active_incident_severity"), {"low", "medium", "high", "critical"}),
+        alert_state=_normalize_value(raw.get("alert_state"), {"clear", "elevated", "firing"}),
+        canary_health=_normalize_value(raw.get("canary_health"), {"healthy", "degraded", "failing"}),
+        rollback_viability=_normalize_value(raw.get("rollback_viability"), {"ready", "unverified", "blocked"}),
     )
 
 
@@ -68,6 +96,12 @@ def derive_runtime_signals(
         public_exposure=public_exposure,
         blast_radius=blast_radius,
         rollout_strategy=runtime.rollout_strategy,
+        deployment_freeze_active=runtime.deployment_freeze_active,
+        active_incident=runtime.active_incident,
+        active_incident_severity=runtime.active_incident_severity,
+        alert_state=runtime.alert_state,
+        canary_health=runtime.canary_health,
+        rollback_viability=runtime.rollback_viability,
     )
 
 

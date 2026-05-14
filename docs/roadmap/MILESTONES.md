@@ -196,6 +196,12 @@ Exit criteria:
 - Veridion can ingest live runtime readiness state and include it in gating decisions
 - Runtime blockers are reflected in the machine decision contract and recommendations
 
+Status:
+
+- Started on `develop` with first-class runtime gate fields in `operational-context.json` for deployment freezes, active incidents, alert state, canary health, and rollback viability
+- Decisioning now escalates hard runtime blockers to `NO GO` and review-only runtime degradation to `CONDITIONAL GO`
+- Follow-up remains for deeper live system integrations such as incident-management adapters, freeze-calendar ingestion, and real canary telemetry sources
+
 ## M9: Accepted-Risk Lifecycle
 
 Target:

@@ -77,6 +77,49 @@ def test_run_action_decision_contract_includes_metadata_and_categories() -> None
     assert "blocking_categories" in contract["decision"]
 
 
+def test_decision_contract_surfaces_runtime_release_gates() -> None:
+    result = run_action(
+        diff_text="diff --git a/README.md b/README.md\nindex 1111111..2222222 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n hello\n+world\n",
+        current_reports={},
+        baseline_reports={},
+        policy_text=None,
+        operational_context_text=json.dumps(
+            {
+                "schema_version": 1,
+                "metadata": {},
+                "historical": {},
+                "runtime": {
+                    "environment": "production",
+                    "deployment_freeze_active": True,
+                    "active_incident": True,
+                    "active_incident_severity": "high",
+                    "alert_state": "firing",
+                    "canary_health": "failing",
+                    "rollback_viability": "blocked",
+                },
+                "ownership": {},
+                "trust_baseline": {},
+                "trust_profile_metadata": {},
+            }
+        ),
+    )
+
+    contract = result.decision_contract
+
+    assert contract["decision"]["verdict"] == "NO GO"
+    assert "deployment_freeze_active" in contract["decision"]["blocking_categories"]
+    assert "active_incident" in contract["decision"]["blocking_categories"]
+    assert "firing_alerts" in contract["decision"]["blocking_categories"]
+    assert "runtime_rollback_blocked" in contract["decision"]["blocking_categories"]
+    assert contract["signals"]["runtime"]["deployment_freeze_active"] is True
+    assert contract["signals"]["runtime"]["active_incident"] is True
+    assert contract["signals"]["runtime"]["active_incident_severity"] == "high"
+    assert contract["signals"]["runtime"]["alert_state"] == "firing"
+    assert contract["signals"]["runtime"]["canary_health"] == "failing"
+    assert contract["signals"]["runtime"]["rollback_viability"] == "blocked"
+    assert "deployment_freeze_active" in contract["signals"]["runtime"]["active_runtime_gates"]
+
+
 def test_build_decision_contract_deduplicates_equivalent_threats() -> None:
     bundle = build_analysis_bundle(
         current_findings=[],

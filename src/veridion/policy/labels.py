@@ -39,4 +39,9 @@ VALID_POLICY_TRIGGERS = (
     "data_surface",
     "accepted_risk_present",
     "accepted_risk_governance_gap",
+    "deployment_freeze_active",
+    "active_incident",
+    "firing_alerts",
+    "degraded_canary_health",
+    "runtime_rollback_blocked",
 )

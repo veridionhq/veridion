@@ -19,6 +19,12 @@ def test_parse_runtime_signals_extracts_elevated_deployment_context() -> None:
                 "public_exposure": True,
                 "blast_radius": "high",
                 "rollout_strategy": "direct",
+                "deployment_freeze_active": True,
+                "active_incident": True,
+                "active_incident_severity": "high",
+                "alert_state": "firing",
+                "canary_health": "degraded",
+                "rollback_viability": "unverified",
             }
         }
     )
@@ -29,6 +35,12 @@ def test_parse_runtime_signals_extracts_elevated_deployment_context() -> None:
         public_exposure=True,
         blast_radius="high",
         rollout_strategy="direct",
+        deployment_freeze_active=True,
+        active_incident=True,
+        active_incident_severity="high",
+        alert_state="firing",
+        canary_health="degraded",
+        rollback_viability="unverified",
     )
     assert signals.elevated_signals == (
         "deployment target: production",
@@ -36,6 +48,11 @@ def test_parse_runtime_signals_extracts_elevated_deployment_context() -> None:
         "blast radius: high",
         "deployment window: after hours",
         "rollout strategy: direct",
+        "deployment freeze is active",
+        "active incident: high",
+        "alert state: firing",
+        "canary health: degraded",
+        "runtime rollback viability: unverified",
     )
 
 
@@ -79,6 +96,7 @@ diff --git a/platform/shared/auth/gateway.py b/platform/shared/auth/gateway.py
             public_exposure=False,
             blast_radius="medium",
             rollout_strategy="canary",
+            canary_health="healthy",
         ),
     )
 
@@ -87,6 +105,7 @@ diff --git a/platform/shared/auth/gateway.py b/platform/shared/auth/gateway.py
         public_exposure=True,
         blast_radius="medium",
         rollout_strategy="canary",
+        canary_health="healthy",
     )
 
 

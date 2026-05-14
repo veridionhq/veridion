@@ -35,6 +35,31 @@ Key fields:
 - `actions.required_next_steps`
 - `accepted_risk.governance_gaps`
 - `signals.runtime.runtime_safety_checks`
+- `signals.runtime.active_runtime_gates`
+
+## Runtime release gates
+
+Live runtime-readiness gates now flow through the same decision contract.
+
+Runtime fields Veridion understands:
+
+- `deployment_freeze_active`
+- `active_incident`
+- `active_incident_severity`
+- `alert_state`
+- `canary_health`
+- `rollback_viability`
+
+These are surfaced in:
+
+- `signals.runtime.active_runtime_gates`
+- `decision.blocking_categories`
+- `actions.required_next_steps`
+
+Examples:
+
+- active freeze or blocked rollback path can force `NO GO`
+- degraded canary health or unverified rollback path can force `CONDITIONAL GO`
 
 ## Gate a deploy
 

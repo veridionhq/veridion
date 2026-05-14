@@ -154,6 +154,12 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "public_exposure": False,
             "blast_radius": "",
             "rollout_strategy": "",
+            "deployment_freeze_active": False,
+            "active_incident": False,
+            "active_incident_severity": "",
+            "alert_state": "",
+            "canary_health": "",
+            "rollback_viability": "",
         },
         "ownership_signals": {
             "service_owner": "",

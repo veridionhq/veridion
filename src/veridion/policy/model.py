@@ -19,18 +19,20 @@ class PolicyConfig:
     conditional_go_below_score: int = 85
     require_approval_for: tuple[str, ...] = ()
     # Valid values: production_deployment, public_exposure, large_blast_radius, after_hours_deploy,
-    # repo_fragility, service_fragility, weak_rollback_readiness, shared_platform_surface,
-    # database_migration_surface.
+    # deployment_freeze_active, active_incident, firing_alerts, degraded_canary_health,
+    # runtime_rollback_blocked, repo_fragility, service_fragility, weak_rollback_readiness,
+    # shared_platform_surface, database_migration_surface.
     require_platform_owner_for: tuple[str, ...] = ()
     # Valid values: repo_criticality_high, service_criticality_high, repo_fragility, service_fragility,
     # low_test_coverage, low_team_deploy_safety, payments_surface, auth_surface, data_surface.
     require_service_owner_for: tuple[str, ...] = ()
     # Valid values: historical_instability, flaky_service, production_deployment, after_hours_deploy, missing_oncall,
-    # weak_rollback_readiness, service_fragility, low_team_deploy_safety, shared_platform_surface,
-    # database_migration_surface, data_surface.
+    # deployment_freeze_active, active_incident, firing_alerts, degraded_canary_health,
+    # runtime_rollback_blocked, weak_rollback_readiness, service_fragility, low_team_deploy_safety,
+    # shared_platform_surface, database_migration_surface, data_surface.
     require_sre_owner_for: tuple[str, ...] = ()
     # Valid values: sensitive_repo, public_exposure, dependency_reputation_risk, payments_surface, auth_surface,
-    # data_surface, accepted_risk_present, accepted_risk_governance_gap.
+    # data_surface, accepted_risk_present, accepted_risk_governance_gap, active_incident, firing_alerts.
     require_security_owner_for: tuple[str, ...] = ()
     require_complete_accepted_risk_metadata: bool = False
     historical_instability_score_penalty: int = 0

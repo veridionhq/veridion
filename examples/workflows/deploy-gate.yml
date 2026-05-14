@@ -51,3 +51,4 @@ jobs:
           echo "Gate status: ${{ steps.run-rdi.outputs.gate_status }}"
           echo "Blocking categories: ${{ steps.run-rdi.outputs.blocking_categories_json }}"
           echo "Required next steps: ${{ steps.run-rdi.outputs.required_next_steps_json }}"
+          echo "Inspect veridion-decision.json -> signals.runtime.active_runtime_gates for live runtime blockers"

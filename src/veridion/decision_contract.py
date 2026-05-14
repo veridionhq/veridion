@@ -220,7 +220,14 @@ def _operational_signals(bundle: AnalysisBundle) -> dict[str, object]:
             "public_exposure": runtime.public_exposure,
             "blast_radius": runtime.blast_radius,
             "rollout_strategy": runtime.rollout_strategy,
+            "deployment_freeze_active": runtime.deployment_freeze_active,
+            "active_incident": runtime.active_incident,
+            "active_incident_severity": runtime.active_incident_severity,
+            "alert_state": runtime.alert_state,
+            "canary_health": runtime.canary_health,
+            "rollback_viability": runtime.rollback_viability,
             "runtime_safety_checks": runtime_safety_checks,
+            "active_runtime_gates": _active_runtime_gates(runtime),
             "elevated": list(runtime.elevated_signals),
         },
         "ownership": {
@@ -302,6 +309,16 @@ def _blocking_categories(bundle: AnalysisBundle, decision: PolicyDecision) -> li
         categories.append("public_exposure")
     if bundle.runtime_signals.blast_radius in {"high", "critical"}:
         categories.append("large_blast_radius")
+    if bundle.runtime_signals.deployment_freeze_active:
+        categories.append("deployment_freeze_active")
+    if bundle.runtime_signals.active_incident:
+        categories.append("active_incident")
+    if bundle.runtime_signals.alert_state == "firing":
+        categories.append("firing_alerts")
+    if bundle.runtime_signals.canary_health in {"degraded", "failing"}:
+        categories.append("degraded_canary_health")
+    if bundle.runtime_signals.rollback_viability == "blocked":
+        categories.append("runtime_rollback_blocked")
     if bundle.change_context.has_shared_platform_changes:
         categories.append("shared_platform_surface")
     if bundle.summary.suppressed_findings:
@@ -328,6 +345,23 @@ def _severity_rank(severity: str) -> int:
         "unknown": 5,
     }
     return order.get(severity, 6)
+
+
+def _active_runtime_gates(runtime) -> list[str]:
+    gates: list[str] = []
+
+    if runtime.deployment_freeze_active:
+        gates.append("deployment_freeze_active")
+    if runtime.active_incident:
+        gates.append("active_incident")
+    if runtime.alert_state in {"elevated", "firing"}:
+        gates.append(f"alert_state:{runtime.alert_state}")
+    if runtime.canary_health in {"degraded", "failing"}:
+        gates.append(f"canary_health:{runtime.canary_health}")
+    if runtime.rollback_viability in {"unverified", "blocked"}:
+        gates.append(f"rollback_viability:{runtime.rollback_viability}")
+
+    return gates
 
 
 def _utc_now() -> str:
