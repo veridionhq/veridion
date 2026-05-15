@@ -26,19 +26,43 @@ def main(argv: list[str] | None = None) -> int:
 
     since = _parse_timestamp_bound(args.since, label="since")
     until = _parse_timestamp_bound(args.until, label="until")
+    payload = analyze_history(
+        history_paths=tuple(args.history_path),
+        repository=args.repository,
+        policy_pack_id=args.policy_pack_id,
+        since=args.since,
+        until=args.until,
+    )
+    rendered = json.dumps(payload, indent=2) + "\n"
+    if args.output_path:
+        Path(args.output_path).write_text(rendered)
+    print(rendered, end="")
+    return 0
+
+
+def analyze_history(
+    *,
+    history_paths: tuple[str, ...],
+    repository: str | None = None,
+    policy_pack_id: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+) -> dict[str, object]:
+    since_bound = _parse_timestamp_bound(since, label="since")
+    until_bound = _parse_timestamp_bound(until, label="until")
     events = tuple(
         _filter_event(
             event,
-            repository=args.repository,
-            policy_pack_id=args.policy_pack_id,
-            since=since,
-            until=until,
+            repository=repository,
+            policy_pack_id=policy_pack_id,
+            since=since_bound,
+            until=until_bound,
         )
-        for event in _load_history(tuple(args.history_path))
+        for event in _load_history(history_paths)
     )
     filtered = tuple(item for item in events if item is not None)
 
-    payload = {
+    return {
         "schema_version": 1,
         "source": "veridion.action.decision_history@1",
         "summary": _build_summary(filtered),
@@ -63,11 +87,6 @@ def main(argv: list[str] | None = None) -> int:
             "transitions": _policy_transitions(filtered),
         },
     }
-    rendered = json.dumps(payload, indent=2) + "\n"
-    if args.output_path:
-        Path(args.output_path).write_text(rendered)
-    print(rendered, end="")
-    return 0
 
 
 def _load_history(paths: tuple[str, ...]) -> tuple[dict[str, object], ...]:

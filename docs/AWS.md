@@ -160,6 +160,7 @@ python3 -m veridion.action.decision_history \
 Helper script:
 
 - [examples/aws/replay-s3-history.sh](../examples/aws/replay-s3-history.sh)
+- [examples/aws/run-history-service.sh](../examples/aws/run-history-service.sh)
 
 ## Athena query examples
 

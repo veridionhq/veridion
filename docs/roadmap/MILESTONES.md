@@ -292,7 +292,9 @@ Status:
 - Decision events can now be appended to an NDJSON history log so later systems can replay or aggregate release outcomes
 - Approval freshness now invalidates stale approvals after new commits instead of treating old approvals as current control state
 - Local decision-history analytics now summarize verdict, approval-gate, blocking-category, and policy-pack trends from the NDJSON event log
-- Follow-up remains for persistent centralized storage, org-wide replay tooling, and long-range pack rollout analytics over larger history sets
+- File-backed history replay now works across NDJSON logs, single decision-event files, and exported event-object trees such as S3-synced partitions
+- File-backed service and export surfaces now exist for org-scope analytics snapshots and HTTP consumption without introducing a database-backed backend yet
+- Follow-up remains for persistent multi-tenant service storage, warehouse-native scheduled analytics, and long-range pack rollout analytics over larger history sets
 
 ## Execution Notes
 

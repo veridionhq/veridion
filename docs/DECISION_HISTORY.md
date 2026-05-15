@@ -41,6 +41,54 @@ It also now includes rollout-oriented analytics:
 - version-adoption summaries
 - repository transitions between policy pack versions/stages
 
+## Export analytics snapshots
+
+You can materialize analytics snapshots for:
+
+- the whole history set
+- each repository
+- each policy pack
+
+Example:
+
+```bash
+python3 -m veridion.action.decision_history_export \
+  --history-path /tmp/veridion-s3-history \
+  --output-dir /tmp/veridion-history-exports
+```
+
+This writes:
+
+- `overall.json`
+- `repositories/<repo>.json`
+- `policy-packs/<pack_id>.json`
+
+These snapshots are useful for scheduled report generation and static dashboards before a long-lived backend exists.
+
+## Serve analytics over HTTP
+
+You can also expose the same file-backed history through a small local service:
+
+```bash
+python3 -m veridion.action.decision_history_service \
+  --history-path /tmp/veridion-s3-history \
+  --host 127.0.0.1 \
+  --port 8787
+```
+
+Endpoints:
+
+- `/healthz`
+- `/analytics`
+- `/repositories`
+- `/policy-rollouts`
+
+Example:
+
+```bash
+curl "http://127.0.0.1:8787/analytics?repository=acme/service-a&since=2026-05-01T00:00:00Z"
+```
+
 ## Filter for rollout analysis
 
 Example:
@@ -80,6 +128,7 @@ Example helper:
 
 - [examples/aws/replay-s3-history.sh](../examples/aws/replay-s3-history.sh)
 - [examples/aws/build-athena-queries.sh](../examples/aws/build-athena-queries.sh)
+- [examples/aws/run-history-service.sh](../examples/aws/run-history-service.sh)
 
 ## Time-bounded replay
 
