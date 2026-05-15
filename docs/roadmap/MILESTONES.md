@@ -196,6 +196,12 @@ Exit criteria:
 - Veridion can ingest live runtime readiness state and include it in gating decisions
 - Runtime blockers are reflected in the machine decision contract and recommendations
 
+Status:
+
+- Started on `develop` with first-class runtime gate fields in `operational-context.json` for deployment freezes, active incidents, alert state, canary health, and rollback viability
+- Decisioning now escalates hard runtime blockers to `NO GO` and review-only runtime degradation to `CONDITIONAL GO`
+- Follow-up remains for deeper live system integrations such as incident-management adapters, freeze-calendar ingestion, and real canary telemetry sources
+
 ## M9: Accepted-Risk Lifecycle
 
 Target:
@@ -212,6 +218,12 @@ Exit criteria:
 - Accepted risk is managed as a first-class workflow rather than repo-local ignore state
 - Exception state is queryable and auditable over time
 
+Status:
+
+- Started on `develop` with lifecycle-aware accepted-risk exceptions: explicit IDs, statuses, renewal tracking, expiry pressure, and audit events in `veridion-decision.json`
+- Proposed and rejected exceptions now remain visible instead of silently suppressing findings, while approved and renewal-pending exceptions stay machine-auditable
+- Follow-up remains for external exception systems, approver identity verification against real org systems, and long-lived audit storage beyond repo-local JSON
+
 ## M10: Multi-Surface Adapters
 
 Target:
@@ -226,6 +238,12 @@ Scope:
 Exit criteria:
 
 - The same decision engine can run through multiple adapter surfaces with a stable contract
+
+Status:
+
+- Started on `develop` with GitLab merge-request adapters for metadata building and note upsert, alongside the existing generic CLI and webhook surfaces
+- `operational-context.json` remains the shared integration contract across GitHub, GitLab, and generic CI environments
+- Follow-up remains for deeper first-party adapters such as Jenkins, Buildkite, Argo, and deployment-controller-native hooks
 
 ## M11: Policy Productization and Trust Memory
 
@@ -242,6 +260,42 @@ Exit criteria:
 
 - Teams can manage policy as product surface, not just YAML files
 - Veridion can reason across historical trust state, not only per-change snapshots
+
+Status:
+
+- Started on `develop` with policy-pack metadata, a policy simulation CLI, and trust-memory signals carried through `operational-context.json`, analysis, decisioning, and `veridion-decision.json`
+- Policy simulation can now compare named packs side by side before changing live enforcement
+- Trust memory can now escalate decisions based on repeated no-go outcomes, repeated policy overrides, accepted-risk backlog, and low recent decision quality
+- Follow-up remains for policy rollout history storage, org-wide pack catalogs, UI/API management of overrides, and deeper longitudinal trust sources beyond repo-local JSON
+
+## M12: Enforcement and Decision History
+
+Target:
+Turn release intelligence into enforceable workflow control with durable decision records.
+
+Scope:
+
+- Approval-satisfaction enforcement
+- Final-state decision event artifacts
+- Append-only decision history logs
+- Replay-friendly history contract for later rollout analysis
+
+Exit criteria:
+
+- Unsatisfied required approvals can fail automation without ad hoc shell glue
+- Veridion can emit a durable decision event capturing the final enforced release state
+- Decision history can be appended over time for replay, policy rollout comparison, and trust-memory backfill
+
+Status:
+
+- Started on `develop` with approval enforcement outputs and a post-verification decision-event artifact
+- Decision events can now be appended to an NDJSON history log so later systems can replay or aggregate release outcomes
+- Approval freshness now invalidates stale approvals after new commits instead of treating old approvals as current control state
+- Local decision-history analytics now summarize verdict, approval-gate, blocking-category, and policy-pack trends from the NDJSON event log
+- File-backed history replay now works across NDJSON logs, single decision-event files, and exported event-object trees such as S3-synced partitions
+- File-backed service and export surfaces now exist for org-scope analytics snapshots and HTTP consumption without introducing a database-backed backend yet
+- Multi-tenant config, bearer-token auth, and timestamped materialization runs now exist as the first hosted-history control-plane layer
+- Follow-up remains for persistent database-backed multi-tenant storage, warehouse-native scheduled analytics, and long-range pack rollout analytics over larger history sets
 
 ## Execution Notes
 

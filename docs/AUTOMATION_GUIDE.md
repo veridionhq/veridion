@@ -9,6 +9,13 @@ Veridion now emits a machine-facing decision contract at `veridion-decision.json
 
 If you are writing workflow logic, approval routing, or webhook consumers, prefer `veridion-decision.json`.
 
+Important product boundary:
+
+- Veridion does not require an external LLM
+- Veridion does not require S3, Athena, or any cloud provider by default
+
+Those are optional integration layers on top of the deterministic core.
+
 ## Core outputs
 
 - `gate_status`: `pass`, `review`, or `block`
@@ -19,6 +26,8 @@ If you are writing workflow logic, approval routing, or webhook consumers, prefe
 - `blocking_categories_json`
 - `accepted_risk_present`
 - `decision_contract_path`
+- `decision_event_path`
+- `sink_delivery_summary_json`
 
 ## Decision contract
 
@@ -35,6 +44,31 @@ Key fields:
 - `actions.required_next_steps`
 - `accepted_risk.governance_gaps`
 - `signals.runtime.runtime_safety_checks`
+- `signals.runtime.active_runtime_gates`
+
+## Runtime release gates
+
+Live runtime-readiness gates now flow through the same decision contract.
+
+Runtime fields Veridion understands:
+
+- `deployment_freeze_active`
+- `active_incident`
+- `active_incident_severity`
+- `alert_state`
+- `canary_health`
+- `rollback_viability`
+
+These are surfaced in:
+
+- `signals.runtime.active_runtime_gates`
+- `decision.blocking_categories`
+- `actions.required_next_steps`
+
+Examples:
+
+- active freeze or blocked rollback path can force `NO GO`
+- degraded canary health or unverified rollback path can force `CONDITIONAL GO`
 
 ## Gate a deploy
 
@@ -122,9 +156,26 @@ Outputs:
 - `approvals_satisfied`
 - `satisfied_approvals_json`
 - `unsatisfied_approvals_json`
+- `stale_approvals_json`
+- `approval_head_sha`
 - `approval_state_json`
+- `approval_gate_status`
+- `approval_gate_allowed`
 
 When `decision-contract-path` is set, the same approval satisfaction state is written back into `veridion-decision.json` under `automation`.
+
+If you want approval state to become enforceable instead of informational, set:
+
+- `verify-approvals: "true"`
+- `enforce-approval-satisfaction: "true"`
+
+That makes unsatisfied or unmapped required approvals fail the workflow without adding a separate shell gate step.
+
+Veridion also treats approvals as stale when the latest approval predates the current pull request head commit. Stale approvals are exposed separately from merely pending approvals so downstream systems can distinguish:
+
+- no approval yet
+- stale approval after new commits
+- unmapped approval role
 
 ## Consume accepted-risk governance
 
@@ -135,12 +186,25 @@ Use:
 - `accepted_risk_present`
 - `accepted_risk.governance_gaps`
 - `accepted_risk.suppressed_findings`
+- `accepted_risk.exceptions`
+- `accepted_risk.lifecycle_events`
+- `accepted_risk.pending_review`
+- `accepted_risk.renewal_pending`
+- `accepted_risk.expiring_soon`
 
 to distinguish:
 
 - a clean change
 - a change with reviewed accepted risk
 - a change with incomplete suppression governance metadata
+- a change with pending exception proposals or renewals
+
+Accepted-risk lifecycle statuses:
+
+- `proposed`: request exists but does not suppress findings yet
+- `approved`: active accepted-risk exception
+- `renewal_requested`: active exception that needs renewal review
+- `rejected`: closed exception request that no longer suppresses findings
 
 ## Harden accepted-risk governance
 
@@ -160,6 +224,61 @@ require_security_owner_for:
 
 ## Emit decision events
 
+Veridion now emits a machine-readable decision event artifact after approval verification so history captures the final enforced state, not just the raw runner verdict.
+
+Outputs:
+
+- `decision_event_path`
+- `decision_history_path`
+
+Inputs:
+
+- `decision-event-path`
+- `decision-history-path`
+
+## Deliver canonical events to sinks
+
+The canonical transport surface is now `veridion-decision-event.json`.
+
+Action inputs:
+
+- `decision-sinks`
+- `fail-on-sink-error`
+
+Output fields:
+
+- `sink_delivery_summary_json`
+- `sink_delivery_failures_json`
+
+Supported sink kinds:
+
+- `local-file:path=/abs/path/event.json`
+- `local-ndjson:path=/abs/path/history.ndjson`
+- `webhook:url=https://...`
+- `s3:bucket=...,prefix=...,region=...`
+- `postgres:dsn=...,table=...`
+- `redshift:dsn=...,table=...`
+- `bigquery:project=...,dataset=...,table=...`
+- `snowflake:account=...,user=...,password=...,database=...,schema=...,table=...`
+- `kafka:bootstrap_servers=host1:9092;host2:9092,topic=...`
+- `eventbridge:bus=...,region=...`
+- `pubsub:project=...,topic=...`
+
+Providers requiring cloud/database SDKs use lazy imports and fail clearly if the matching dependency is not installed in the execution environment.
+
+Recommended first production sink:
+
+- S3 as the central append-only event store
+
+When you use the S3 sink, you can either:
+
+- provide an explicit `key=...`
+- or provide `prefix=...` and let Veridion derive the standard partitioned event key automatically
+
+See:
+
+- [AWS Deployment Pattern](./AWS.md)
+
 You can deliver the decision contract to an external system:
 
 ```yaml
@@ -176,3 +295,4 @@ Output:
 
 - [examples/workflows/rdi.yml](../examples/workflows/rdi.yml)
 - [examples/workflows/deploy-gate.yml](../examples/workflows/deploy-gate.yml)
+- [Decision History](./DECISION_HISTORY.md)

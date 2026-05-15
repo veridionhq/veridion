@@ -25,6 +25,7 @@ def test_build_trust_profile_emits_versioned_artifact() -> None:
             "runtime": {"environment": "production"},
             "ownership": {"service_owner": "payments-owner"},
             "trust_baseline": {"repo_stability": "fragile"},
+            "trust_memory": {"policy_override_count_30d": 2},
         },
         generated_at="2026-05-08T00:00:00Z",
     )
@@ -44,6 +45,7 @@ def test_build_trust_profile_emits_versioned_artifact() -> None:
         "runtime": {"environment": "production"},
         "ownership": {"service_owner": "payments-owner"},
         "trust_baseline": {"repo_stability": "fragile"},
+        "trust_memory": {"policy_override_count_30d": 2},
     }
 
 
@@ -68,11 +70,13 @@ def test_merge_trust_profile_sources_allows_repo_overrides() -> None:
             "scope": {"team_id": "platform-trust"},
             "runtime": {"environment": "production", "rollout_strategy": "rolling"},
             "ownership": {"review_coverage": "cross_team"},
+            "trust_memory": {"recent_decisions_30d": 10},
         },
         {
             "scope": {"repo_id": "veridionhq/veridion"},
             "runtime": {"rollout_strategy": "canary"},
             "ownership": {"service_owner": "payments-owner"},
+            "trust_memory": {"policy_override_count_30d": 2},
         },
     )
 
@@ -92,6 +96,10 @@ def test_merge_trust_profile_sources_allows_repo_overrides() -> None:
             "service_owner": "payments-owner",
         },
         "trust_baseline": {},
+        "trust_memory": {
+            "recent_decisions_30d": 10,
+            "policy_override_count_30d": 2,
+        },
     }
 
 

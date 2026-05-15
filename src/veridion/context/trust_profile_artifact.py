@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 
-CONTEXT_KEYS = ("historical", "runtime", "ownership", "trust_baseline")
+CONTEXT_KEYS = ("historical", "runtime", "ownership", "trust_baseline", "trust_memory")
 SUPPORTED_TRUST_PROFILE_SCHEMA_VERSION = 1
 
 

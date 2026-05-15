@@ -48,6 +48,8 @@ It is the operational trust layer that decides whether a change should safely mo
 
 The action can now consume a versioned operational-context artifact as its primary context contract. That artifact can be produced by GitHub workflows today, and later by other CI/CD or platform integrations without changing the decision engine.
 
+That same contract now carries both static posture and live release-readiness gates such as active freezes, incidents, canary health, and rollback viability.
+
 The comment is now only one view of the product. Veridion also emits a first-class machine contract at `veridion-decision.json` so downstream workflow steps can gate, route approvals, and audit accepted risk without scraping prose.
 
 `veridion-result.json` and `veridion-decision.json` are intentionally different:
@@ -76,6 +78,7 @@ Those are merged into one versioned operational-context artifact:
   "runtime": {},
   "ownership": {},
   "trust_baseline": {},
+  "trust_memory": {},
   "trust_profile_metadata": {}
 }
 ```
@@ -128,7 +131,11 @@ GitHub PR
 - [Docs Home](https://getveridion.com/docs/)
 - [Quickstart](docs/QUICKSTART.md)
 - [Automation Guide](docs/AUTOMATION_GUIDE.md)
+- [AWS Deployment Pattern](docs/AWS.md)
+- [Decision History](docs/DECISION_HISTORY.md)
 - [Non-GitHub Producers](docs/NON_GITHUB.md)
+- [GitLab Adapter](docs/GITLAB.md)
+- [Policy Simulation](docs/POLICY_SIMULATION.md)
 - [Evaluation Guide](docs/EVALUATION_GUIDE.md)
 - [Evaluation Checklist](docs/EVALUATION_CHECKLIST.md)
 - [Design Partner Guide](docs/DESIGN_PARTNER.md)
@@ -168,6 +175,11 @@ The current `main` branch already includes:
 - Initial trust-baseline signals for repo fragility, service stability, rollback readiness, and dependency reputation
 - A versioned `operational-context` contract for non-GitHub producers
 - A versioned `decision contract` for downstream workflow automation and gating
+- Live runtime release gates for freezes, incidents, alert pressure, canary health, and rollback viability
+- Accepted-risk lifecycle states, renewals, and expiry pressure in the decision contract
+- Policy pack metadata and side-by-side policy simulation
+- Trust memory signals for repeated no-go decisions, overrides, accepted-risk backlog, and low decision quality
+- GitLab merge-request metadata and note adapters
 - Starter policy packs for application teams, platform teams, and regulated services
 
 The current MVP has also been validated in an external canary repository with:
@@ -207,7 +219,7 @@ The GitHub Action can build `operational-context.json` internally from repo-loca
 
 Bootstrap also creates `.veridion/suppressions.json` so teams have a first-class accepted-risk feedback loop instead of ad hoc ignore behavior.
 
-Each suppression can now carry governance metadata such as owner, approver, and ticket so accepted risk remains auditable instead of becoming silent ignore state.
+Each suppression can now carry lifecycle metadata such as exception ID, status, owner, approver, review timestamp, ticket, and expiry so accepted risk remains auditable instead of becoming silent ignore state.
 
 Optional AI wording can sit on top of the deterministic decision engine. If you configure a provider, Veridion still decides deterministically and only uses the model to rewrite structured threat facts into shorter operator-facing English.
 
@@ -229,13 +241,39 @@ For downstream automation, the action now exposes:
 - `blocking_categories_json`
 - `accepted_risk_present`
 - `decision_contract_path`
+- `approval_gate_status`
+- `approval_gate_allowed`
+- `stale_approvals_json`
+- `approval_head_sha`
+- `decision_event_path`
+- `sink_delivery_summary_json`
 
 Optional integrations on top of the decision contract now include:
 
 - GitHub reviewer requests from role-based approval maps
 - GitHub approval satisfaction checks for mapped approval roles
+- approval enforcement for unsatisfied required approvals
+- durable decision-event artifacts and append-only history logs
+- local decision-history analytics by repository, policy pack, and gate outcome
+- pluggable decision-event sinks for object stores, databases, buses, and webhook collectors
 - outbound webhook delivery of the decision contract
 - generic CI producers that build `operational-context.json` without GitHub event payloads
+- policy simulation across multiple policy packs before changing live enforcement
+
+Most users do not need all of those.
+
+Practical default:
+
+- core Veridion install
+- deterministic decision engine
+- no LLM configured
+- local artifacts in CI
+
+Recommended first production control-plane path:
+
+- S3 as centralized event storage
+- local or Athena-based history analysis
+- optional AI wording only if the team wants it
 
 For contributor/local development only, an editable install also works:
 
@@ -243,9 +281,26 @@ For contributor/local development only, an editable install also works:
 python3 -m pip install -e /path/to/veridion
 ```
 
-These metadata-driven AI, historical, and trust-baseline signals are currently non-scoring by default. They affect explanation, recommendations, and approval requirements before they affect score.
+Optional integration installs:
 
-The next product step is approval satisfaction: not just which roles must approve, but whether those mapped approval roles are currently satisfied on the pull request.
+```bash
+python3 -m pip install "veridion[aws]"
+python3 -m pip install "veridion[gcp]"
+python3 -m pip install "veridion[db]"
+python3 -m pip install "veridion[events]"
+```
+
+These extras are only needed when you want the matching sink or provider. The core decision engine does not require them.
+
+These metadata-driven AI signals are currently non-scoring by default. Historical posture, trust-baseline posture, runtime gates, and trust-memory pressure can now affect score, gating, approvals, and required actions depending on the selected policy pack.
+
+The current product direction beyond the GitHub wedge is:
+
+- approval satisfaction and enforcement
+- runtime release gating from live operational state
+- accepted-risk lifecycle governance
+- policy simulation and rollout management
+- portable adapter surfaces such as GitLab and generic CI
 
 The current policy surface can also drive metadata-based approvals, for example:
 

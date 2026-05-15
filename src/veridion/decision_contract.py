@@ -6,7 +6,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from veridion.analysis import AnalysisBundle
+from veridion.normalize.common import severity_rank
 from veridion.policy import PolicyDecision
+from veridion.policy.pack import PolicyPackMetadata
+from veridion.policy.text import (
+    SEVERITY_ISSUE_REASON_RE,
+    filter_approval_echo_recommendations,
+    format_approval_label,
+)
 from veridion.report import ThreatExplanation
 
 SUPPORTED_DECISION_SCHEMA_VERSION = 1
@@ -29,7 +36,6 @@ _REQUIRED_NEXT_STEP_PREFIXES = (
     "Coordinate ",
     "Schedule ",
     "Require ",
-    "Proceed ",
 )
 
 
@@ -65,11 +71,12 @@ def build_decision_contract(
     comment_identifier: str,
     comment_summary: dict[str, str],
     gate: GateEvaluation,
+    policy_pack_metadata: PolicyPackMetadata | None = None,
 ) -> dict[str, object]:
     """Build the stable decision artifact consumed by downstream automation."""
 
     required_next_steps, advisory_guidance = _split_recommendations(
-        _filter_recommendations(decision.recommendations, decision.required_approvals)
+        filter_approval_echo_recommendations(decision.recommendations, decision.required_approvals)
     )
     blocking_reasons = tuple(reason for reason in decision.reasons if _is_blocking_reason(reason, decision.decision))
     operational_signals = _operational_signals(bundle)
@@ -96,7 +103,7 @@ def build_decision_contract(
         "actions": {
             "required_approvals": list(decision.required_approvals),
             "required_approval_labels": [_format_approval(value) for value in decision.required_approvals],
-            "required_next_steps": list(required_next_steps or advisory_guidance),
+            "required_next_steps": list(required_next_steps),
             "advisory_guidance": list(advisory_guidance),
             "all_recommendations": list(decision.recommendations),
         },
@@ -106,18 +113,44 @@ def build_decision_contract(
             "present": bool(bundle.summary.suppressed_findings),
             "suppressed_findings_count": bundle.summary.suppressed_findings,
             "expired_suppressions": bundle.summary.expired_suppressions,
+            "pending_review": bundle.suppression_report.pending_review,
+            "renewal_pending": bundle.suppression_report.renewal_pending,
+            "expiring_soon": bundle.suppression_report.expiring_soon,
             "governance_gaps": list(bundle.suppression_report.governance_gaps),
+            "lifecycle_events": list(bundle.suppression_report.lifecycle_events),
+            "exceptions": [
+                {
+                    "exception_id": item.exception_id,
+                    "status": item.status,
+                    "reason": item.reason,
+                    "owner": item.owner or "",
+                    "approved_by": item.approved_by or "",
+                    "ticket": item.ticket or "",
+                    "created_at": item.created_at or "",
+                    "reviewed_at": item.reviewed_at or "",
+                    "renewal_of": item.renewal_of or "",
+                    "expires_on": item.expires_on or "",
+                    "expired": item.expired,
+                    "expiring_soon": item.expiring_soon,
+                    "active": item.active,
+                }
+                for item in bundle.suppression_report.exceptions
+            ],
             "suppressed_findings": [
                 {
                     "fingerprint": item.fingerprint,
                     "rule_id": item.rule_id,
                     "title": item.title,
                     "severity": item.severity,
+                    "exception_id": item.exception_id or "",
+                    "status": item.status,
                     "reason": item.reason,
                     "owner": item.owner or "",
                     "approved_by": item.approved_by or "",
                     "ticket": item.ticket or "",
                     "created_at": item.created_at or "",
+                    "reviewed_at": item.reviewed_at or "",
+                    "renewal_of": item.renewal_of or "",
                     "expires_on": item.expires_on or "",
                 }
                 for item in bundle.suppression_report.suppressed_findings
@@ -128,9 +161,20 @@ def build_decision_contract(
             "comment_summary": comment_summary,
             "requires_human_review": decision.decision in {"NO GO", "CONDITIONAL GO"} or bool(decision.required_approvals),
             "requires_approvals": bool(decision.required_approvals),
-            "requires_exception_review": bool(bundle.summary.suppressed_findings),
+            "requires_exception_review": bool(
+                bundle.summary.suppressed_findings
+                or bundle.suppression_report.pending_review
+                or bundle.suppression_report.renewal_pending
+                or bundle.suppression_report.governance_gaps
+                or bundle.summary.expired_suppressions
+            ),
         },
         "policy": {
+            "pack_id": (policy_pack_metadata.pack_id if policy_pack_metadata else ""),
+            "pack_name": (policy_pack_metadata.display_name if policy_pack_metadata else ""),
+            "pack_version": (policy_pack_metadata.version if policy_pack_metadata else ""),
+            "pack_owner": (policy_pack_metadata.owner if policy_pack_metadata else ""),
+            "rollout_stage": (policy_pack_metadata.rollout_stage if policy_pack_metadata else ""),
             "max_severity": decision.policy.max_severity,
             "allow_conditional": decision.policy.allow_conditional,
             "no_go_below_score": decision.policy.no_go_below_score,
@@ -145,14 +189,6 @@ def _gate_status(decision: str) -> str:
     if decision == "CONDITIONAL GO":
         return "review"
     return "pass"
-
-
-def _filter_recommendations(
-    recommendations: tuple[str, ...],
-    required_approvals: tuple[str, ...],
-) -> tuple[str, ...]:
-    blocked = {f"Require approval from the {_format_approval(value)}" for value in required_approvals}
-    return tuple(item for item in recommendations if item not in blocked)
 
 
 def _split_recommendations(recommendations: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -171,6 +207,8 @@ def _split_recommendations(recommendations: tuple[str, ...]) -> tuple[tuple[str,
 def _is_blocking_reason(reason: str, decision: str) -> bool:
     if decision == "GO":
         return False
+    if SEVERITY_ISSUE_REASON_RE.match(reason):
+        return True
     return reason.startswith(
         (
             "policy ",
@@ -179,11 +217,11 @@ def _is_blocking_reason(reason: str, decision: str) -> bool:
             "accepted risk is present in the current change",
             "accepted risk governance metadata is incomplete",
         )
-    ) or " new " in reason
+    )
 
 
 def _format_approval(value: str) -> str:
-    return value.replace("_", " ")
+    return format_approval_label(value)
 
 
 def _operational_signals(bundle: AnalysisBundle) -> dict[str, object]:
@@ -191,6 +229,7 @@ def _operational_signals(bundle: AnalysisBundle) -> dict[str, object]:
     runtime = bundle.runtime_signals
     ownership = bundle.ownership_signals
     trust = bundle.trust_baseline
+    trust_memory = bundle.trust_memory_signals
     change_context = bundle.change_context
 
     runtime_safety_checks: list[str] = []
@@ -220,7 +259,14 @@ def _operational_signals(bundle: AnalysisBundle) -> dict[str, object]:
             "public_exposure": runtime.public_exposure,
             "blast_radius": runtime.blast_radius,
             "rollout_strategy": runtime.rollout_strategy,
+            "deployment_freeze_active": runtime.deployment_freeze_active,
+            "active_incident": runtime.active_incident,
+            "active_incident_severity": runtime.active_incident_severity,
+            "alert_state": runtime.alert_state,
+            "canary_health": runtime.canary_health,
+            "rollback_viability": runtime.rollback_viability,
             "runtime_safety_checks": runtime_safety_checks,
+            "active_runtime_gates": _active_runtime_gates(runtime),
             "elevated": list(runtime.elevated_signals),
         },
         "ownership": {
@@ -239,6 +285,15 @@ def _operational_signals(bundle: AnalysisBundle) -> dict[str, object]:
             "rollback_readiness": trust.rollback_readiness,
             "dependency_reputation_risk": trust.dependency_reputation_risk,
             "elevated": list(trust.elevated_signals),
+        },
+        "trust_memory": {
+            "recent_decisions_30d": trust_memory.recent_decisions_30d,
+            "conditional_go_count_30d": trust_memory.conditional_go_count_30d,
+            "no_go_count_30d": trust_memory.no_go_count_30d,
+            "policy_override_count_30d": trust_memory.policy_override_count_30d,
+            "accepted_risk_exception_count": trust_memory.accepted_risk_exception_count,
+            "mean_rdi_score_30d": trust_memory.mean_rdi_score_30d,
+            "elevated": list(trust_memory.elevated_signals),
         },
     }
 
@@ -276,7 +331,7 @@ def _normalize_threats(threats: tuple[ThreatExplanation, ...]) -> list[dict[str,
     return sorted(
         grouped.values(),
         key=lambda item: (
-            _severity_rank(str(item["severity"])),
+            severity_rank(str(item["severity"])),
             str(item["threat_type"]),
             str(item["location"] or ""),
             str(item["summary"]),
@@ -302,14 +357,34 @@ def _blocking_categories(bundle: AnalysisBundle, decision: PolicyDecision) -> li
         categories.append("public_exposure")
     if bundle.runtime_signals.blast_radius in {"high", "critical"}:
         categories.append("large_blast_radius")
+    if bundle.runtime_signals.deployment_freeze_active:
+        categories.append("deployment_freeze_active")
+    if bundle.runtime_signals.active_incident:
+        categories.append("active_incident")
+    if bundle.runtime_signals.alert_state == "firing":
+        categories.append("firing_alerts")
+    if bundle.runtime_signals.canary_health in {"degraded", "failing"}:
+        categories.append("degraded_canary_health")
+    if bundle.runtime_signals.rollback_viability == "blocked":
+        categories.append("runtime_rollback_blocked")
     if bundle.change_context.has_shared_platform_changes:
         categories.append("shared_platform_surface")
     if bundle.summary.suppressed_findings:
         categories.append("accepted_risk_present")
     if bundle.summary.suppression_governance_gaps:
         categories.append("accepted_risk_governance_gap")
+    if bundle.suppression_report.pending_review:
+        categories.append("accepted_risk_pending_review")
+    if bundle.suppression_report.renewal_pending:
+        categories.append("accepted_risk_renewal_pending")
+    if bundle.suppression_report.expiring_soon:
+        categories.append("accepted_risk_expiring_soon")
     if bundle.summary.expired_suppressions:
         categories.append("expired_accepted_risk")
+    if bundle.trust_memory_signals.policy_override_count_30d >= 2:
+        categories.append("policy_override_burden")
+    if bundle.trust_memory_signals.accepted_risk_exception_count >= 5:
+        categories.append("accepted_risk_burden")
     if any(reason.startswith("policy max_severity") for reason in decision.reasons):
         categories.append("policy_max_severity_exceeded")
     if any(reason.startswith("policy no_go threshold") for reason in decision.reasons):
@@ -318,16 +393,21 @@ def _blocking_categories(bundle: AnalysisBundle, decision: PolicyDecision) -> li
     return categories
 
 
-def _severity_rank(severity: str) -> int:
-    order = {
-        "critical": 0,
-        "high": 1,
-        "medium": 2,
-        "low": 3,
-        "info": 4,
-        "unknown": 5,
-    }
-    return order.get(severity, 6)
+def _active_runtime_gates(runtime) -> list[str]:
+    gates: list[str] = []
+
+    if runtime.deployment_freeze_active:
+        gates.append("deployment_freeze_active")
+    if runtime.active_incident:
+        gates.append("active_incident")
+    if runtime.alert_state in {"elevated", "firing"}:
+        gates.append(f"alert_state:{runtime.alert_state}")
+    if runtime.canary_health in {"degraded", "failing"}:
+        gates.append(f"canary_health:{runtime.canary_health}")
+    if runtime.rollback_viability in {"unverified", "blocked"}:
+        gates.append(f"rollback_viability:{runtime.rollback_viability}")
+
+    return gates
 
 
 def _utc_now() -> str:

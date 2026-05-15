@@ -79,6 +79,7 @@ def test_has_section_inputs_detects_non_github_section_mode() -> None:
         runtime_path = None
         ownership_path = None
         trust_baseline_path = None
+        trust_memory_path = None
         trust_profile_metadata_path = None
 
     assert _has_section_inputs(_Args()) is True

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import re
 
 from veridion.analysis import AnalysisBundle
 from veridion.policy.engine import PolicyDecision
-from veridion.policy.labels import APPROVAL_LABELS
+from veridion.policy.text import (
+    SEVERITY_ISSUE_REASON_RE,
+    filter_approval_echo_recommendations,
+    format_approval_label,
+)
 from veridion.report.threats import ThreatExplanation, explain_introduced_threats, render_threat_line
 from veridion.summarization import CommentSummarizer, SummarizationRequest, SummarizationTrace, summarize_comment_request
 
@@ -19,9 +22,7 @@ MAX_THREAT_ITEMS = 3
 MAX_CONTEXTUAL_RISK_ITEMS = 4
 MAX_REQUIRED_NEXT_STEP_ITEMS = 6
 MAX_ADVISORY_GUIDANCE_ITEMS = 4
-_SEVERITY_ISSUE_REASON_RE = re.compile(
-    r"^\d+ new (critical|high|medium|low|info|unknown)-severity (?:issues?|issue\(s\)) detected$"
-)
+CLEAN_REVIEW_HEADLINE = "no new findings were introduced, but this release still requires approvals and operational checks"
 REQUIRED_NEXT_STEP_PREFIXES = (
     "Block release",
     "Run staging smoke tests",
@@ -35,6 +36,7 @@ REQUIRED_NEXT_STEP_PREFIXES = (
     "Run authentication and access-control",
     "Validate data-handling and tenant-safety",
 )
+_CLEAN_REVIEW_HEADLINE_KEY = CLEAN_REVIEW_HEADLINE
 
 
 @dataclass(frozen=True)
@@ -43,6 +45,7 @@ class RenderedComment:
 
     markdown: str
     summary_trace: SummarizationTrace
+    introduced_threat_explanations: tuple[ThreatExplanation, ...]
 
 
 def render_pr_comment(
@@ -91,7 +94,7 @@ def render_pr_comment_result(
     compact_render = _should_use_compact_render(bundle, decision, primary_drivers, contextual_risk)
     introduced_threat_explanations = explain_introduced_threats(bundle)
     required_next_steps, advisory_guidance = _split_recommendations(
-        _filter_recommendations(decision.recommendations, decision.required_approvals)
+        filter_approval_echo_recommendations(decision.recommendations, decision.required_approvals)
     )
     next_steps = _select_next_steps(
         bundle=bundle,
@@ -158,6 +161,7 @@ def render_pr_comment_result(
     return RenderedComment(
         markdown=wrap_pr_comment("\n".join(lines).rstrip() + "\n"),
         summary_trace=summary_trace,
+        introduced_threat_explanations=introduced_threat_explanations,
     )
 
 
@@ -187,7 +191,7 @@ def _section(title: str, items: tuple[str, ...] | list[str]) -> list[str]:
 
 
 def _format_approval(value: str) -> str:
-    return APPROVAL_LABELS.get(value, value.replace("_", " "))
+    return format_approval_label(value)
 
 
 def _drivers_title(decision: str) -> str:
@@ -210,7 +214,7 @@ def _default_driver_summary(
     no_introduced_findings = "no introduced findings detected" in decision.reasons
     requires_release_gates = "release still requires explicit approvals or operational checks" in decision.reasons
     if no_introduced_findings and requires_release_gates:
-        return ("no new findings were introduced, but this release still requires approvals and operational checks",)
+        return (CLEAN_REVIEW_HEADLINE,)
     if no_introduced_findings:
         return ("no introduced findings detected",)
     if requires_release_gates:
@@ -263,7 +267,7 @@ def _merge_headline_summary(
 
 
 def _subsumed_driver_keys(headline_key: str) -> set[str]:
-    if headline_key == "no new findings were introduced, but this release still requires approvals and operational checks":
+    if headline_key == _CLEAN_REVIEW_HEADLINE_KEY:
         return {
             "no introduced findings detected",
             "release still requires explicit approvals or operational checks",
@@ -366,6 +370,7 @@ def _should_use_compact_render(
             bundle.summary.expired_suppressions == 0,
             not decision.score_adjustments,
             contextual_domains >= 3,
+            len(contextual_risk) >= 5,
         )
     )
 
@@ -555,7 +560,7 @@ def _split_reasons(reasons: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str
 
 
 def _is_primary_driver(reason: str) -> bool:
-    if _SEVERITY_ISSUE_REASON_RE.match(reason):
+    if SEVERITY_ISSUE_REASON_RE.match(reason):
         return True
 
     primary_markers = (
@@ -568,16 +573,6 @@ def _is_primary_driver(reason: str) -> bool:
         "policy does not allow conditional releases",
     )
     return reason.startswith(primary_markers)
-
-
-def _filter_recommendations(
-    recommendations: tuple[str, ...],
-    required_approvals: tuple[str, ...],
-) -> tuple[str, ...]:
-    blocked = {f"Require approval from the {_format_approval(value)}" for value in required_approvals}
-    return tuple(item for item in recommendations if item not in blocked)
-
-
 def _split_recommendations(recommendations: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
     required: list[str] = []
     advisory: list[str] = []

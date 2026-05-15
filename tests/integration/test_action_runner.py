@@ -100,7 +100,7 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
         "platform owner",
         "security owner",
         "service owner",
-        "sre owner",
+        "SRE owner",
     ]
     assert "rollback readiness" in " ".join(decision_contract["signals"]["trust_baseline"]["elevated"])
 
@@ -222,7 +222,7 @@ def test_run_action_applies_accepted_risk_suppressions() -> None:
     )
 
     assert result.bundle.summary.suppressed_findings == 1
-    assert result.bundle.summary.suppression_governance_gaps == 3
+    assert result.bundle.summary.suppression_governance_gaps == 6
     assert result.bundle.summary.introduced_findings == 1
     assert result.bundle.summary.expired_suppressions == 0
     assert result.decision.score > initial.decision.score
@@ -235,9 +235,15 @@ def test_run_action_applies_accepted_risk_suppressions() -> None:
     assert "### Accepted Risk" in result.comment_markdown
     assert "- suppressed findings: 1" in result.comment_markdown
     assert "temporary vendor exception while upstream patch is pending (1 finding(s)) (expires 2026-12-31)" in result.comment_markdown
-    assert "governance gaps: approval metadata missing, owner missing, tracking ticket missing" in result.comment_markdown
+    assert (
+        "governance gaps: approval metadata missing, created timestamp missing, exception id missing, "
+        "owner missing, review timestamp missing, tracking ticket missing"
+    ) in result.comment_markdown
     assert result.to_dict()["decision_contract"]["accepted_risk"]["governance_gaps"] == [
         "approval metadata missing",
+        "created timestamp missing",
+        "exception id missing",
         "owner missing",
+        "review timestamp missing",
         "tracking ticket missing",
     ]

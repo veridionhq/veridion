@@ -106,3 +106,17 @@ def stable_text_hash(value: str | None) -> str | None:
     if not value:
         return None
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def severity_rank(severity: str) -> int:
+    """Return a stable sort rank for normalized severities."""
+
+    order = {
+        "critical": 0,
+        "high": 1,
+        "medium": 2,
+        "low": 3,
+        "info": 4,
+        "unknown": 5,
+    }
+    return order.get(severity, 6)

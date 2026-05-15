@@ -40,6 +40,7 @@ def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None)
     reasons.extend(_change_surface_reasons(bundle))
     reasons.extend(_ownership_context_reasons(bundle))
     reasons.extend(_trust_baseline_reasons(bundle))
+    reasons.extend(_trust_memory_reasons(bundle))
     decision = _apply_policy_decision(risk, bundle, resolved_policy, reasons)
     required_approvals = _required_approvals(bundle, resolved_policy)
     recommendations = _recommendations(bundle, risk, decision, required_approvals)
@@ -69,6 +70,11 @@ def _apply_policy_decision(
 
     if strongest_introduced is not None and SEVERITY_ORDER.index(strongest_introduced) <= max_allowed_index:
         reasons.append(f"policy max_severity exceeded by introduced {strongest_introduced} finding(s)")
+        return "NO GO"
+
+    runtime_blocker = _runtime_blocking_reason(bundle)
+    if runtime_blocker:
+        reasons.append(runtime_blocker)
         return "NO GO"
 
     if risk.score < policy.no_go_below_score:
@@ -222,6 +228,30 @@ def _recommendations(
     if runtime.environment == "production" and runtime.blast_radius in {"high", "critical"}:
         recommendations.append("Use a staged rollout with a validated rollback plan for this production deployment")
 
+    if runtime.deployment_freeze_active:
+        recommendations.append("Confirm an explicit deployment-freeze exception before release")
+
+    if runtime.active_incident:
+        if _runtime_incident_blocks_release(runtime):
+            recommendations.append("Resolve the active incident before continuing this release")
+        else:
+            recommendations.append("Review active incident impact before deployment")
+
+    if runtime.alert_state == "firing":
+        recommendations.append("Resolve firing alerts or explicitly waive them before release")
+    elif runtime.alert_state == "elevated":
+        recommendations.append("Review elevated alert state before deployment")
+
+    if runtime.canary_health == "failing":
+        recommendations.append("Stop rollout and restore canary health before release")
+    elif runtime.canary_health == "degraded":
+        recommendations.append("Stabilize degraded canary health before expanding rollout")
+
+    if runtime.rollback_viability == "blocked":
+        recommendations.append("Restore rollback viability before deployment")
+    elif runtime.rollback_viability == "unverified":
+        recommendations.append("Verify the live rollback path is executable before deployment")
+
     if runtime.public_exposure:
         recommendations.append("Verify customer-facing monitoring and alerting before deployment")
 
@@ -263,11 +293,30 @@ def _recommendations(
     if trust_baseline.team_deploy_safety in {"low", "degrading"}:
         recommendations.append("Use an operator-assisted release path for this low-safety team baseline")
 
+    trust_memory = bundle.trust_memory_signals
+    if trust_memory.policy_override_count_30d >= 2:
+        recommendations.append("Review recent policy overrides before expanding autonomous release scope")
+    if trust_memory.accepted_risk_exception_count >= 5:
+        recommendations.append("Reduce accepted-risk backlog before increasing release autonomy")
+    if trust_memory.no_go_count_30d >= 3:
+        recommendations.append("Review recent blocked releases to identify repeated trust failures")
+    if trust_memory.mean_rdi_score_30d is not None and trust_memory.mean_rdi_score_30d < 70:
+        recommendations.append("Treat this service as a low-trust release surface until decision quality improves")
+
     if bundle.summary.expired_suppressions:
         recommendations.append("Remove or renew expired accepted-risk suppressions before release")
 
     if bundle.summary.suppression_governance_gaps:
         recommendations.append("Fill suppression owner, approval, and ticket metadata before release")
+
+    if bundle.suppression_report.pending_review:
+        recommendations.append("Review pending accepted-risk proposals before release")
+
+    if bundle.suppression_report.renewal_pending:
+        recommendations.append("Approve or reject accepted-risk renewal requests before release")
+
+    if bundle.suppression_report.expiring_soon:
+        recommendations.append("Renew or close accepted-risk exceptions expiring soon")
 
     if not recommendations:
         recommendations.append("Proceed with normal review and deployment checks")
@@ -300,11 +349,22 @@ def _has_required_operational_gates(recommendations: tuple[str, ...]) -> bool:
         "Prioritize remediation",
         "Verify rollback ownership and on-call coverage",
         "Require and verify a rollback path",
+        "Confirm an explicit deployment-freeze exception",
+        "Resolve the active incident",
+        "Resolve firing alerts",
+        "Review elevated alert state",
+        "Stop rollout and restore canary health",
+        "Stabilize degraded canary health",
+        "Restore rollback viability",
+        "Verify the live rollback path",
         "Validate migration safety",
         "Verify payment-impact",
         "Run authentication and access-control",
         "Validate data-handling and tenant-safety",
         "Define a service owner",
+        "Review pending accepted-risk proposals",
+        "Approve or reject accepted-risk renewal requests",
+        "Renew or close accepted-risk exceptions expiring soon",
     )
     return any(item.startswith(required_gate_prefixes) for item in recommendations)
 
@@ -348,6 +408,12 @@ def _accepted_risk_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
         reasons.append(f"{bundle.summary.suppressed_findings} finding(s) are suppressed as accepted risk")
     if bundle.summary.expired_suppressions:
         reasons.append(f"{bundle.summary.expired_suppressions} accepted-risk suppression rule(s) are expired")
+    if bundle.suppression_report.pending_review:
+        reasons.append(f"{bundle.suppression_report.pending_review} accepted-risk proposal(s) are pending review")
+    if bundle.suppression_report.renewal_pending:
+        reasons.append(f"{bundle.suppression_report.renewal_pending} accepted-risk renewal request(s) are pending review")
+    if bundle.suppression_report.expiring_soon:
+        reasons.append(f"{bundle.suppression_report.expiring_soon} accepted-risk exception(s) expire soon")
 
     return tuple(reasons)
 
@@ -396,8 +462,46 @@ def _runtime_context_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
         reasons.append("deployment is planned for after-hours window")
     if runtime.rollout_strategy in {"direct", "all_at_once"}:
         reasons.append(f"rollout strategy is {runtime.rollout_strategy}")
+    if runtime.deployment_freeze_active:
+        reasons.append("deployment freeze is active")
+    if runtime.active_incident:
+        if runtime.active_incident_severity:
+            reasons.append(f"active incident severity is {runtime.active_incident_severity}")
+        else:
+            reasons.append("active incident is open")
+    if runtime.alert_state in {"elevated", "firing"}:
+        reasons.append(f"alert state is {runtime.alert_state}")
+    if runtime.canary_health in {"degraded", "failing"}:
+        reasons.append(f"canary health is {runtime.canary_health}")
+    if runtime.rollback_viability in {"unverified", "blocked"}:
+        reasons.append(f"runtime rollback viability is {runtime.rollback_viability}")
 
     return tuple(reasons)
+
+
+def _runtime_blocking_reason(bundle: AnalysisBundle) -> str:
+    runtime = bundle.runtime_signals
+
+    if runtime.deployment_freeze_active:
+        return "active deployment freeze blocks this release"
+    if runtime.active_incident and _runtime_incident_blocks_release(runtime):
+        return "active incident blocks this release"
+    if runtime.alert_state == "firing" and _runtime_alerts_block_release(runtime):
+        return "firing alerts block this release"
+    if runtime.canary_health == "failing":
+        return "failing canary health blocks this release"
+    if runtime.rollback_viability == "blocked":
+        return "runtime rollback path is currently blocked"
+
+    return ""
+
+
+def _runtime_incident_blocks_release(runtime) -> bool:
+    return runtime.active_incident_severity in {"high", "critical"} or runtime.environment == "production" or runtime.blast_radius in {"high", "critical"}
+
+
+def _runtime_alerts_block_release(runtime) -> bool:
+    return runtime.environment == "production" or runtime.blast_radius in {"high", "critical"}
 
 
 def _ownership_context_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
@@ -448,6 +552,24 @@ def _trust_baseline_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
     return tuple(reasons)
 
 
+def _trust_memory_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
+    memory = bundle.trust_memory_signals
+    reasons: list[str] = []
+
+    if memory.no_go_count_30d >= 3:
+        reasons.append(f"service recorded {memory.no_go_count_30d} no-go decisions in the last 30 days")
+    if memory.conditional_go_count_30d >= 5:
+        reasons.append(f"service recorded {memory.conditional_go_count_30d} conditional-go decisions in the last 30 days")
+    if memory.policy_override_count_30d >= 2:
+        reasons.append(f"policy override count is elevated at {memory.policy_override_count_30d} in the last 30 days")
+    if memory.accepted_risk_exception_count >= 5:
+        reasons.append(f"accepted-risk exception count is elevated at {memory.accepted_risk_exception_count}")
+    if memory.mean_rdi_score_30d is not None and memory.mean_rdi_score_30d < 70:
+        reasons.append(f"mean 30d RDI score is low at {memory.mean_rdi_score_30d:.0f}")
+
+    return tuple(reasons)
+
+
 def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
     historical = bundle.historical_signals
     ownership_present = _has_ownership_metadata(bundle)
@@ -467,6 +589,11 @@ def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
         "public_exposure": bundle.runtime_signals.public_exposure,
         "large_blast_radius": bundle.runtime_signals.blast_radius in {"high", "critical"},
         "after_hours_deploy": bundle.runtime_signals.deployment_window == "after_hours",
+        "deployment_freeze_active": bundle.runtime_signals.deployment_freeze_active,
+        "active_incident": bundle.runtime_signals.active_incident,
+        "firing_alerts": bundle.runtime_signals.alert_state == "firing",
+        "degraded_canary_health": bundle.runtime_signals.canary_health in {"degraded", "failing"},
+        "runtime_rollback_blocked": bundle.runtime_signals.rollback_viability == "blocked",
         "low_team_trust": ownership_present and bundle.ownership_signals.team_trust_level in {"low", "degrading"},
         "unowned_service": (
             ownership_present
@@ -492,6 +619,11 @@ def _trigger_matches(trigger: str, bundle: AnalysisBundle) -> bool:
         "data_surface": bundle.change_context.touches_data_surface,
         "accepted_risk_present": bool(bundle.summary.suppressed_findings),
         "accepted_risk_governance_gap": bool(bundle.summary.suppression_governance_gaps),
+        "accepted_risk_pending_review": bool(bundle.suppression_report.pending_review),
+        "accepted_risk_renewal_pending": bool(bundle.suppression_report.renewal_pending),
+        "accepted_risk_expiring_soon": bool(bundle.suppression_report.expiring_soon),
+        "policy_override_burden": bundle.trust_memory_signals.policy_override_count_30d >= 2,
+        "accepted_risk_burden": bundle.trust_memory_signals.accepted_risk_exception_count >= 5,
     }
     return checks.get(trigger, False) if trigger in VALID_POLICY_TRIGGERS else False
 

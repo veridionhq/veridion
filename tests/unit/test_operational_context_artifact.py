@@ -29,6 +29,7 @@ def test_build_operational_context_artifact_merges_metadata_and_trust_profile() 
             "runtime": {"environment": "production", "rollout_strategy": "canary"},
             "ownership": {"owning_team": "payments-platform"},
             "trust_baseline": {"repo_stability": "fragile"},
+            "trust_memory": {"policy_override_count_30d": 2},
         },
         source="github-test",
         generated_at="2026-05-10T00:00:00Z",
@@ -48,6 +49,7 @@ def test_build_operational_context_artifact_merges_metadata_and_trust_profile() 
         "runtime": {"environment": "production", "rollout_strategy": "direct"},
         "ownership": {"owning_team": "payments-platform"},
         "trust_baseline": {"repo_stability": "fragile"},
+        "trust_memory": {"policy_override_count_30d": 2},
         "trust_profile_metadata": {
             "schema_version": 1,
             "repo_id": "veridionhq/veridion",
@@ -77,6 +79,7 @@ def test_extract_operational_context_sections_returns_plain_objects() -> None:
             "runtime": {"environment": "production"},
             "ownership": {"owning_team": "platform"},
             "trust_baseline": {"repo_stability": "fragile"},
+            "trust_memory": {"policy_override_count_30d": 2},
             "trust_profile_metadata": {"repo_id": "veridionhq/veridion"},
         }
     )
@@ -87,5 +90,6 @@ def test_extract_operational_context_sections_returns_plain_objects() -> None:
         "runtime": {"environment": "production"},
         "ownership": {"owning_team": "platform"},
         "trust_baseline": {"repo_stability": "fragile"},
+        "trust_memory": {"policy_override_count_30d": 2},
         "trust_profile_metadata": {"repo_id": "veridionhq/veridion"},
     }

@@ -29,6 +29,17 @@ For contributor/local development only:
 python3 -m pip install -e /path/to/veridion
 ```
 
+Optional integration extras:
+
+```bash
+python3 -m pip install "veridion[aws]"
+python3 -m pip install "veridion[gcp]"
+python3 -m pip install "veridion[db]"
+python3 -m pip install "veridion[events]"
+```
+
+These are optional. The default deterministic GitHub Action path does not require them.
+
 ## 2. Bootstrap the repo
 
 Run:
@@ -86,6 +97,8 @@ Example:
   "schema_version": 1,
   "suppressions": [
     {
+      "exception_id": "AR-2026-001",
+      "status": "approved",
       "rule_id": "CVE-2024-1234",
       "package_name": "urllib3",
       "package_version": "1.25.8",
@@ -94,11 +107,21 @@ Example:
       "approved_by": "security-owner",
       "ticket": "SEC-1234",
       "created_at": "2026-05-13T00:00:00Z",
+      "reviewed_at": "2026-05-13T01:00:00Z",
       "expires_on": "2026-06-30"
     }
   ]
 }
 ```
+
+Lifecycle fields:
+
+- `exception_id`
+- `status`: `proposed`, `approved`, `renewal_requested`, or `rejected`
+- `reviewed_at`
+- `renewal_of` for renewal requests
+
+Rules with `status: proposed` do not suppress findings yet. They remain visible until approved.
 
 If you want suppressions to block release when audit metadata is incomplete, set:
 
@@ -167,6 +190,13 @@ Supported providers today:
 - AWS Bedrock
 
 If no provider is configured, or if the model response is invalid, Veridion falls back to deterministic rendering automatically.
+
+Important:
+
+- users do not need their own LLM to use Veridion
+- users do not need S3 or Athena to use Veridion
+
+Those are optional integrations for teams that want centralized storage, analytics, or AI wording.
 
 ## Install Notes
 

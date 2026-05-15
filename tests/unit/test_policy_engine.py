@@ -3,7 +3,7 @@ from pathlib import Path
 from veridion.analysis import build_analysis_bundle
 from veridion.change_context import parse_unified_diff
 from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
-from veridion.context import HistoricalSignals, TrustBaseline, derive_runtime_signals
+from veridion.context import HistoricalSignals, RuntimeSignals, TrustBaseline, derive_runtime_signals
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.policy import evaluate_release, parse_policy_yaml
 from veridion.suppression import parse_suppressions_payload
@@ -248,6 +248,52 @@ require_service_owner_for:
     assert decision.decision == "CONDITIONAL GO"
     assert decision.required_approvals == ("service_owner",)
     assert "release still requires explicit approvals or operational checks" in decision.reasons
+
+
+def test_evaluate_release_blocks_on_live_runtime_release_gates() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        runtime_signals=RuntimeSignals(
+            environment="production",
+            deployment_freeze_active=True,
+            active_incident=True,
+            active_incident_severity="critical",
+            alert_state="firing",
+            rollback_viability="blocked",
+        ),
+    )
+
+    decision = evaluate_release(bundle, parse_policy_yaml(DEFAULT_POLICY_PATH.read_text()))
+
+    assert decision.decision == "NO GO"
+    assert "active deployment freeze blocks this release" in decision.reasons
+    assert "Confirm an explicit deployment-freeze exception before release" in decision.recommendations
+    assert "Resolve the active incident before continuing this release" in decision.recommendations
+    assert "Resolve firing alerts or explicitly waive them before release" in decision.recommendations
+    assert "Restore rollback viability before deployment" in decision.recommendations
+
+
+def test_evaluate_release_marks_degraded_runtime_readiness_as_conditional() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        runtime_signals=RuntimeSignals(
+            canary_health="degraded",
+            rollback_viability="unverified",
+            alert_state="elevated",
+        ),
+    )
+
+    decision = evaluate_release(bundle, parse_policy_yaml("allow_conditional: true\n"))
+
+    assert decision.decision == "CONDITIONAL GO"
+    assert "release still requires explicit approvals or operational checks" in decision.reasons
+    assert "Stabilize degraded canary health before expanding rollout" in decision.recommendations
+    assert "Verify the live rollback path is executable before deployment" in decision.recommendations
+    assert "Review elevated alert state before deployment" in decision.recommendations
 
 
 def test_evaluate_release_only_requires_policy_configured_metadata_approvals() -> None:
@@ -504,10 +550,19 @@ def test_parse_policy_yaml_accepts_accepted_risk_triggers() -> None:
 require_security_owner_for:
   - accepted_risk_present
   - accepted_risk_governance_gap
+  - accepted_risk_pending_review
+  - accepted_risk_renewal_pending
+  - accepted_risk_expiring_soon
 """
     )
 
-    assert policy.require_security_owner_for == ("accepted_risk_present", "accepted_risk_governance_gap")
+    assert policy.require_security_owner_for == (
+        "accepted_risk_present",
+        "accepted_risk_governance_gap",
+        "accepted_risk_pending_review",
+        "accepted_risk_renewal_pending",
+        "accepted_risk_expiring_soon",
+    )
 
 
 def test_evaluate_release_can_apply_policy_to_inferred_change_surfaces() -> None:

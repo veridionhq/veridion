@@ -1,0 +1,33 @@
+stages:
+  - review
+
+veridion-rdi:
+  stage: review
+  image: python:3.13
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  before_script:
+    - pip install "git+https://github.com/veridionhq/veridion.git@main"
+    - git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+  script:
+    - git diff "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME...HEAD" > mr.diff
+    - |
+      cat > gitlab-event.json <<EOF
+      {
+        "object_attributes": {
+          "title": ${CI_MERGE_REQUEST_TITLE@Q},
+          "description": ${CI_MERGE_REQUEST_DESCRIPTION@Q},
+          "labels": ${CI_MERGE_REQUEST_LABELS@Q}
+        }
+      }
+      EOF
+    - python3 -m veridion.adapters.gitlab_merge_request_metadata --event-path gitlab-event.json --output-path mr-metadata.json --base-ref "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    - python3 -m veridion.action.operational_context_builder --metadata-path mr-metadata.json --historical-path historical.json --runtime-path runtime.json --ownership-path ownership.json --trust-baseline-path trust-baseline.json --trust-profile-metadata-path trust-profile-metadata.json --source gitlab-ci --output-path operational-context.json
+    - python3 -m veridion.action --diff-path mr.diff --report trivy=artifacts/trivy.json --report semgrep=artifacts/semgrep.json --report grype=artifacts/grype.json --report syft=artifacts/syft.json --policy-path .veridion/policy.yaml --operational-context-path operational-context.json --metadata-path mr-metadata.json --comment-path veridion-pr-comment.md --json-output-path veridion-result.json --decision-contract-path veridion-decision.json
+    - python3 -m veridion.adapters.gitlab_note --gitlab-api-url "$CI_API_V4_URL" --project-id "$CI_PROJECT_ID" --merge-request-iid "$CI_MERGE_REQUEST_IID" --gitlab-token "$GITLAB_TOKEN" --comment-path veridion-pr-comment.md
+  artifacts:
+    when: always
+    paths:
+      - veridion-pr-comment.md
+      - veridion-result.json
+      - veridion-decision.json

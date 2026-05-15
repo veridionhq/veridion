@@ -154,6 +154,12 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "public_exposure": False,
             "blast_radius": "",
             "rollout_strategy": "",
+            "deployment_freeze_active": False,
+            "active_incident": False,
+            "active_incident_severity": "",
+            "alert_state": "",
+            "canary_health": "",
+            "rollback_viability": "",
         },
         "ownership_signals": {
             "service_owner": "",
@@ -181,11 +187,24 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "rollback_readiness": "",
             "dependency_reputation_risk": "",
         },
+        "trust_memory_signals": {
+            "recent_decisions_30d": 0,
+            "conditional_go_count_30d": 0,
+            "no_go_count_30d": 0,
+            "policy_override_count_30d": 0,
+            "accepted_risk_exception_count": 0,
+            "mean_rdi_score_30d": None,
+        },
         "suppression_report": {
             "suppressed_findings": [],
+            "exceptions": [],
             "suppressed_baseline_findings": 0,
             "expired_rules": 0,
+            "pending_review": 0,
+            "renewal_pending": 0,
+            "expiring_soon": 0,
             "governance_gaps": [],
+            "lifecycle_events": [],
         },
         "change_context": {"files": []},
         "baseline_comparison": {
@@ -219,6 +238,7 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "runtime_risk_signals": 0,
             "ownership_risk_signals": 0,
             "trust_baseline_risk_signals": 0,
+            "trust_memory_risk_signals": 0,
             "by_severity": {},
             "introduced_by_severity": {},
             "by_finding_type": {},
@@ -311,3 +331,21 @@ def test_build_analysis_bundle_surfaces_trust_baseline_summary() -> None:
 
     assert bundle.summary.trust_baseline_risk_signals == 6
     assert bundle.trust_baseline.elevated_signals[0] == "repository stability: fragile"
+
+
+def test_build_analysis_bundle_surfaces_trust_memory_summary() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        trust_memory_signals=__import__("veridion.context", fromlist=["TrustMemorySignals"]).TrustMemorySignals(
+            conditional_go_count_30d=6,
+            no_go_count_30d=3,
+            policy_override_count_30d=2,
+            accepted_risk_exception_count=5,
+            mean_rdi_score_30d=68,
+        ),
+    )
+
+    assert bundle.summary.trust_memory_risk_signals == 5
+    assert bundle.trust_memory_signals.elevated_signals[0] == "recent no-go decisions: 3"

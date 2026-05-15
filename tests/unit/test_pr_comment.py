@@ -5,7 +5,12 @@ from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.policy import PolicyConfig, evaluate_release
 from veridion.report import render_pr_comment, render_pr_comment_result
-from veridion.report.pr_comment import _is_primary_driver, _is_required_next_step, _merge_headline_summary
+from veridion.report.pr_comment import (
+    _is_primary_driver,
+    _is_required_next_step,
+    _merge_headline_summary,
+    _should_use_compact_render,
+)
 from veridion.report.threats import ThreatExplanation
 from veridion.summarization import SummarizationResult
 
@@ -441,6 +446,43 @@ def test_merge_headline_summary_deduplicates_equivalent_public_exposure_phrasing
     )
 
     assert merged == ("this change cannot ship because it introduces high vulnerable dependencies",)
+
+
+def test_compact_render_requires_real_contextual_depth() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        historical_signals=HistoricalSignals(
+            repo_criticality="high",
+            service_criticality="critical",
+            rollback_rate_30d=0.12,
+            change_failure_rate_30d=0.18,
+            incident_count_30d=3,
+        ),
+        runtime_signals=RuntimeSignals(
+            environment="production",
+            public_exposure=True,
+            blast_radius="high",
+        ),
+        ownership_signals=OwnershipSignals(
+            review_coverage="cross_team",
+            service_owner_provided=True,
+            oncall_defined_provided=True,
+        ),
+        trust_baseline=TrustBaseline(
+            rollback_readiness="partial",
+            test_coverage_level="low",
+        ),
+    )
+    decision = evaluate_release(bundle)
+
+    assert _should_use_compact_render(
+        bundle,
+        decision,
+        primary_drivers=("release still requires explicit approvals or operational checks",),
+        contextual_risk=("blast radius is high",),
+    ) is False
 
 
 def _bundle_with_iac_and_dependency_risk():

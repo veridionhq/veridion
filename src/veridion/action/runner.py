@@ -16,8 +16,8 @@ from veridion.context import (
 )
 from veridion.decision_contract import build_decision_contract, evaluate_gate
 from veridion.normalize import NormalizedFinding, normalize_report
-from veridion.policy import PolicyDecision, PolicyConfig, evaluate_release, parse_policy_yaml
-from veridion.report import explain_introduced_threats, render_pr_comment_result
+from veridion.policy import PolicyDecision, PolicyConfig, evaluate_release, parse_policy_pack_yaml
+from veridion.report import ThreatExplanation, render_pr_comment_result
 from veridion.summarization import build_comment_summarizer
 from veridion.suppression import parse_suppressions_payload
 from veridion.change_context import parse_unified_diff
@@ -30,6 +30,7 @@ class ActionResult:
 
     bundle: AnalysisBundle
     decision: PolicyDecision
+    introduced_threats: tuple[ThreatExplanation, ...]
     comment_markdown: str
     comment_summary_mode: str
     comment_summary_provider: str
@@ -52,7 +53,7 @@ class ActionResult:
         return {
             "analysis": self.bundle.to_dict(),
             "decision": plain(asdict(self.decision)),
-            "threats": [item.to_dict() for item in explain_introduced_threats(self.bundle)],
+            "threats": [item.to_dict() for item in self.introduced_threats],
             "comment_markdown": self.comment_markdown,
             "comment_summary": {
                 "mode": self.comment_summary_mode,
@@ -88,7 +89,8 @@ def run_action(
     current_findings = _load_findings(current_reports)
     baseline_findings = _load_findings(baseline_reports or {})
     change_context = parse_unified_diff(diff_text)
-    policy = parse_policy_yaml(policy_text) if policy_text else PolicyConfig()
+    policy_pack = parse_policy_pack_yaml(policy_text) if policy_text else None
+    policy = policy_pack.config if policy_pack else PolicyConfig()
     operational_context_payload = _parse_optional_json_text(operational_context_text, label="operational context")
     suppressions_payload = _parse_optional_json_text(suppression_text, label="suppressions")
     suppression_rules = parse_suppressions_payload(suppressions_payload)
@@ -122,6 +124,7 @@ def run_action(
         ownership_signals=resolved_context.ownership_signals,
         trust_profile_metadata=resolved_context.trust_profile_metadata,
         trust_baseline=resolved_context.trust_baseline,
+        trust_memory_signals=resolved_context.trust_memory_signals,
         suppression_rules=suppression_rules,
     )
     decision = evaluate_release(bundle, policy)
@@ -138,12 +141,11 @@ def run_action(
         summarizer=summarizer,
         summary_style=comment_summary_style,
     )
-    introduced_threats = explain_introduced_threats(bundle)
     gate = evaluate_gate(decision.decision, allowed_decisions=allowed_decisions)
     decision_contract = build_decision_contract(
         bundle=bundle,
         decision=decision,
-        threats=introduced_threats,
+        threats=rendered_comment.introduced_threat_explanations,
         comment_identifier="veridion:rdi",
         comment_summary={
             "mode": rendered_comment.summary_trace.mode,
@@ -152,11 +154,13 @@ def run_action(
             "error": rendered_comment.summary_trace.error,
         },
         gate=gate,
+        policy_pack_metadata=policy_pack.metadata if policy_pack else None,
     )
 
     return ActionResult(
         bundle=bundle,
         decision=decision,
+        introduced_threats=rendered_comment.introduced_threat_explanations,
         comment_markdown=rendered_comment.markdown,
         comment_summary_mode=rendered_comment.summary_trace.mode,
         comment_summary_provider=rendered_comment.summary_trace.provider,
@@ -335,9 +339,17 @@ def _write_github_outputs(
 
 
 def _parse_allowed_decisions(value: str) -> tuple[str, ...]:
+    valid = {"GO", "CONDITIONAL GO", "NO GO"}
     values = tuple(item.strip() for item in value.split(",") if item.strip())
     if not values:
         raise RuntimeError("allowed-decisions must contain at least one decision")
+    invalid = tuple(item for item in values if item not in valid)
+    if invalid:
+        raise RuntimeError(
+            "allowed-decisions contains unsupported value(s): "
+            + ", ".join(invalid)
+            + ". Supported values: GO, CONDITIONAL GO, NO GO"
+        )
     return values
 
 

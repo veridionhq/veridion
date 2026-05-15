@@ -36,12 +36,44 @@ Repository = "https://github.com/veridionhq/veridion"
 dev = [
   "pytest>=8.0",
 ]
+aws = [
+  "boto3>=1.34",
+]
+gcp = [
+  "google-cloud-bigquery>=3.25",
+  "google-cloud-pubsub>=2.21",
+]
+db = [
+  "psycopg[binary]>=3.2",
+  "snowflake-connector-python>=3.12",
+]
+events = [
+  "kafka-python>=2.0",
+]
+cloud = [
+  "boto3>=1.34",
+  "google-cloud-bigquery>=3.25",
+  "google-cloud-pubsub>=2.21",
+]
+all = [
+  "boto3>=1.34",
+  "google-cloud-bigquery>=3.25",
+  "google-cloud-pubsub>=2.21",
+  "psycopg[binary]>=3.2",
+  "snowflake-connector-python>=3.12",
+  "kafka-python>=2.0",
+]
 
 [project.scripts]
 veridion-bootstrap = "veridion.action.bootstrap:main"
 veridion-rdi = "veridion.action.runner:main"
+veridion-athena-queries = "veridion.action.athena_queries:main"
+veridion-history-export = "veridion.action.decision_history_export:main"
+veridion-history-materialize = "veridion.action.decision_history_materialize:main"
+veridion-history-service = "veridion.action.decision_history_service:main"
 veridion-build-trust-profile = "veridion.action.trust_profile_builder:main"
 veridion-build-operational-context = "veridion.action.operational_context_builder:main"
+veridion-build-runtime-context = "veridion.action.runtime_context_builder:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
