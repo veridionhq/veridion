@@ -20,6 +20,7 @@ If you are writing workflow logic, approval routing, or webhook consumers, prefe
 - `accepted_risk_present`
 - `decision_contract_path`
 - `decision_event_path`
+- `sink_delivery_summary_json`
 
 ## Decision contract
 
@@ -227,6 +228,36 @@ Inputs:
 
 - `decision-event-path`
 - `decision-history-path`
+
+## Deliver canonical events to sinks
+
+The canonical transport surface is now `veridion-decision-event.json`.
+
+Action inputs:
+
+- `decision-sinks`
+- `fail-on-sink-error`
+
+Output fields:
+
+- `sink_delivery_summary_json`
+- `sink_delivery_failures_json`
+
+Supported sink kinds:
+
+- `local-file:path=/abs/path/event.json`
+- `local-ndjson:path=/abs/path/history.ndjson`
+- `webhook:url=https://...`
+- `s3:bucket=...,key=...,region=...`
+- `postgres:dsn=...,table=...`
+- `redshift:dsn=...,table=...`
+- `bigquery:project=...,dataset=...,table=...`
+- `snowflake:account=...,user=...,password=...,database=...,schema=...,table=...`
+- `kafka:bootstrap_servers=host1:9092;host2:9092,topic=...`
+- `eventbridge:bus=...,region=...`
+- `pubsub:project=...,topic=...`
+
+Providers requiring cloud/database SDKs use lazy imports and fail clearly if the matching dependency is not installed in the execution environment.
 
 You can deliver the decision contract to an external system:
 

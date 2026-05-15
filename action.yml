@@ -84,6 +84,14 @@ inputs:
     description: "Optional path to append NDJSON decision history events"
     required: false
     default: ""
+  decision-sinks:
+    description: "Newline-delimited sink specs for canonical decision-event delivery"
+    required: false
+    default: ""
+  fail-on-sink-error:
+    description: "Whether a sink delivery failure should fail the action"
+    required: false
+    default: "false"
   enforce-decision:
     description: "Whether to fail the action when the final decision is not allowed"
     required: false
@@ -224,6 +232,12 @@ outputs:
   decision_history_path:
     description: "Path to appended decision history NDJSON, when configured"
     value: ${{ steps.record-decision-event.outputs.decision_history_path }}
+  sink_delivery_summary_json:
+    description: "JSON array describing decision-event sink delivery results"
+    value: ${{ steps.deliver-decision-event.outputs.sink_delivery_summary_json }}
+  sink_delivery_failures_json:
+    description: "JSON array describing failed decision-event sink deliveries"
+    value: ${{ steps.deliver-decision-event.outputs.sink_delivery_failures_json }}
   webhook_delivery_status:
     description: "Webhook delivery status for the emitted decision contract"
     value: ${{ steps.emit-event.outputs.webhook_delivery_status }}
@@ -446,6 +460,26 @@ runs:
           --repository "${INPUT_REPOSITORY}" \
           "${pr_args[@]}" \
           "${history_args[@]}"
+    - name: Deliver decision event to sinks
+      id: deliver-decision-event
+      if: ${{ always() && inputs.decision-sinks != '' }}
+      shell: bash
+      env:
+        INPUT_DECISION_EVENT_PATH: ${{ inputs.decision-event-path }}
+        INPUT_DECISION_SINKS: ${{ inputs.decision-sinks }}
+        INPUT_FAIL_ON_SINK_ERROR: ${{ inputs.fail-on-sink-error }}
+        PYTHONPATH: ${{ github.action_path }}/src
+      run: |
+        set -euo pipefail
+        sink_args=()
+        while IFS= read -r line; do
+          [[ -z "$line" ]] && continue
+          sink_args+=(--sink "$line")
+        done <<< "${INPUT_DECISION_SINKS}"
+        python3 -m veridion.action.decision_sinks \
+          --decision-event-path "${INPUT_DECISION_EVENT_PATH}" \
+          "${sink_args[@]}" \
+          --fail-on-error "${INPUT_FAIL_ON_SINK_ERROR}"
     - name: Enforce approval satisfaction
       if: ${{ always() && inputs.verify-approvals == 'true' && inputs.enforce-approval-satisfaction == 'true' && steps.verify-approvals.outputs.approval_gate_allowed == 'false' }}
       shell: bash

@@ -245,6 +245,7 @@ For downstream automation, the action now exposes:
 - `stale_approvals_json`
 - `approval_head_sha`
 - `decision_event_path`
+- `sink_delivery_summary_json`
 
 Optional integrations on top of the decision contract now include:
 
@@ -253,6 +254,7 @@ Optional integrations on top of the decision contract now include:
 - approval enforcement for unsatisfied required approvals
 - durable decision-event artifacts and append-only history logs
 - local decision-history analytics by repository, policy pack, and gate outcome
+- pluggable decision-event sinks for object stores, databases, buses, and webhook collectors
 - outbound webhook delivery of the decision contract
 - generic CI producers that build `operational-context.json` without GitHub event payloads
 - policy simulation across multiple policy packs before changing live enforcement
