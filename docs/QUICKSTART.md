@@ -29,6 +29,17 @@ For contributor/local development only:
 python3 -m pip install -e /path/to/veridion
 ```
 
+Optional integration extras:
+
+```bash
+python3 -m pip install "veridion[aws]"
+python3 -m pip install "veridion[gcp]"
+python3 -m pip install "veridion[db]"
+python3 -m pip install "veridion[events]"
+```
+
+These are optional. The default deterministic GitHub Action path does not require them.
+
 ## 2. Bootstrap the repo
 
 Run:
@@ -179,6 +190,13 @@ Supported providers today:
 - AWS Bedrock
 
 If no provider is configured, or if the model response is invalid, Veridion falls back to deterministic rendering automatically.
+
+Important:
+
+- users do not need their own LLM to use Veridion
+- users do not need S3 or Athena to use Veridion
+
+Those are optional integrations for teams that want centralized storage, analytics, or AI wording.
 
 ## Install Notes
 

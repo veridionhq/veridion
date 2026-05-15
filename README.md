@@ -131,6 +131,7 @@ GitHub PR
 - [Docs Home](https://getveridion.com/docs/)
 - [Quickstart](docs/QUICKSTART.md)
 - [Automation Guide](docs/AUTOMATION_GUIDE.md)
+- [AWS Deployment Pattern](docs/AWS.md)
 - [Decision History](docs/DECISION_HISTORY.md)
 - [Non-GitHub Producers](docs/NON_GITHUB.md)
 - [GitLab Adapter](docs/GITLAB.md)
@@ -259,11 +260,37 @@ Optional integrations on top of the decision contract now include:
 - generic CI producers that build `operational-context.json` without GitHub event payloads
 - policy simulation across multiple policy packs before changing live enforcement
 
+Most users do not need all of those.
+
+Practical default:
+
+- core Veridion install
+- deterministic decision engine
+- no LLM configured
+- local artifacts in CI
+
+Recommended first production control-plane path:
+
+- S3 as centralized event storage
+- local or Athena-based history analysis
+- optional AI wording only if the team wants it
+
 For contributor/local development only, an editable install also works:
 
 ```bash
 python3 -m pip install -e /path/to/veridion
 ```
+
+Optional integration installs:
+
+```bash
+python3 -m pip install "veridion[aws]"
+python3 -m pip install "veridion[gcp]"
+python3 -m pip install "veridion[db]"
+python3 -m pip install "veridion[events]"
+```
+
+These extras are only needed when you want the matching sink or provider. The core decision engine does not require them.
 
 These metadata-driven AI signals are currently non-scoring by default. Historical posture, trust-baseline posture, runtime gates, and trust-memory pressure can now affect score, gating, approvals, and required actions depending on the selected policy pack.
 

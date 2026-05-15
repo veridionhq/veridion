@@ -9,6 +9,13 @@ Veridion now emits a machine-facing decision contract at `veridion-decision.json
 
 If you are writing workflow logic, approval routing, or webhook consumers, prefer `veridion-decision.json`.
 
+Important product boundary:
+
+- Veridion does not require an external LLM
+- Veridion does not require S3, Athena, or any cloud provider by default
+
+Those are optional integration layers on top of the deterministic core.
+
 ## Core outputs
 
 - `gate_status`: `pass`, `review`, or `block`
@@ -258,6 +265,14 @@ Supported sink kinds:
 - `pubsub:project=...,topic=...`
 
 Providers requiring cloud/database SDKs use lazy imports and fail clearly if the matching dependency is not installed in the execution environment.
+
+Recommended first production sink:
+
+- S3 as the central append-only event store
+
+See:
+
+- [AWS Deployment Pattern](./AWS.md)
 
 You can deliver the decision contract to an external system:
 

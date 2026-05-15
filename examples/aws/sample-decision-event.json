@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-14T12:00:00Z",
+  "source": "veridion/action",
+  "event_version_source": "veridion.action.decision_event@1",
+  "repository": "acme/service-a",
+  "pull_request_number": 42,
+  "decision": {
+    "verdict": "CONDITIONAL GO",
+    "score": 84,
+    "confidence": "HIGH",
+    "gate_status": "review",
+    "decision_allowed": true,
+    "blocking_categories": ["public_exposure"]
+  },
+  "actions": {
+    "required_approvals": ["platform_owner"],
+    "required_next_steps": ["Run staging smoke tests for infrastructure-affecting changes"]
+  },
+  "reasons": {
+    "blocking": ["release still requires explicit approvals or operational checks"]
+  },
+  "accepted_risk": {
+    "present": false,
+    "pending_review": 0,
+    "renewal_pending": 0,
+    "expiring_soon": 0
+  },
+  "policy": {
+    "pack_id": "platform-team",
+    "pack_name": "Platform Team Default",
+    "pack_version": "1",
+    "pack_owner": "veridion",
+    "rollout_stage": "general"
+  },
+  "automation": {
+    "approval_satisfaction_status": "pending",
+    "approvals_satisfied": false,
+    "satisfied_approvals": [],
+    "unsatisfied_approvals": ["platform_owner"],
+    "stale_approvals": [],
+    "approval_head_sha": "abc123",
+    "approval_gate_status": "blocked",
+    "approval_gate_allowed": false
+  },
+  "trust_context": {
+    "repo_criticality": "high",
+    "service_criticality": "critical",
+    "environment": "production",
+    "public_exposure": true,
+    "blast_radius": "high",
+    "service_owner": "payments-owner",
+    "owning_team": "payments-platform"
+  }
+}
