@@ -76,6 +76,14 @@ inputs:
     description: "Path to write machine-facing decision contract JSON"
     required: false
     default: "veridion-decision.json"
+  decision-event-path:
+    description: "Path to write machine-readable decision event JSON"
+    required: false
+    default: "veridion-decision-event.json"
+  decision-history-path:
+    description: "Optional path to append NDJSON decision history events"
+    required: false
+    default: ""
   enforce-decision:
     description: "Whether to fail the action when the final decision is not allowed"
     required: false
@@ -94,6 +102,10 @@ inputs:
     default: "false"
   verify-approvals:
     description: "Whether to evaluate whether mapped GitHub approvals are currently satisfied"
+    required: false
+    default: "false"
+  enforce-approval-satisfaction:
+    description: "Whether unsatisfied required approvals should fail the action gate after approval verification"
     required: false
     default: "false"
   webhook-url:
@@ -194,6 +206,18 @@ outputs:
   approval_state_json:
     description: "JSON array describing per-role approval satisfaction state"
     value: ${{ steps.verify-approvals.outputs.approval_state_json }}
+  approval_gate_status:
+    description: "Stable approval gate status after optional approval enforcement"
+    value: ${{ steps.verify-approvals.outputs.approval_gate_status }}
+  approval_gate_allowed:
+    description: "Whether approval enforcement currently allows the release to proceed"
+    value: ${{ steps.verify-approvals.outputs.approval_gate_allowed }}
+  decision_event_path:
+    description: "Path to machine-readable decision event JSON"
+    value: ${{ steps.record-decision-event.outputs.decision_event_path }}
+  decision_history_path:
+    description: "Path to appended decision history NDJSON, when configured"
+    value: ${{ steps.record-decision-event.outputs.decision_history_path }}
   webhook_delivery_status:
     description: "Webhook delivery status for the emitted decision contract"
     value: ${{ steps.emit-event.outputs.webhook_delivery_status }}
@@ -374,6 +398,9 @@ runs:
         INPUT_PULL_REQUEST_NUMBER: ${{ inputs.pull-request-number }}
         INPUT_APPROVAL_MAP_PATH: ${{ inputs.approval-map-path }}
         INPUT_DECISION_CONTRACT_PATH: ${{ inputs.decision-contract-path }}
+        INPUT_DECISION_EVENT_PATH: ${{ inputs.decision-event-path }}
+        INPUT_DECISION_HISTORY_PATH: ${{ inputs.decision-history-path }}
+        INPUT_ENFORCE_APPROVAL_SATISFACTION: ${{ inputs.enforce-approval-satisfaction }}
         REQUIRED_APPROVALS_JSON: ${{ steps.run-rdi.outputs.required_approvals_json }}
         PYTHONPATH: ${{ github.action_path }}/src
       run: |
@@ -384,7 +411,42 @@ runs:
           --github-token "${INPUT_GITHUB_TOKEN}" \
           --required-approvals-json "${REQUIRED_APPROVALS_JSON}" \
           --approval-map-path "${INPUT_APPROVAL_MAP_PATH}" \
+          --enforce-approvals "${INPUT_ENFORCE_APPROVAL_SATISFACTION}" \
           --decision-contract-path "${INPUT_DECISION_CONTRACT_PATH}"
+    - name: Record decision event
+      id: record-decision-event
+      if: ${{ always() && inputs.decision-contract-path != '' }}
+      shell: bash
+      env:
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        INPUT_PULL_REQUEST_NUMBER: ${{ inputs.pull-request-number }}
+        INPUT_DECISION_CONTRACT_PATH: ${{ inputs.decision-contract-path }}
+        INPUT_DECISION_EVENT_PATH: ${{ inputs.decision-event-path }}
+        INPUT_DECISION_HISTORY_PATH: ${{ inputs.decision-history-path }}
+        PYTHONPATH: ${{ github.action_path }}/src
+      run: |
+        set -euo pipefail
+        pr_args=()
+        if [[ -n "${INPUT_PULL_REQUEST_NUMBER}" ]]; then
+          pr_args+=(--pull-request-number "${INPUT_PULL_REQUEST_NUMBER}")
+        fi
+        history_args=()
+        if [[ -n "${INPUT_DECISION_HISTORY_PATH}" ]]; then
+          history_args+=(--decision-history-path "${INPUT_DECISION_HISTORY_PATH}")
+        fi
+        python3 -m veridion.action.decision_event \
+          --decision-contract-path "${INPUT_DECISION_CONTRACT_PATH}" \
+          --decision-event-path "${INPUT_DECISION_EVENT_PATH}" \
+          --repository "${INPUT_REPOSITORY}" \
+          "${pr_args[@]}" \
+          "${history_args[@]}"
+    - name: Enforce approval satisfaction
+      if: ${{ always() && inputs.verify-approvals == 'true' && inputs.enforce-approval-satisfaction == 'true' && steps.verify-approvals.outputs.approval_gate_allowed == 'false' }}
+      shell: bash
+      run: |
+        echo "Approval gate blocked: ${{ steps.verify-approvals.outputs.approval_gate_status }}" >&2
+        echo "Unsatisfied approvals: ${{ steps.verify-approvals.outputs.unsatisfied_approvals_json }}" >&2
+        exit 1
     - name: Emit decision event
       id: emit-event
       if: ${{ always() && inputs.webhook-url != '' }}

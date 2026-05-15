@@ -38,6 +38,12 @@ class ApprovalSatisfactionResult:
     role_states: tuple[ApprovalRoleState, ...]
 
 
+@dataclass(frozen=True)
+class ApprovalGateEvaluation:
+    status: str
+    allowed: bool
+
+
 class GitHubApprovalStateError(RuntimeError):
     """Raised when approval-state evaluation fails."""
 
@@ -164,6 +170,36 @@ def enrich_decision_contract(
     return decision_contract
 
 
+def evaluate_approval_gate(
+    result: ApprovalSatisfactionResult,
+    *,
+    enforce: bool,
+) -> ApprovalGateEvaluation:
+    """Interpret approval satisfaction as a stable gate decision."""
+
+    if not enforce:
+        return ApprovalGateEvaluation(status="disabled", allowed=True)
+    if result.status == "not_required":
+        return ApprovalGateEvaluation(status="not_required", allowed=True)
+    if result.approvals_satisfied:
+        return ApprovalGateEvaluation(status="satisfied", allowed=True)
+    if result.status == "unmapped":
+        return ApprovalGateEvaluation(status="unmapped", allowed=False)
+    return ApprovalGateEvaluation(status="blocked", allowed=False)
+
+
+def enrich_decision_contract_with_approval_gate(
+    decision_contract: dict[str, object],
+    gate: ApprovalGateEvaluation,
+) -> dict[str, object]:
+    automation = decision_contract.setdefault("automation", {})
+    if not isinstance(automation, dict):
+        raise GitHubApprovalStateError("decision contract automation section must be an object")
+    automation["approval_gate_status"] = gate.status
+    automation["approval_gate_allowed"] = gate.allowed
+    return decision_contract
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Evaluate GitHub approval satisfaction for Veridion approval roles")
     parser.add_argument("--repository", required=True, help="owner/repo")
@@ -172,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--required-approvals-json", required=True, help="JSON array of required Veridion approval roles")
     parser.add_argument("--approval-map-path", required=True, help="Path to approval-map JSON")
     parser.add_argument("--decision-contract-path", help="Optional path to veridion-decision.json for in-place enrichment")
+    parser.add_argument("--enforce-approvals", default="false", help="Whether unsatisfied approvals should fail the gate")
     args = parser.parse_args(argv)
 
     try:
@@ -184,19 +221,24 @@ def main(argv: list[str] | None = None) -> int:
             required_approvals=required_approvals,
             approval_map=approval_map,
         )
+        gate = evaluate_approval_gate(result, enforce=args.enforce_approvals.strip().lower() == "true")
         if args.decision_contract_path:
             contract_path = Path(args.decision_contract_path)
             contract = json.loads(contract_path.read_text())
-            contract_path.write_text(json.dumps(enrich_decision_contract(contract, result), indent=2) + "\n")
+            contract = enrich_decision_contract(contract, result)
+            contract = enrich_decision_contract_with_approval_gate(contract, gate)
+            contract_path.write_text(json.dumps(contract, indent=2) + "\n")
     except Exception as exc:
         raise SystemExit(str(exc))
 
-    _write_github_outputs(result)
+    _write_github_outputs(result, gate)
     print(
         json.dumps(
             {
                 "status": result.status,
                 "approvals_satisfied": result.approvals_satisfied,
+                "approval_gate_status": gate.status,
+                "approval_gate_allowed": gate.allowed,
                 "satisfied_roles": list(result.satisfied_roles),
                 "unsatisfied_roles": list(result.unsatisfied_roles),
                 "role_states": [asdict(state) for state in result.role_states],
@@ -271,7 +313,7 @@ def _parse_required_approvals_json(text: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in payload if item.strip())
 
 
-def _write_github_outputs(result: ApprovalSatisfactionResult) -> None:
+def _write_github_outputs(result: ApprovalSatisfactionResult, gate: ApprovalGateEvaluation) -> None:
     github_output = os.environ.get("GITHUB_OUTPUT")
     if not github_output:
         return
@@ -279,6 +321,8 @@ def _write_github_outputs(result: ApprovalSatisfactionResult) -> None:
     with Path(github_output).open("a", encoding="utf-8") as handle:
         handle.write(f"approval_satisfaction_status={result.status}\n")
         handle.write(f"approvals_satisfied={str(result.approvals_satisfied).lower()}\n")
+        handle.write(f"approval_gate_status={gate.status}\n")
+        handle.write(f"approval_gate_allowed={str(gate.allowed).lower()}\n")
         handle.write(f"satisfied_approvals_json={json.dumps(list(result.satisfied_roles))}\n")
         handle.write(f"unsatisfied_approvals_json={json.dumps(list(result.unsatisfied_roles))}\n")
         handle.write(f"approval_state_json={json.dumps([asdict(state) for state in result.role_states])}\n")

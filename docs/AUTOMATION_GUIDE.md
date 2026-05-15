@@ -19,6 +19,7 @@ If you are writing workflow logic, approval routing, or webhook consumers, prefe
 - `blocking_categories_json`
 - `accepted_risk_present`
 - `decision_contract_path`
+- `decision_event_path`
 
 ## Decision contract
 
@@ -148,8 +149,17 @@ Outputs:
 - `satisfied_approvals_json`
 - `unsatisfied_approvals_json`
 - `approval_state_json`
+- `approval_gate_status`
+- `approval_gate_allowed`
 
 When `decision-contract-path` is set, the same approval satisfaction state is written back into `veridion-decision.json` under `automation`.
+
+If you want approval state to become enforceable instead of informational, set:
+
+- `verify-approvals: "true"`
+- `enforce-approval-satisfaction: "true"`
+
+That makes unsatisfied or unmapped required approvals fail the workflow without adding a separate shell gate step.
 
 ## Consume accepted-risk governance
 
@@ -197,6 +207,18 @@ require_security_owner_for:
 ```
 
 ## Emit decision events
+
+Veridion now emits a machine-readable decision event artifact after approval verification so history captures the final enforced state, not just the raw runner verdict.
+
+Outputs:
+
+- `decision_event_path`
+- `decision_history_path`
+
+Inputs:
+
+- `decision-event-path`
+- `decision-history-path`
 
 You can deliver the decision contract to an external system:
 

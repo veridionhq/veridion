@@ -268,6 +268,30 @@ Status:
 - Trust memory can now escalate decisions based on repeated no-go outcomes, repeated policy overrides, accepted-risk backlog, and low recent decision quality
 - Follow-up remains for policy rollout history storage, org-wide pack catalogs, UI/API management of overrides, and deeper longitudinal trust sources beyond repo-local JSON
 
+## M12: Enforcement and Decision History
+
+Target:
+Turn release intelligence into enforceable workflow control with durable decision records.
+
+Scope:
+
+- Approval-satisfaction enforcement
+- Final-state decision event artifacts
+- Append-only decision history logs
+- Replay-friendly history contract for later rollout analysis
+
+Exit criteria:
+
+- Unsatisfied required approvals can fail automation without ad hoc shell glue
+- Veridion can emit a durable decision event capturing the final enforced release state
+- Decision history can be appended over time for replay, policy rollout comparison, and trust-memory backfill
+
+Status:
+
+- Started on `develop` with approval enforcement outputs and a post-verification decision-event artifact
+- Decision events can now be appended to an NDJSON history log so later systems can replay or aggregate release outcomes
+- Follow-up remains for persistent centralized storage, historical replay tooling, approval freshness checks after new commits, and pack-version rollout analytics
+
 ## Execution Notes
 
 - Finish one milestone to a defensible level before widening scope.

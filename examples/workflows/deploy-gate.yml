@@ -29,26 +29,24 @@ jobs:
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           decision-contract-path: veridion-decision.json
+          decision-event-path: veridion-decision-event.json
+          decision-history-path: veridion-decision-history.ndjson
           enforce-decision: "true"
           allowed-decisions: "GO"
           verify-approvals: "true"
+          enforce-approval-satisfaction: "true"
           post-comment: "true"
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
           pull-request-number: ${{ github.event.pull_request.number }}
-
-      - name: Fail fast on unsatisfied approvals
-        if: ${{ steps.run-rdi.outputs.approvals_satisfied == 'false' }}
-        shell: bash
-        run: |
-          echo "Unsatisfied approvals: ${{ steps.run-rdi.outputs.unsatisfied_approvals_json }}"
-          exit 1
 
       - name: Show next steps for reviewers
         if: always()
         shell: bash
         run: |
           echo "Gate status: ${{ steps.run-rdi.outputs.gate_status }}"
+          echo "Approval gate: ${{ steps.run-rdi.outputs.approval_gate_status }}"
           echo "Blocking categories: ${{ steps.run-rdi.outputs.blocking_categories_json }}"
           echo "Required next steps: ${{ steps.run-rdi.outputs.required_next_steps_json }}"
+          echo "Decision event: ${{ steps.run-rdi.outputs.decision_event_path }}"
           echo "Inspect veridion-decision.json -> signals.runtime.active_runtime_gates for live runtime blockers"

@@ -239,11 +239,16 @@ For downstream automation, the action now exposes:
 - `blocking_categories_json`
 - `accepted_risk_present`
 - `decision_contract_path`
+- `approval_gate_status`
+- `approval_gate_allowed`
+- `decision_event_path`
 
 Optional integrations on top of the decision contract now include:
 
 - GitHub reviewer requests from role-based approval maps
 - GitHub approval satisfaction checks for mapped approval roles
+- approval enforcement for unsatisfied required approvals
+- durable decision-event artifacts and append-only history logs
 - outbound webhook delivery of the decision contract
 - generic CI producers that build `operational-context.json` without GitHub event payloads
 - policy simulation across multiple policy packs before changing live enforcement
