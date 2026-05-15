@@ -51,13 +51,13 @@ python3 -m pip install -e ".[aws]"
 Use partition-friendly keys:
 
 ```text
-s3://<bucket>/veridion/events/repo=<owner_repo>/year=YYYY/month=MM/day=DD/ts=<timestamp>-pr=<number>.json
+s3://<bucket>/veridion/events/repo=<owner_repo>/year=YYYY/month=MM/day=DD/verdict=<verdict>/ts=<timestamp>-pr=<number>.json
 ```
 
 Example:
 
 ```text
-s3://veridion-prod-events/veridion/events/repo=acme_service-a/year=2026/month=05/day=14/ts=2026-05-14T12:00:00Z-pr=42.json
+s3://veridion-prod-events/veridion/events/repo=acme_service-a/year=2026/month=05/day=14/verdict=conditional-go/ts=2026-05-14T12:00:00Z-pr=42.json
 ```
 
 This keeps the object store:
@@ -71,9 +71,11 @@ This keeps the object store:
 
 ```yaml
 decision-sinks: |
-  s3:bucket=veridion-prod-events,key=veridion/events/repo=acme_service-a/year=2026/month=05/day=14/ts=2026-05-14T12:00:00Z-pr=42.json,region=us-west-2
+  s3:bucket=veridion-prod-events,prefix=veridion/events,region=us-west-2
   local-ndjson:path=veridion-decision-history.ndjson
 ```
+
+If you omit `key`, Veridion derives the recommended partitioned layout automatically from the canonical decision event. You can still provide a fully explicit `key=` when you need a custom object path.
 
 ## Minimal IAM policy
 
@@ -110,6 +112,30 @@ It is the recommended first query layer because it gives:
 - approval freshness trend analysis
 
 without introducing a separate OLTP database as the first system of record.
+
+Example external table shape:
+
+```sql
+CREATE EXTERNAL TABLE IF NOT EXISTS veridion_decision_events (
+  payload string
+)
+PARTITIONED BY (
+  repo string,
+  year string,
+  month string,
+  day string,
+  verdict string
+)
+ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
+LOCATION 's3://veridion-prod-events/veridion/events/';
+```
+
+The first production goal is simple:
+
+- write canonical events to S3
+- partition by repo/date/verdict
+- query trends in Athena
+- only add a database later if you need interactive product APIs or mutable workflow state
 
 ## Bedrock and LLMs
 

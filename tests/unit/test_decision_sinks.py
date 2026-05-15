@@ -67,3 +67,27 @@ def test_deliver_decision_event_collects_failures_without_raising_by_default() -
 
     assert results[0].status == "failed"
     assert "unsupported sink kind" in results[0].error
+
+
+def test_build_default_s3_key_uses_partitioned_layout() -> None:
+    event = {
+        "generated_at": "2026-05-14T12:00:00Z",
+        "repository": "acme/service-a",
+        "pull_request_number": 42,
+        "decision": {"verdict": "CONDITIONAL GO"},
+    }
+
+    key = decision_sinks.build_default_s3_key(event)
+
+    assert key == (
+        "veridion/events/repo=acme_service-a/year=2026/month=05/day=14/"
+        "verdict=conditional-go/ts=2026-05-14T12:00:00Z-pr=42.json"
+    )
+
+
+def test_destination_label_uses_s3_prefix_when_key_is_not_explicit() -> None:
+    label = decision_sinks._destination_label(  # noqa: SLF001 - unit test for label formatting
+        decision_sinks.SinkSpec(kind="s3", options={"bucket": "veridion-prod-events", "prefix": "veridion/events"})
+    )
+
+    assert label == "s3://veridion-prod-events/veridion/events/..."

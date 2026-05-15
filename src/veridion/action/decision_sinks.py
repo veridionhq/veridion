@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -155,7 +156,7 @@ def _deliver_s3(spec: SinkSpec, event: dict[str, object]) -> SinkDeliveryResult:
         raise DecisionSinkError("s3 sink requires boto3") from exc
 
     bucket = _require_option(spec, "bucket")
-    key = _require_option(spec, "key")
+    key = _resolve_s3_key(spec, event)
     region = spec.options.get("region", "")
     client = boto3.client("s3", region_name=region or None)
     client.put_object(
@@ -165,6 +166,55 @@ def _deliver_s3(spec: SinkSpec, event: dict[str, object]) -> SinkDeliveryResult:
         ContentType="application/json",
     )
     return SinkDeliveryResult(sink=spec.kind, status="delivered", destination=f"s3://{bucket}/{key}")
+
+
+def _resolve_s3_key(spec: SinkSpec, event: dict[str, object]) -> str:
+    explicit_key = spec.options.get("key", "").strip()
+    if explicit_key:
+        return explicit_key
+    prefix = spec.options.get("prefix", "veridion/events").strip()
+    return build_default_s3_key(event, prefix=prefix)
+
+
+def build_default_s3_key(event: dict[str, object], *, prefix: str = "veridion/events") -> str:
+    generated_at = _parse_generated_at(event.get("generated_at"))
+    repository = _repository_partition(event.get("repository"))
+    pull_request_number = _event_int(event.get("pull_request_number"))
+    verdict = _nested_event_str(event, "decision", "verdict").lower().replace(" ", "-") or "unknown"
+    timestamp = generated_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+    base_prefix = prefix.strip().strip("/") or "veridion/events"
+    return (
+        f"{base_prefix}/repo={repository}/year={generated_at:%Y}/month={generated_at:%m}/day={generated_at:%d}/"
+        f"verdict={verdict}/ts={timestamp}-pr={pull_request_number or 0}.json"
+    )
+
+
+def _parse_generated_at(value: object) -> datetime:
+    raw = value if isinstance(value, str) else ""
+    if not raw:
+        raise DecisionSinkError("decision event must include generated_at to derive the default s3 key")
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise DecisionSinkError("decision event generated_at must be a valid ISO-8601 timestamp") from exc
+
+
+def _repository_partition(value: object) -> str:
+    raw = value if isinstance(value, str) else ""
+    normalized = raw.strip().replace("/", "_")
+    return normalized or "unknown_repo"
+
+
+def _event_int(value: object) -> int:
+    return value if isinstance(value, int) else 0
+
+
+def _nested_event_str(event: dict[str, object], section: str, key: str) -> str:
+    payload = event.get(section)
+    if not isinstance(payload, dict):
+        return ""
+    value = payload.get(key)
+    return value if isinstance(value, str) else ""
 
 
 def _deliver_postgres(spec: SinkSpec, event: dict[str, object]) -> SinkDeliveryResult:
@@ -353,7 +403,12 @@ def _destination_label(spec: SinkSpec) -> str:
     if spec.kind == "s3":
         bucket = spec.options.get("bucket", "")
         key = spec.options.get("key", "")
-        return f"s3://{bucket}/{key}" if bucket and key else "s3"
+        prefix = spec.options.get("prefix", "")
+        if bucket and key:
+            return f"s3://{bucket}/{key}"
+        if bucket and prefix:
+            return f"s3://{bucket}/{prefix.strip('/')}/..."
+        return f"s3://{bucket}" if bucket else "s3"
     if spec.kind in {"postgres", "redshift", "bigquery", "snowflake"}:
         return spec.options.get("table", spec.kind)
     if spec.kind == "kafka":

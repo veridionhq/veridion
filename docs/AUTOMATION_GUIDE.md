@@ -255,7 +255,7 @@ Supported sink kinds:
 - `local-file:path=/abs/path/event.json`
 - `local-ndjson:path=/abs/path/history.ndjson`
 - `webhook:url=https://...`
-- `s3:bucket=...,key=...,region=...`
+- `s3:bucket=...,prefix=...,region=...`
 - `postgres:dsn=...,table=...`
 - `redshift:dsn=...,table=...`
 - `bigquery:project=...,dataset=...,table=...`
@@ -269,6 +269,11 @@ Providers requiring cloud/database SDKs use lazy imports and fail clearly if the
 Recommended first production sink:
 
 - S3 as the central append-only event store
+
+When you use the S3 sink, you can either:
+
+- provide an explicit `key=...`
+- or provide `prefix=...` and let Veridion derive the standard partitioned event key automatically
 
 See:
 
