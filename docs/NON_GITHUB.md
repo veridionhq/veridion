@@ -36,6 +36,31 @@ Reference script:
 
 - [examples/non-github/build-operational-context.sh](../examples/non-github/build-operational-context.sh)
 
+## Build normalized runtime context from live sources
+
+If your runtime readiness signals come from deployment systems rather than a pre-normalized JSON file, use the runtime-source builder first.
+
+Example:
+
+```bash
+python3 -m veridion.action.runtime_context_builder \
+  --incident-path incident.json \
+  --freeze-path freeze.json \
+  --alerts-path alerts.json \
+  --canary-path canary.json \
+  --rollback-path rollback.json \
+  --environment production \
+  --deployment-window after_hours \
+  --public-exposure true \
+  --blast-radius high \
+  --rollout-strategy canary \
+  --output-path runtime.json
+```
+
+Reference script:
+
+- [examples/non-github/build-runtime-context.sh](../examples/non-github/build-runtime-context.sh)
+
 ## Run Veridion without GitHub Actions
 
 Once you have:

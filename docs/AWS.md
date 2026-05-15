@@ -137,6 +137,57 @@ The first production goal is simple:
 - query trends in Athena
 - only add a database later if you need interactive product APIs or mutable workflow state
 
+## Replay over S3-backed history
+
+You do not need a new reader protocol to replay centralized history.
+
+Recommended first path:
+
+1. write canonical decision events to S3
+2. sync a prefix or partition locally
+3. run `decision_history` over the exported object tree
+
+Example:
+
+```bash
+aws s3 sync "s3://veridion-prod-events/veridion/events/repo=acme_service-a/" /tmp/veridion-s3-history
+
+python3 -m veridion.action.decision_history \
+  --history-path /tmp/veridion-s3-history \
+  --since 2026-05-01T00:00:00Z
+```
+
+Helper script:
+
+- [examples/aws/replay-s3-history.sh](../examples/aws/replay-s3-history.sh)
+
+## Athena query examples
+
+Count verdicts by day:
+
+```sql
+SELECT
+  day,
+  json_extract_scalar(payload, '$.decision.verdict') AS verdict,
+  COUNT(*) AS events
+FROM veridion_decision_events
+GROUP BY 1, 2
+ORDER BY 1, 2;
+```
+
+Compare policy pack versions by repository:
+
+```sql
+SELECT
+  repo,
+  json_extract_scalar(payload, '$.policy.pack_id') AS pack_id,
+  json_extract_scalar(payload, '$.policy.pack_version') AS pack_version,
+  COUNT(*) AS events
+FROM veridion_decision_events
+GROUP BY 1, 2, 3
+ORDER BY 1, 2, 3;
+```
+
 ## Bedrock and LLMs
 
 Bedrock is optional.

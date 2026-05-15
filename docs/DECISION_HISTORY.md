@@ -34,6 +34,13 @@ The analytics output includes:
 - policy pack / version breakdown
 - stale approval event counts
 
+It also now includes rollout-oriented analytics:
+
+- events by day
+- latest policy pack/version per repository
+- version-adoption summaries
+- repository transitions between policy pack versions/stages
+
 ## Filter for rollout analysis
 
 Example:
@@ -46,3 +53,42 @@ python3 -m veridion.action.decision_history \
 ```
 
 This is the current local replay surface for pack-version rollout analysis before centralized history storage exists.
+
+## Analyze exported object sets
+
+`decision_history` no longer requires a single NDJSON file.
+
+You can point it at:
+
+- a local NDJSON history file
+- a single `veridion-decision-event.json`
+- a directory tree of exported decision-event JSON objects
+
+Example:
+
+```bash
+python3 -m veridion.action.decision_history \
+  --history-path /tmp/veridion-s3-history
+```
+
+That makes S3-backed replay straightforward:
+
+1. sync a partition or prefix locally
+2. run `decision_history` on the downloaded tree
+
+Example helper:
+
+- [examples/aws/replay-s3-history.sh](../examples/aws/replay-s3-history.sh)
+
+## Time-bounded replay
+
+You can now limit analysis windows:
+
+```bash
+python3 -m veridion.action.decision_history \
+  --history-path /tmp/veridion-s3-history \
+  --since 2026-05-01T00:00:00Z \
+  --until 2026-05-31T23:59:59Z
+```
+
+This is the current replay surface for centralized history before a warehouse-native reader exists.

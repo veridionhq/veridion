@@ -5,24 +5,36 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Analyze Veridion decision history NDJSON")
-    parser.add_argument("--history-path", required=True, help="Path to decision-history NDJSON")
+    parser = argparse.ArgumentParser(description="Analyze Veridion decision history from NDJSON or exported event objects")
+    parser.add_argument(
+        "--history-path",
+        action="append",
+        required=True,
+        help="Path to decision-history NDJSON, decision-event JSON, or a directory of exported events",
+    )
     parser.add_argument("--repository", help="Optional repository filter in owner/repo format")
     parser.add_argument("--policy-pack-id", help="Optional policy pack id filter")
+    parser.add_argument("--since", help="Optional inclusive ISO-8601 lower bound for generated_at")
+    parser.add_argument("--until", help="Optional inclusive ISO-8601 upper bound for generated_at")
     parser.add_argument("--output-path", help="Optional path to write analytics JSON")
     args = parser.parse_args(argv)
 
+    since = _parse_timestamp_bound(args.since, label="since")
+    until = _parse_timestamp_bound(args.until, label="until")
     events = tuple(
         _filter_event(
             event,
             repository=args.repository,
             policy_pack_id=args.policy_pack_id,
+            since=since,
+            until=until,
         )
-        for event in _load_history(args.history_path)
+        for event in _load_history(tuple(args.history_path))
     )
     filtered = tuple(item for item in events if item is not None)
 
@@ -42,6 +54,14 @@ def main(argv: list[str] | None = None) -> int:
                 1 for item in filtered if item["automation"].get("approval_gate_status") in {"blocked", "stale", "unmapped"}
             ),
         },
+        "time_series": {
+            "by_day": _events_by_day(filtered),
+        },
+        "policy_rollout": {
+            "version_adoption": _version_adoption(filtered),
+            "latest_by_repository": _latest_by_repository(filtered),
+            "transitions": _policy_transitions(filtered),
+        },
     }
     rendered = json.dumps(payload, indent=2) + "\n"
     if args.output_path:
@@ -50,16 +70,47 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _load_history(path: str) -> tuple[dict[str, object], ...]:
+def _load_history(paths: tuple[str, ...]) -> tuple[dict[str, object], ...]:
     events: list[dict[str, object]] = []
-    for lineno, raw in enumerate(Path(path).read_text().splitlines(), start=1):
+    for path in paths:
+        events.extend(_load_history_path(Path(path)))
+    return tuple(events)
+
+
+def _load_history_path(path: Path) -> list[dict[str, object]]:
+    if path.is_dir():
+        events: list[dict[str, object]] = []
+        for child in sorted(path.rglob("*")):
+            if child.is_file() and child.suffix.lower() in {".json", ".ndjson"}:
+                events.extend(_load_history_path(child))
+        return events
+    if path.suffix.lower() == ".ndjson":
+        return _load_ndjson(path)
+    return _load_json_events(path)
+
+
+def _load_ndjson(path: Path) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    for lineno, raw in enumerate(path.read_text().splitlines(), start=1):
         if not raw.strip():
             continue
         payload = json.loads(raw)
         if not isinstance(payload, dict):
-            raise RuntimeError(f"decision history line {lineno} is not a JSON object")
+            raise RuntimeError(f"decision history line {lineno} in {path} is not a JSON object")
         events.append(payload)
-    return tuple(events)
+    return events
+
+
+def _load_json_events(path: Path) -> list[dict[str, object]]:
+    payload = json.loads(path.read_text())
+    if isinstance(payload, dict):
+        return [payload]
+    if isinstance(payload, list):
+        objects = [item for item in payload if isinstance(item, dict)]
+        if len(objects) != len(payload):
+            raise RuntimeError(f"decision history JSON array in {path} must contain only objects")
+        return objects
+    raise RuntimeError(f"decision history file {path} must contain an object, array of objects, or NDJSON")
 
 
 def _filter_event(
@@ -67,6 +118,8 @@ def _filter_event(
     *,
     repository: str | None,
     policy_pack_id: str | None,
+    since: datetime | None,
+    until: datetime | None,
 ) -> dict[str, object] | None:
     if repository and event.get("repository") != repository:
         return None
@@ -74,6 +127,11 @@ def _filter_event(
     if policy_pack_id:
         if not isinstance(policy, dict) or policy.get("pack_id") != policy_pack_id:
             return None
+    generated_at = _generated_at(event)
+    if since and (generated_at is None or generated_at < since):
+        return None
+    if until and (generated_at is None or generated_at > until):
+        return None
     return event
 
 
@@ -97,6 +155,10 @@ def _build_summary(events: tuple[dict[str, object], ...]) -> dict[str, object]:
         "approval_gate_blocked_events": sum(
             1 for item in events if _automation_value(item, "approval_gate_status") in {"blocked", "stale", "unmapped"}
         ),
+        "window": {
+            "first_generated_at": _render_timestamp(min(filter(None, (_generated_at(item) for item in events)), default=None)),
+            "last_generated_at": _render_timestamp(max(filter(None, (_generated_at(item) for item in events)), default=None)),
+        },
     }
 
 
@@ -144,6 +206,98 @@ def _counter_pairs(nested_values) -> list[dict[str, object]]:
     ]
 
 
+def _events_by_day(events: tuple[dict[str, object], ...]) -> list[dict[str, object]]:
+    counts: Counter[str] = Counter()
+    for item in events:
+        generated_at = _generated_at(item)
+        if generated_at is not None:
+            counts.update([generated_at.date().isoformat()])
+    return [{"day": day, "events": count} for day, count in sorted(counts.items())]
+
+
+def _version_adoption(events: tuple[dict[str, object], ...]) -> list[dict[str, object]]:
+    grouped: dict[tuple[str, str, str], list[dict[str, object]]] = {}
+    for event in events:
+        key = (
+            _policy_value(event, "pack_id"),
+            _policy_value(event, "pack_version"),
+            _policy_value(event, "rollout_stage"),
+        )
+        if key[0]:
+            grouped.setdefault(key, []).append(event)
+
+    rows: list[dict[str, object]] = []
+    for (pack_id, pack_version, rollout_stage), items in sorted(grouped.items()):
+        repos = sorted({str(item.get("repository", "")) for item in items if item.get("repository", "")})
+        rows.append(
+            {
+                "pack_id": pack_id,
+                "pack_version": pack_version,
+                "rollout_stage": rollout_stage,
+                "events": len(items),
+                "repositories": repos,
+                "repository_count": len(repos),
+                "first_generated_at": _render_timestamp(min(filter(None, (_generated_at(item) for item in items)), default=None)),
+                "last_generated_at": _render_timestamp(max(filter(None, (_generated_at(item) for item in items)), default=None)),
+            }
+        )
+    return rows
+
+
+def _latest_by_repository(events: tuple[dict[str, object], ...]) -> list[dict[str, object]]:
+    latest: dict[str, dict[str, object]] = {}
+    for event in events:
+        repository = event.get("repository")
+        if not isinstance(repository, str) or not repository:
+            continue
+        current = latest.get(repository)
+        if current is None or _sort_key(event) > _sort_key(current):
+            latest[repository] = event
+
+    rows: list[dict[str, object]] = []
+    for repository, event in sorted(latest.items()):
+        rows.append(
+            {
+                "repository": repository,
+                "generated_at": event.get("generated_at", ""),
+                "pack_id": _policy_value(event, "pack_id"),
+                "pack_version": _policy_value(event, "pack_version"),
+                "rollout_stage": _policy_value(event, "rollout_stage"),
+                "verdict": _decision_value(event, "verdict"),
+                "gate_status": _decision_value(event, "gate_status"),
+            }
+        )
+    return rows
+
+
+def _policy_transitions(events: tuple[dict[str, object], ...]) -> list[dict[str, object]]:
+    counts: Counter[tuple[str, str, str]] = Counter()
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for event in events:
+        repository = event.get("repository")
+        if isinstance(repository, str) and repository:
+            grouped.setdefault(repository, []).append(event)
+
+    for items in grouped.values():
+        previous: tuple[str, str, str] | None = None
+        for event in sorted(items, key=_sort_key):
+            current = (
+                _policy_value(event, "pack_id"),
+                _policy_value(event, "pack_version"),
+                _policy_value(event, "rollout_stage"),
+            )
+            if not current[0]:
+                continue
+            if previous is not None and current != previous:
+                counts[(f"{previous[0]}@{previous[1]}:{previous[2]}", f"{current[0]}@{current[1]}:{current[2]}", current[0])] += 1
+            previous = current
+
+    return [
+        {"from": old, "to": new, "pack_id": pack_id, "repositories": count}
+        for (old, new, pack_id), count in counts.most_common()
+    ]
+
+
 def _decision_value(event: dict[str, object], key: str) -> str:
     decision = event.get("decision")
     return decision.get(key, "") if isinstance(decision, dict) and isinstance(decision.get(key, ""), str) else ""
@@ -157,6 +311,37 @@ def _automation_value(event: dict[str, object], key: str) -> str:
 def _policy_value(event: dict[str, object], key: str) -> str:
     policy = event.get("policy")
     return policy.get(key, "") if isinstance(policy, dict) and isinstance(policy.get(key, ""), str) else ""
+
+
+def _generated_at(event: dict[str, object]) -> datetime | None:
+    raw = event.get("generated_at")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _render_timestamp(value: datetime | None) -> str:
+    return value.isoformat().replace("+00:00", "Z") if value is not None else ""
+
+
+def _parse_timestamp_bound(value: str | None, *, label: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise RuntimeError(f"{label} must be a valid ISO-8601 timestamp") from exc
+
+
+def _sort_key(event: dict[str, object]) -> tuple[datetime, str]:
+    generated_at = _generated_at(event)
+    fallback = datetime.min.replace(tzinfo=None)
+    if generated_at is None:
+        return (fallback, json.dumps(event, sort_keys=True))
+    return (generated_at.replace(tzinfo=None), json.dumps(event, sort_keys=True))
 
 
 if __name__ == "__main__":

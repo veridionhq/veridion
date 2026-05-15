@@ -9,6 +9,10 @@ set -euo pipefail
 # - alert_state
 # - canary_health
 # - rollback_viability
+#
+# If those fields come from raw deployment systems rather than a normalized
+# runtime.json, build them first with:
+#   python3 -m veridion.action.runtime_context_builder ...
 
 python3 -m veridion.action.operational_context_builder \
   --metadata-path metadata.json \
