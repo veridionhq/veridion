@@ -17,7 +17,7 @@ from veridion.context import (
 from veridion.decision_contract import build_decision_contract, evaluate_gate
 from veridion.normalize import NormalizedFinding, normalize_report
 from veridion.policy import PolicyDecision, PolicyConfig, evaluate_release, parse_policy_pack_yaml
-from veridion.report import explain_introduced_threats, render_pr_comment_result
+from veridion.report import ThreatExplanation, render_pr_comment_result
 from veridion.summarization import build_comment_summarizer
 from veridion.suppression import parse_suppressions_payload
 from veridion.change_context import parse_unified_diff
@@ -30,6 +30,7 @@ class ActionResult:
 
     bundle: AnalysisBundle
     decision: PolicyDecision
+    introduced_threats: tuple[ThreatExplanation, ...]
     comment_markdown: str
     comment_summary_mode: str
     comment_summary_provider: str
@@ -52,7 +53,7 @@ class ActionResult:
         return {
             "analysis": self.bundle.to_dict(),
             "decision": plain(asdict(self.decision)),
-            "threats": [item.to_dict() for item in explain_introduced_threats(self.bundle)],
+            "threats": [item.to_dict() for item in self.introduced_threats],
             "comment_markdown": self.comment_markdown,
             "comment_summary": {
                 "mode": self.comment_summary_mode,
@@ -140,12 +141,11 @@ def run_action(
         summarizer=summarizer,
         summary_style=comment_summary_style,
     )
-    introduced_threats = explain_introduced_threats(bundle)
     gate = evaluate_gate(decision.decision, allowed_decisions=allowed_decisions)
     decision_contract = build_decision_contract(
         bundle=bundle,
         decision=decision,
-        threats=introduced_threats,
+        threats=rendered_comment.introduced_threat_explanations,
         comment_identifier="veridion:rdi",
         comment_summary={
             "mode": rendered_comment.summary_trace.mode,
@@ -160,6 +160,7 @@ def run_action(
     return ActionResult(
         bundle=bundle,
         decision=decision,
+        introduced_threats=rendered_comment.introduced_threat_explanations,
         comment_markdown=rendered_comment.markdown,
         comment_summary_mode=rendered_comment.summary_trace.mode,
         comment_summary_provider=rendered_comment.summary_trace.provider,

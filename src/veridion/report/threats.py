@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 
 from veridion.analysis import AnalysisBundle
+from veridion.normalize.common import severity_rank
 from veridion.normalize.models import NormalizedFinding
 
 
@@ -31,7 +32,7 @@ def explain_introduced_threats(bundle: AnalysisBundle) -> tuple[ThreatExplanatio
     introduced = sorted(
         bundle.baseline_comparison.introduced,
         key=lambda finding: (
-            _severity_rank(finding.severity),
+            severity_rank(finding.severity),
             finding.finding_type,
             finding.title.lower(),
             finding.location.path or "",
@@ -61,7 +62,7 @@ def explain_introduced_threats(bundle: AnalysisBundle) -> tuple[ThreatExplanatio
         sorted(
             explanations,
             key=lambda item: (
-                _severity_rank(item.severity),
+                severity_rank(item.severity),
                 item.threat_type,
                 item.location or "",
                 item.subject,
@@ -205,15 +206,3 @@ def _normalize_location(path: str | None) -> str | None:
         return None
     normalized = path.removeprefix("/workspace/").lstrip("/")
     return normalized or None
-
-
-def _severity_rank(severity: str) -> int:
-    order = {
-        "critical": 0,
-        "high": 1,
-        "medium": 2,
-        "low": 3,
-        "info": 4,
-        "unknown": 5,
-    }
-    return order.get(severity, 6)

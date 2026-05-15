@@ -6,8 +6,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from veridion.analysis import AnalysisBundle
+from veridion.normalize.common import severity_rank
 from veridion.policy import PolicyDecision
 from veridion.policy.pack import PolicyPackMetadata
+from veridion.policy.text import (
+    SEVERITY_ISSUE_REASON_RE,
+    filter_approval_echo_recommendations,
+    format_approval_label,
+)
 from veridion.report import ThreatExplanation
 
 SUPPORTED_DECISION_SCHEMA_VERSION = 1
@@ -30,7 +36,6 @@ _REQUIRED_NEXT_STEP_PREFIXES = (
     "Coordinate ",
     "Schedule ",
     "Require ",
-    "Proceed ",
 )
 
 
@@ -71,7 +76,7 @@ def build_decision_contract(
     """Build the stable decision artifact consumed by downstream automation."""
 
     required_next_steps, advisory_guidance = _split_recommendations(
-        _filter_recommendations(decision.recommendations, decision.required_approvals)
+        filter_approval_echo_recommendations(decision.recommendations, decision.required_approvals)
     )
     blocking_reasons = tuple(reason for reason in decision.reasons if _is_blocking_reason(reason, decision.decision))
     operational_signals = _operational_signals(bundle)
@@ -98,7 +103,7 @@ def build_decision_contract(
         "actions": {
             "required_approvals": list(decision.required_approvals),
             "required_approval_labels": [_format_approval(value) for value in decision.required_approvals],
-            "required_next_steps": list(required_next_steps or advisory_guidance),
+            "required_next_steps": list(required_next_steps),
             "advisory_guidance": list(advisory_guidance),
             "all_recommendations": list(decision.recommendations),
         },
@@ -184,16 +189,6 @@ def _gate_status(decision: str) -> str:
     if decision == "CONDITIONAL GO":
         return "review"
     return "pass"
-
-
-def _filter_recommendations(
-    recommendations: tuple[str, ...],
-    required_approvals: tuple[str, ...],
-) -> tuple[str, ...]:
-    blocked = {f"Require approval from the {_format_approval(value)}" for value in required_approvals}
-    return tuple(item for item in recommendations if item not in blocked)
-
-
 def _split_recommendations(recommendations: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
     required: list[str] = []
     advisory: list[str] = []
@@ -210,6 +205,8 @@ def _split_recommendations(recommendations: tuple[str, ...]) -> tuple[tuple[str,
 def _is_blocking_reason(reason: str, decision: str) -> bool:
     if decision == "GO":
         return False
+    if SEVERITY_ISSUE_REASON_RE.match(reason):
+        return True
     return reason.startswith(
         (
             "policy ",
@@ -218,11 +215,11 @@ def _is_blocking_reason(reason: str, decision: str) -> bool:
             "accepted risk is present in the current change",
             "accepted risk governance metadata is incomplete",
         )
-    ) or " new " in reason
+    )
 
 
 def _format_approval(value: str) -> str:
-    return value.replace("_", " ")
+    return format_approval_label(value)
 
 
 def _operational_signals(bundle: AnalysisBundle) -> dict[str, object]:
@@ -332,7 +329,7 @@ def _normalize_threats(threats: tuple[ThreatExplanation, ...]) -> list[dict[str,
     return sorted(
         grouped.values(),
         key=lambda item: (
-            _severity_rank(str(item["severity"])),
+            severity_rank(str(item["severity"])),
             str(item["threat_type"]),
             str(item["location"] or ""),
             str(item["summary"]),
@@ -392,18 +389,6 @@ def _blocking_categories(bundle: AnalysisBundle, decision: PolicyDecision) -> li
         categories.append("policy_no_go_threshold")
 
     return categories
-
-
-def _severity_rank(severity: str) -> int:
-    order = {
-        "critical": 0,
-        "high": 1,
-        "medium": 2,
-        "low": 3,
-        "info": 4,
-        "unknown": 5,
-    }
-    return order.get(severity, 6)
 
 
 def _active_runtime_gates(runtime) -> list[str]:

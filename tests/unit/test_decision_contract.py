@@ -62,6 +62,21 @@ def test_write_github_outputs_emits_gate_and_contract_fields(tmp_path, monkeypat
     assert json.loads(blocking_line.split("=", maxsplit=1)[1]) == []
 
 
+def test_clean_go_contract_keeps_required_next_steps_empty() -> None:
+    result = run_action(
+        diff_text="diff --git a/README.md b/README.md\nindex 1111111..2222222 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n hello\n+world\n",
+        current_reports={},
+        baseline_reports={},
+        policy_text=None,
+    )
+
+    assert result.decision_contract["decision"]["verdict"] == "GO"
+    assert result.decision_contract["actions"]["required_next_steps"] == []
+    assert result.decision_contract["actions"]["advisory_guidance"] == [
+        "Proceed with normal review and deployment checks"
+    ]
+
+
 def test_run_action_decision_contract_includes_metadata_and_categories() -> None:
     result = run_action(
         diff_text="diff --git a/requirements.txt b/requirements.txt\nindex 1111111..2222222 100644\n--- a/requirements.txt\n+++ b/requirements.txt\n@@ -1 +1 @@\n-urllib3==2.2.2\n+urllib3==1.25.8\n",

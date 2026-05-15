@@ -100,7 +100,7 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
         "platform owner",
         "security owner",
         "service owner",
-        "sre owner",
+        "SRE owner",
     ]
     assert "rollback readiness" in " ".join(decision_contract["signals"]["trust_baseline"]["elevated"])
 
