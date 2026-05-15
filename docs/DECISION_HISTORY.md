@@ -79,6 +79,7 @@ That makes S3-backed replay straightforward:
 Example helper:
 
 - [examples/aws/replay-s3-history.sh](../examples/aws/replay-s3-history.sh)
+- [examples/aws/build-athena-queries.sh](../examples/aws/build-athena-queries.sh)
 
 ## Time-bounded replay
 

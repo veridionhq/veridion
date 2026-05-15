@@ -61,6 +61,15 @@ Reference script:
 
 - [examples/non-github/build-runtime-context.sh](../examples/non-github/build-runtime-context.sh)
 
+Supported provider-shaped inputs today:
+
+- incidents: `generic`, `pagerduty`
+- alerts: `generic`, `datadog`
+- canary health: `generic`, `argo-rollouts`
+- rollback viability: `generic`, `argo-rollouts`
+
+The goal is still one normalized runtime contract. Provider support is just a convenience layer at ingestion time.
+
 ## Run Veridion without GitHub Actions
 
 Once you have:

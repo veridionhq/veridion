@@ -163,6 +163,20 @@ Helper script:
 
 ## Athena query examples
 
+If you want a generated starter pack instead of hand-writing SQL:
+
+```bash
+python3 -m veridion.action.athena_queries \
+  --database analytics \
+  --table veridion_decision_events \
+  --s3-location s3://veridion-prod-events/veridion/events/ \
+  --output-path /tmp/veridion-athena-queries.json
+```
+
+Reference helper:
+
+- [examples/aws/build-athena-queries.sh](../examples/aws/build-athena-queries.sh)
+
 Count verdicts by day:
 
 ```sql
