@@ -65,13 +65,34 @@ This writes:
 
 These snapshots are useful for scheduled report generation and static dashboards before a long-lived backend exists.
 
+## Materialize timestamped runs
+
+If you want scheduled snapshots instead of one-off exports, materialize them into:
+
+- `runs/<run_id>/...`
+- `latest/...`
+
+Example:
+
+```bash
+python3 -m veridion.action.decision_history_materialize \
+  --config-path examples/aws/history-service.config.json \
+  --output-root /tmp/veridion-history-materialized
+```
+
+This is the intended bridge between:
+
+- centralized event storage
+- scheduled analytics generation
+- simple dashboard/report publishing
+
 ## Serve analytics over HTTP
 
 You can also expose the same file-backed history through a small local service:
 
 ```bash
 python3 -m veridion.action.decision_history_service \
-  --history-path /tmp/veridion-s3-history \
+  --config-path examples/aws/history-service.config.json \
   --host 127.0.0.1 \
   --port 8787
 ```
@@ -82,11 +103,20 @@ Endpoints:
 - `/analytics`
 - `/repositories`
 - `/policy-rollouts`
+- `/tenants`
+
+If you configure bearer-token auth:
+
+```bash
+curl \
+  -H "Authorization: Bearer replace-me-with-a-real-shared-token" \
+  "http://127.0.0.1:8787/analytics?tenant=acme&since=2026-05-01T00:00:00Z"
+```
 
 Example:
 
 ```bash
-curl "http://127.0.0.1:8787/analytics?repository=acme/service-a&since=2026-05-01T00:00:00Z"
+curl "http://127.0.0.1:8787/analytics?tenant=acme&repository=acme/service-a&since=2026-05-01T00:00:00Z"
 ```
 
 ## Filter for rollout analysis
@@ -128,7 +158,9 @@ Example helper:
 
 - [examples/aws/replay-s3-history.sh](../examples/aws/replay-s3-history.sh)
 - [examples/aws/build-athena-queries.sh](../examples/aws/build-athena-queries.sh)
+- [examples/aws/materialize-history.sh](../examples/aws/materialize-history.sh)
 - [examples/aws/run-history-service.sh](../examples/aws/run-history-service.sh)
+- [examples/aws/history-service.config.json](../examples/aws/history-service.config.json)
 
 ## Time-bounded replay
 

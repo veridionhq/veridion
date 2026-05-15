@@ -6,6 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
+from veridion.action.decision_history_config import load_history_service_config
 from veridion.action.decision_history import analyze_history
 
 
@@ -14,13 +15,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--history-path",
         action="append",
-        required=True,
+        default=[],
         help="Path to decision-history NDJSON, decision-event JSON, or exported event directory",
     )
+    parser.add_argument("--config-path", help="Optional multi-tenant history service config JSON")
     parser.add_argument("--output-dir", required=True, help="Directory to write analytics snapshots")
     parser.add_argument("--since", help="Optional inclusive ISO-8601 lower bound for generated_at")
     parser.add_argument("--until", help="Optional inclusive ISO-8601 upper bound for generated_at")
     args = parser.parse_args(argv)
+
+    if not args.history_path and not args.config_path:
+        raise SystemExit("either --history-path or --config-path is required")
+
+    if args.config_path:
+        export_configured_decision_history(
+            config_path=args.config_path,
+            output_dir=args.output_dir,
+            since=args.since,
+            until=args.until,
+        )
+        return 0
 
     export_decision_history(
         history_paths=tuple(args.history_path),
@@ -57,6 +71,28 @@ def export_decision_history(
     for pack_id in seen_pack_ids:
         payload = analyze_history(history_paths=history_paths, policy_pack_id=pack_id, since=since, until=until)
         (packs_dir / f"{pack_id}.json").write_text(json.dumps(payload, indent=2) + "\n")
+
+
+def export_configured_decision_history(
+    *,
+    config_path: str | Path,
+    output_dir: str | Path,
+    since: str | None = None,
+    until: str | None = None,
+) -> None:
+    config = load_history_service_config(config_path)
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    tenants_dir = root / "tenants"
+    tenants_dir.mkdir(exist_ok=True)
+    for tenant in config.tenants:
+        tenant_root = tenants_dir / tenant.tenant_id
+        export_decision_history(
+            history_paths=tenant.history_paths,
+            output_dir=tenant_root,
+            since=since,
+            until=until,
+        )
 
 
 if __name__ == "__main__":

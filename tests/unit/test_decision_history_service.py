@@ -1,5 +1,6 @@
 import json
 
+from veridion.action.decision_history_config import HistoryTenant
 from veridion.action.decision_history_service import resolve_history_request
 
 
@@ -46,3 +47,66 @@ def test_decision_history_service_routes_health_and_analytics(tmp_path) -> None:
     assert analytics["by_verdict"] == {"NO GO": 1}
     assert repositories_status == 200
     assert repositories["repositories"] == ["acme/service-a", "acme/service-b"]
+
+
+def test_decision_history_service_supports_tenants_and_auth(tmp_path) -> None:
+    acme_history = tmp_path / "acme.ndjson"
+    beta_history = tmp_path / "beta.ndjson"
+    acme_history.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-05-14T12:00:00Z",
+                "repository": "acme/service-a",
+                "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+                "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+                "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+            }
+        )
+        + "\n"
+    )
+    beta_history.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-05-14T13:00:00Z",
+                "repository": "beta/service-b",
+                "decision": {"verdict": "NO GO", "gate_status": "block", "blocking_categories": ["dependency_risk"]},
+                "automation": {"approval_gate_status": "blocked", "stale_approvals": []},
+                "policy": {"pack_id": "platform", "pack_version": "1", "rollout_stage": "general"},
+            }
+        )
+        + "\n"
+    )
+
+    tenants = {
+        "acme": HistoryTenant(tenant_id="acme", history_paths=(str(acme_history),)),
+        "beta": HistoryTenant(tenant_id="beta", history_paths=(str(beta_history),)),
+    }
+
+    unauthorized_status, unauthorized = resolve_history_request(
+        "/analytics?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        headers={},
+        auth_tokens=("secret",),
+    )
+    tenants_status, tenants_payload = resolve_history_request(
+        "/tenants",
+        history_paths=(),
+        tenants=tenants,
+        headers={"Authorization": "Bearer secret"},
+        auth_tokens=("secret",),
+    )
+    analytics_status, analytics = resolve_history_request(
+        "/analytics?tenant=beta",
+        history_paths=(),
+        tenants=tenants,
+        headers={"Authorization": "Bearer secret"},
+        auth_tokens=("secret",),
+    )
+
+    assert unauthorized_status == 401
+    assert unauthorized["error"] == "unauthorized"
+    assert tenants_status == 200
+    assert tenants_payload["tenants"] == ["acme", "beta"]
+    assert analytics_status == 200
+    assert analytics["by_verdict"] == {"NO GO": 1}
