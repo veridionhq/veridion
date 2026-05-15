@@ -23,9 +23,10 @@ def test_evaluate_required_approval_state_marks_user_role_satisfied(monkeypatch)
         github_approval_state,
         "_fetch_pull_request_reviews",
         lambda **kwargs: (
-            github_approval_state.ReviewRecord(reviewer="alice", state="APPROVED"),
+            github_approval_state.ReviewRecord(reviewer="alice", state="APPROVED", commit_id="abc123"),
         ),
     )
+    monkeypatch.setattr(github_approval_state, "_fetch_pull_request_head_sha", lambda **kwargs: "abc123")
 
     result = github_approval_state.evaluate_required_approval_state(
         repository="acme/veridion",
@@ -48,9 +49,10 @@ def test_evaluate_required_approval_state_marks_team_role_satisfied_from_member_
         github_approval_state,
         "_fetch_pull_request_reviews",
         lambda **kwargs: (
-            github_approval_state.ReviewRecord(reviewer="bob", state="APPROVED"),
+            github_approval_state.ReviewRecord(reviewer="bob", state="APPROVED", commit_id="abc123"),
         ),
     )
+    monkeypatch.setattr(github_approval_state, "_fetch_pull_request_head_sha", lambda **kwargs: "abc123")
     monkeypatch.setattr(
         github_approval_state,
         "_fetch_team_members",
@@ -74,6 +76,7 @@ def test_evaluate_required_approval_state_marks_team_role_satisfied_from_member_
 def test_evaluate_required_approval_state_tracks_pending_and_unmapped_roles(monkeypatch) -> None:
     monkeypatch.setattr(github_approval_state, "_fetch_pull_request_reviews", lambda **kwargs: ())
     monkeypatch.setattr(github_approval_state, "_fetch_team_members", lambda **kwargs: ("bob",))
+    monkeypatch.setattr(github_approval_state, "_fetch_pull_request_head_sha", lambda **kwargs: "abc123")
 
     result = github_approval_state.evaluate_required_approval_state(
         repository="acme/veridion",
@@ -92,6 +95,32 @@ def test_evaluate_required_approval_state_tracks_pending_and_unmapped_roles(monk
     assert result.role_states[1].status == "unmapped"
 
 
+def test_evaluate_required_approval_state_marks_stale_approvals_when_head_sha_moves(monkeypatch) -> None:
+    monkeypatch.setattr(
+        github_approval_state,
+        "_fetch_pull_request_reviews",
+        lambda **kwargs: (
+            github_approval_state.ReviewRecord(reviewer="alice", state="APPROVED", commit_id="oldsha"),
+        ),
+    )
+    monkeypatch.setattr(github_approval_state, "_fetch_pull_request_head_sha", lambda **kwargs: "newsha")
+
+    result = github_approval_state.evaluate_required_approval_state(
+        repository="acme/veridion",
+        pull_request_number=7,
+        github_token="token",
+        required_approvals=("security_owner",),
+        approval_map=ApprovalMap(roles={"security_owner": ReviewerTarget(users=("alice",))}),
+    )
+
+    assert result.status == "stale"
+    assert result.approvals_satisfied is False
+    assert result.stale_roles == ("security_owner",)
+    assert result.role_states[0].status == "stale"
+    assert result.role_states[0].stale_approvers == ("alice",)
+    assert result.pull_request_head_sha == "newsha"
+
+
 def test_enrich_decision_contract_adds_approval_state() -> None:
     contract = {"automation": {"comment_identifier": "veridion:rdi"}}
     result = github_approval_state.ApprovalSatisfactionResult(
@@ -99,10 +128,12 @@ def test_enrich_decision_contract_adds_approval_state() -> None:
         approvals_satisfied=False,
         satisfied_roles=("platform_owner",),
         unsatisfied_roles=("security_owner",),
+        stale_roles=(),
         role_states=(
             github_approval_state.ApprovalRoleState(role="platform_owner", status="satisfied", approved_by=("alice",)),
             github_approval_state.ApprovalRoleState(role="security_owner", status="pending", pending_users=("bob",)),
         ),
+        pull_request_head_sha="abc123",
     )
 
     enriched = github_approval_state.enrich_decision_contract(contract, result)
@@ -111,6 +142,8 @@ def test_enrich_decision_contract_adds_approval_state() -> None:
     assert enriched["automation"]["approvals_satisfied"] is False
     assert enriched["automation"]["satisfied_approvals"] == ["platform_owner"]
     assert enriched["automation"]["unsatisfied_approvals"] == ["security_owner"]
+    assert enriched["automation"]["stale_approvals"] == []
+    assert enriched["automation"]["approval_head_sha"] == "abc123"
 
 
 def test_evaluate_approval_gate_blocks_unsatisfied_required_approvals() -> None:
@@ -119,12 +152,30 @@ def test_evaluate_approval_gate_blocks_unsatisfied_required_approvals() -> None:
         approvals_satisfied=False,
         satisfied_roles=(),
         unsatisfied_roles=("security_owner",),
+        stale_roles=(),
         role_states=(),
     )
 
     gate = github_approval_state.evaluate_approval_gate(result, enforce=True)
 
     assert gate.status == "blocked"
+    assert gate.allowed is False
+
+
+def test_evaluate_approval_gate_blocks_stale_approvals() -> None:
+    result = github_approval_state.ApprovalSatisfactionResult(
+        status="stale",
+        approvals_satisfied=False,
+        satisfied_roles=(),
+        unsatisfied_roles=("security_owner",),
+        stale_roles=("security_owner",),
+        role_states=(),
+        pull_request_head_sha="newsha",
+    )
+
+    gate = github_approval_state.evaluate_approval_gate(result, enforce=True)
+
+    assert gate.status == "stale"
     assert gate.allowed is False
 
 
@@ -149,9 +200,11 @@ def test_write_github_outputs_emits_approval_state(tmp_path, monkeypatch) -> Non
             approvals_satisfied=False,
             satisfied_roles=("platform_owner",),
             unsatisfied_roles=("security_owner",),
+            stale_roles=(),
             role_states=(
                 github_approval_state.ApprovalRoleState(role="platform_owner", status="satisfied", approved_by=("alice",)),
             ),
+            pull_request_head_sha="abc123",
         ),
         github_approval_state.ApprovalGateEvaluation(status="blocked", allowed=False),
     )
@@ -161,5 +214,6 @@ def test_write_github_outputs_emits_approval_state(tmp_path, monkeypatch) -> Non
     assert "approvals_satisfied=false" in content
     assert "approval_gate_status=blocked" in content
     assert "approval_gate_allowed=false" in content
+    assert "approval_head_sha=abc123" in content
     satisfied_line = next(line for line in content.splitlines() if line.startswith("satisfied_approvals_json="))
     assert json.loads(satisfied_line.split("=", maxsplit=1)[1]) == ["platform_owner"]

@@ -26,6 +26,8 @@ def test_build_decision_event_preserves_final_contract_state() -> None:
                 "approvals_satisfied": False,
                 "satisfied_approvals": [],
                 "unsatisfied_approvals": ["platform_owner"],
+                "stale_approvals": [],
+                "approval_head_sha": "abc123",
                 "approval_gate_status": "blocked",
                 "approval_gate_allowed": False,
             },
@@ -41,6 +43,7 @@ def test_build_decision_event_preserves_final_contract_state() -> None:
 
     assert event["decision"]["verdict"] == "CONDITIONAL GO"
     assert event["automation"]["approval_gate_status"] == "blocked"
+    assert event["automation"]["approval_head_sha"] == "abc123"
     assert event["policy"]["pack_id"] == "platform-team"
     assert event["repository"] == "acme/veridion"
     assert event["pull_request_number"] == 42

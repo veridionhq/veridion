@@ -148,6 +148,8 @@ Outputs:
 - `approvals_satisfied`
 - `satisfied_approvals_json`
 - `unsatisfied_approvals_json`
+- `stale_approvals_json`
+- `approval_head_sha`
 - `approval_state_json`
 - `approval_gate_status`
 - `approval_gate_allowed`
@@ -160,6 +162,12 @@ If you want approval state to become enforceable instead of informational, set:
 - `enforce-approval-satisfaction: "true"`
 
 That makes unsatisfied or unmapped required approvals fail the workflow without adding a separate shell gate step.
+
+Veridion also treats approvals as stale when the latest approval predates the current pull request head commit. Stale approvals are exposed separately from merely pending approvals so downstream systems can distinguish:
+
+- no approval yet
+- stale approval after new commits
+- unmapped approval role
 
 ## Consume accepted-risk governance
 

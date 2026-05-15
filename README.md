@@ -241,6 +241,8 @@ For downstream automation, the action now exposes:
 - `decision_contract_path`
 - `approval_gate_status`
 - `approval_gate_allowed`
+- `stale_approvals_json`
+- `approval_head_sha`
 - `decision_event_path`
 
 Optional integrations on top of the decision contract now include:

@@ -71,6 +71,8 @@ def build_decision_event(
             "approvals_satisfied": automation.get("approvals_satisfied"),
             "satisfied_approvals": list(_as_list(automation.get("satisfied_approvals"))),
             "unsatisfied_approvals": list(_as_list(automation.get("unsatisfied_approvals"))),
+            "stale_approvals": list(_as_list(automation.get("stale_approvals"))),
+            "approval_head_sha": automation.get("approval_head_sha", ""),
             "approval_gate_status": automation.get("approval_gate_status", ""),
             "approval_gate_allowed": automation.get("approval_gate_allowed"),
         },

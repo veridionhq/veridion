@@ -203,6 +203,12 @@ outputs:
   unsatisfied_approvals_json:
     description: "JSON array of required approval roles not yet satisfied"
     value: ${{ steps.verify-approvals.outputs.unsatisfied_approvals_json }}
+  stale_approvals_json:
+    description: "JSON array of required approval roles whose latest approval predates the current PR head commit"
+    value: ${{ steps.verify-approvals.outputs.stale_approvals_json }}
+  approval_head_sha:
+    description: "Current pull request head SHA used to determine whether approvals are fresh"
+    value: ${{ steps.verify-approvals.outputs.approval_head_sha }}
   approval_state_json:
     description: "JSON array describing per-role approval satisfaction state"
     value: ${{ steps.verify-approvals.outputs.approval_state_json }}
