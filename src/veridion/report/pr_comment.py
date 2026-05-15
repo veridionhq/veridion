@@ -36,6 +36,7 @@ REQUIRED_NEXT_STEP_PREFIXES = (
     "Run authentication and access-control",
     "Validate data-handling and tenant-safety",
 )
+_CLEAN_REVIEW_HEADLINE_KEY = CLEAN_REVIEW_HEADLINE
 
 
 @dataclass(frozen=True)
@@ -266,7 +267,7 @@ def _merge_headline_summary(
 
 
 def _subsumed_driver_keys(headline_key: str) -> set[str]:
-    if headline_key == CLEAN_REVIEW_HEADLINE:
+    if headline_key == _CLEAN_REVIEW_HEADLINE_KEY:
         return {
             "no introduced findings detected",
             "release still requires explicit approvals or operational checks",

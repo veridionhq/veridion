@@ -189,6 +189,8 @@ def _gate_status(decision: str) -> str:
     if decision == "CONDITIONAL GO":
         return "review"
     return "pass"
+
+
 def _split_recommendations(recommendations: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
     required: list[str] = []
     advisory: list[str] = []

@@ -339,9 +339,17 @@ def _write_github_outputs(
 
 
 def _parse_allowed_decisions(value: str) -> tuple[str, ...]:
+    valid = {"GO", "CONDITIONAL GO", "NO GO"}
     values = tuple(item.strip() for item in value.split(",") if item.strip())
     if not values:
         raise RuntimeError("allowed-decisions must contain at least one decision")
+    invalid = tuple(item for item in values if item not in valid)
+    if invalid:
+        raise RuntimeError(
+            "allowed-decisions contains unsupported value(s): "
+            + ", ".join(invalid)
+            + ". Supported values: GO, CONDITIONAL GO, NO GO"
+        )
     return values
 
 

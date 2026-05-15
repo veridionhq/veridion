@@ -33,6 +33,15 @@ def test_parse_allowed_decisions_rejects_empty_values() -> None:
         raise AssertionError("expected empty allowed-decisions to fail")
 
 
+def test_parse_allowed_decisions_rejects_unknown_values() -> None:
+    try:
+        _parse_allowed_decisions("SHIP IT,LGTM")
+    except RuntimeError as exc:
+        assert "allowed-decisions contains unsupported value(s): SHIP IT, LGTM" in str(exc)
+    else:
+        raise AssertionError("expected unsupported allowed-decisions to fail")
+
+
 def test_write_github_outputs_emits_gate_and_contract_fields(tmp_path, monkeypatch) -> None:
     result = run_action(
         diff_text="diff --git a/README.md b/README.md\nindex 1111111..2222222 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n hello\n+world\n",
