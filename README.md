@@ -131,6 +131,7 @@ GitHub PR
 - [Docs Home](https://getveridion.com/docs/)
 - [Quickstart](docs/QUICKSTART.md)
 - [Automation Guide](docs/AUTOMATION_GUIDE.md)
+- [Decision History](docs/DECISION_HISTORY.md)
 - [Non-GitHub Producers](docs/NON_GITHUB.md)
 - [GitLab Adapter](docs/GITLAB.md)
 - [Policy Simulation](docs/POLICY_SIMULATION.md)
@@ -251,6 +252,7 @@ Optional integrations on top of the decision contract now include:
 - GitHub approval satisfaction checks for mapped approval roles
 - approval enforcement for unsatisfied required approvals
 - durable decision-event artifacts and append-only history logs
+- local decision-history analytics by repository, policy pack, and gate outcome
 - outbound webhook delivery of the decision contract
 - generic CI producers that build `operational-context.json` without GitHub event payloads
 - policy simulation across multiple policy packs before changing live enforcement

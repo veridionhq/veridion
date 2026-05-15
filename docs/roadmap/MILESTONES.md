@@ -290,7 +290,9 @@ Status:
 
 - Started on `develop` with approval enforcement outputs and a post-verification decision-event artifact
 - Decision events can now be appended to an NDJSON history log so later systems can replay or aggregate release outcomes
-- Follow-up remains for persistent centralized storage, historical replay tooling, approval freshness checks after new commits, and pack-version rollout analytics
+- Approval freshness now invalidates stale approvals after new commits instead of treating old approvals as current control state
+- Local decision-history analytics now summarize verdict, approval-gate, blocking-category, and policy-pack trends from the NDJSON event log
+- Follow-up remains for persistent centralized storage, org-wide replay tooling, and long-range pack rollout analytics over larger history sets
 
 ## Execution Notes
 

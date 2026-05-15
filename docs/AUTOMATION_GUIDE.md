@@ -244,3 +244,4 @@ Output:
 
 - [examples/workflows/rdi.yml](../examples/workflows/rdi.yml)
 - [examples/workflows/deploy-gate.yml](../examples/workflows/deploy-gate.yml)
+- [Decision History](./DECISION_HISTORY.md)
