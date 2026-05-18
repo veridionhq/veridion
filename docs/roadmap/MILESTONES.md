@@ -295,7 +295,8 @@ Status:
 - File-backed history replay now works across NDJSON logs, single decision-event files, and exported event-object trees such as S3-synced partitions
 - File-backed service and export surfaces now exist for org-scope analytics snapshots and HTTP consumption without introducing a database-backed backend yet
 - Multi-tenant config, bearer-token auth, and timestamped materialization runs now exist as the first hosted-history control-plane layer
-- Follow-up remains for persistent database-backed multi-tenant storage, warehouse-native scheduled analytics, and long-range pack rollout analytics over larger history sets
+- SQLite-backed multi-tenant event storage now exists as the first persistent hosted backend, and scheduled materialization can emit per-tenant warehouse query packs
+- Follow-up remains for stronger service-grade databases, deeper authz, warehouse-native scheduled execution, and long-range pack rollout analytics over larger history sets
 
 ## Execution Notes
 

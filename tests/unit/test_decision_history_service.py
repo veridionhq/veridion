@@ -1,6 +1,7 @@
 import json
 
-from veridion.action.decision_history_config import HistoryTenant
+from veridion.action.decision_history_config import HistoryTenant, HistoryToken
+from veridion.action.decision_history_store import upsert_history_store
 from veridion.action.decision_history_service import resolve_history_request
 
 
@@ -103,6 +104,20 @@ def test_decision_history_service_supports_tenants_and_auth(tmp_path) -> None:
         headers={"Authorization": "Bearer secret"},
         auth_tokens=("secret",),
     )
+    scoped_list_status, scoped_list = resolve_history_request(
+        "/tenants",
+        history_paths=(),
+        tenants=tenants,
+        headers={"Authorization": "Bearer scoped"},
+        scoped_tokens={"scoped": HistoryToken(token="scoped", tenants=("acme",))},
+    )
+    scoped_aggregate_status, scoped_aggregate = resolve_history_request(
+        "/analytics",
+        history_paths=(),
+        tenants=tenants,
+        headers={"Authorization": "Bearer scoped"},
+        scoped_tokens={"scoped": HistoryToken(token="scoped", tenants=("acme",))},
+    )
 
     assert unauthorized_status == 401
     assert unauthorized["error"] == "unauthorized"
@@ -110,3 +125,48 @@ def test_decision_history_service_supports_tenants_and_auth(tmp_path) -> None:
     assert tenants_payload["tenants"] == ["acme", "beta"]
     assert analytics_status == 200
     assert analytics["by_verdict"] == {"NO GO": 1}
+    assert scoped_list_status == 200
+    assert scoped_list["tenants"] == ["acme"]
+    assert scoped_aggregate_status == 403
+    assert scoped_aggregate["error"] == "tenant_scope_required"
+
+
+def test_decision_history_service_uses_sqlite_store_and_scoped_tokens(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    acme_history = tmp_path / "acme.ndjson"
+    acme_history.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-05-14T12:00:00Z",
+                "repository": "acme/service-a",
+                "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+                "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+                "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+            }
+        )
+        + "\n"
+    )
+    upsert_history_store(sqlite_path=sqlite_path, tenant_id="acme", history_paths=(str(acme_history),))
+    tenants = {"acme": HistoryTenant(tenant_id="acme", history_paths=())}
+
+    forbidden_status, forbidden = resolve_history_request(
+        "/analytics?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer scoped"},
+        scoped_tokens={"scoped": HistoryToken(token="scoped", tenants=("beta",))},
+    )
+    allowed_status, allowed = resolve_history_request(
+        "/analytics?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer scoped"},
+        scoped_tokens={"scoped": HistoryToken(token="scoped", tenants=("acme",))},
+    )
+
+    assert forbidden_status == 403
+    assert forbidden["error"] == "forbidden"
+    assert allowed_status == 200
+    assert allowed["by_verdict"] == {"GO": 1}

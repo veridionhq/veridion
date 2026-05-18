@@ -65,6 +65,29 @@ This writes:
 
 These snapshots are useful for scheduled report generation and static dashboards before a long-lived backend exists.
 
+## Persistent SQLite store
+
+If you want a simple persistent hosted backend before introducing Postgres or another service database, use the SQLite history store.
+
+Ingest centralized history into the store:
+
+```bash
+python3 -m veridion.action.decision_history_store ingest \
+  --sqlite-path /tmp/veridion-history.db \
+  --tenant-id acme \
+  --history-path /tmp/veridion-s3-history/acme
+```
+
+Then analyze directly from the store:
+
+```bash
+python3 -m veridion.action.decision_history_store analyze \
+  --sqlite-path /tmp/veridion-history.db \
+  --tenant-id acme
+```
+
+This is the first persistent multi-tenant backend for the hosted-history layer.
+
 ## Materialize timestamped runs
 
 If you want scheduled snapshots instead of one-off exports, materialize them into:
@@ -85,6 +108,8 @@ This is the intended bridge between:
 - centralized event storage
 - scheduled analytics generation
 - simple dashboard/report publishing
+
+When you use a SQLite-backed tenant config, materialization can also emit per-tenant Athena query packs inside each run.
 
 ## Serve analytics over HTTP
 
@@ -157,6 +182,7 @@ That makes S3-backed replay straightforward:
 Example helper:
 
 - [examples/aws/replay-s3-history.sh](../examples/aws/replay-s3-history.sh)
+- [examples/aws/ingest-history-store.sh](../examples/aws/ingest-history-store.sh)
 - [examples/aws/build-athena-queries.sh](../examples/aws/build-athena-queries.sh)
 - [examples/aws/materialize-history.sh](../examples/aws/materialize-history.sh)
 - [examples/aws/run-history-service.sh](../examples/aws/run-history-service.sh)

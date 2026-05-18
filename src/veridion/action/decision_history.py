@@ -61,7 +61,11 @@ def analyze_history(
         for event in _load_history(history_paths)
     )
     filtered = tuple(item for item in events if item is not None)
+    return analyze_history_events(filtered)
 
+
+def analyze_history_events(events: tuple[dict[str, object], ...]) -> dict[str, object]:
+    filtered = tuple(item for item in events if item is not None)
     return {
         "schema_version": 1,
         "source": "veridion.action.decision_history@1",
