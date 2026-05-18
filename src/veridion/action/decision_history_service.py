@@ -52,6 +52,7 @@ def serve_decision_history(
         history_paths,
         tenants=tenant_map(config) if config else {},
         sqlite_path=config.sqlite_path if config else "",
+        store_dsn=config.store_dsn if config else "",
         auth_tokens=_merge_auth_tokens(config.auth_tokens if config else (), auth_token),
         scoped_tokens=token_map(config) if config else {},
     )
@@ -64,6 +65,7 @@ def _build_handler(
     *,
     tenants: dict[str, HistoryTenant],
     sqlite_path: str,
+    store_dsn: str,
     auth_tokens: tuple[str, ...],
     scoped_tokens: dict[str, HistoryToken],
 ):
@@ -74,6 +76,7 @@ def _build_handler(
                 history_paths=history_paths,
                 tenants=tenants,
                 sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
                 headers=dict(self.headers.items()),
                 auth_tokens=auth_tokens,
                 scoped_tokens=scoped_tokens,
@@ -112,6 +115,7 @@ def resolve_history_request(
     history_paths: tuple[str, ...],
     tenants: dict[str, HistoryTenant] | None = None,
     sqlite_path: str = "",
+    store_dsn: str = "",
     headers: dict[str, str] | None = None,
     auth_tokens: tuple[str, ...] = (),
     scoped_tokens: dict[str, HistoryToken] | None = None,
@@ -141,6 +145,7 @@ def resolve_history_request(
             history_paths=history_paths,
             tenants=tenant_lookup,
             sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
             tenant_id=params.get("tenant", ""),
             repository=params.get("repository"),
             policy_pack_id=params.get("policy_pack_id"),
@@ -155,6 +160,7 @@ def resolve_history_request(
             history_paths=history_paths,
             tenants=tenant_lookup,
             sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
             tenant_id=params.get("tenant", ""),
         )
         if payload is None:
@@ -166,6 +172,7 @@ def resolve_history_request(
             history_paths=history_paths,
             tenants=tenant_lookup,
             sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
             tenant_id=params.get("tenant", ""),
         )
         if payload is None:
@@ -176,6 +183,7 @@ def resolve_history_request(
             history_paths=history_paths,
             tenants=tenant_lookup,
             sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
             tenant_id=params.get("tenant", ""),
             since=params.get("since"),
             until=params.get("until"),
@@ -196,17 +204,19 @@ def _analyze_request(
     history_paths: tuple[str, ...],
     tenants: dict[str, HistoryTenant],
     sqlite_path: str,
+    store_dsn: str,
     tenant_id: str,
     repository: str | None = None,
     policy_pack_id: str | None = None,
     since: str | None = None,
     until: str | None = None,
 ) -> dict[str, object] | None:
-    if sqlite_path:
+    if sqlite_path or store_dsn:
         if tenant_id and tenant_id not in tenants:
             return None
         return analyze_history_store(
             sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
             tenant_id=tenant_id,
             repository=repository,
             policy_pack_id=policy_pack_id,

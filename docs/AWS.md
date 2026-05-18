@@ -165,6 +165,8 @@ Helper script:
 - [examples/aws/run-history-service.sh](../examples/aws/run-history-service.sh)
 - [examples/aws/history-service.config.json](../examples/aws/history-service.config.json)
 
+The default example uses SQLite as the first persistent hosted backend. Teams that outgrow it can keep the same service/export/materialization surfaces and switch to a Postgres-style store DSN later.
+
 ## Athena query examples
 
 If you want a generated starter pack instead of hand-writing SQL:

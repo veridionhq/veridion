@@ -94,12 +94,13 @@ def materialize_decision_history(
         athena_s3_location_template=athena_s3_location_template,
     )
 
-    if config and config.sqlite_path and athena_database and athena_s3_location_template:
+    if config and (config.sqlite_path or config.store_dsn) and athena_database and athena_s3_location_template:
         warehouse_dir = run_dir / "warehouse"
         warehouse_dir.mkdir(exist_ok=True)
         for tenant in config.tenants:
             materialize_warehouse_queries(
                 sqlite_path=config.sqlite_path,
+                store_dsn=config.store_dsn,
                 tenant_id=tenant.tenant_id,
                 output_path=warehouse_dir / f"{tenant.tenant_id}.athena.json",
                 database=athena_database,

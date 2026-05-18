@@ -129,6 +129,15 @@ def test_decision_history_service_supports_tenants_and_auth(tmp_path) -> None:
     assert scoped_list["tenants"] == ["acme"]
     assert scoped_aggregate_status == 403
     assert scoped_aggregate["error"] == "tenant_scope_required"
+    dashboard_status, dashboard = resolve_history_request(
+        "/dashboard?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        headers={"Authorization": "Bearer scoped"},
+        scoped_tokens={"scoped": HistoryToken(token="scoped", tenants=("acme",))},
+    )
+    assert dashboard_status == 200
+    assert "<html>" in dashboard["html"]
 
 
 def test_decision_history_service_uses_sqlite_store_and_scoped_tokens(tmp_path) -> None:

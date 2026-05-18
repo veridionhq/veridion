@@ -88,6 +88,8 @@ python3 -m veridion.action.decision_history_store analyze \
 
 This is the first persistent multi-tenant backend for the hosted-history layer.
 
+If you want to move beyond SQLite, the same CLI and service surfaces now also accept a store DSN for a Postgres-backed history store when the matching database dependency is installed.
+
 ## Materialize timestamped runs
 
 If you want scheduled snapshots instead of one-off exports, materialize them into:
@@ -136,6 +138,14 @@ If you configure bearer-token auth:
 curl \
   -H "Authorization: Bearer replace-me-with-a-real-shared-token" \
   "http://127.0.0.1:8787/analytics?tenant=acme&since=2026-05-01T00:00:00Z"
+```
+
+There is also a lightweight HTML view:
+
+```bash
+curl \
+  -H "Authorization: Bearer replace-me-with-a-real-shared-token" \
+  "http://127.0.0.1:8787/dashboard?tenant=acme"
 ```
 
 Example:

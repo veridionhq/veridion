@@ -85,9 +85,10 @@ def export_configured_decision_history(
     root = Path(output_dir)
     root.mkdir(parents=True, exist_ok=True)
 
-    if config.sqlite_path:
+    if config.sqlite_path or config.store_dsn:
         export_stored_decision_history(
             sqlite_path=config.sqlite_path,
+            store_dsn=config.store_dsn,
             tenant_ids=tuple(tenant.tenant_id for tenant in config.tenants),
             output_dir=root,
             since=since,
@@ -110,6 +111,7 @@ def export_configured_decision_history(
 def export_stored_decision_history(
     *,
     sqlite_path: str,
+    store_dsn: str = "",
     tenant_ids: tuple[str, ...],
     output_dir: str | Path,
     since: str | None = None,
@@ -122,7 +124,7 @@ def export_stored_decision_history(
     for tenant_id in tenant_ids:
         tenant_root = tenants_dir / tenant_id
         tenant_root.mkdir(parents=True, exist_ok=True)
-        payload = analyze_history_store(sqlite_path=sqlite_path, tenant_id=tenant_id, since=since, until=until)
+        payload = analyze_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id, since=since, until=until)
         (tenant_root / "overall.json").write_text(json.dumps(payload, indent=2) + "\n")
         repos_dir = tenant_root / "repositories"
         repos_dir.mkdir(exist_ok=True)
@@ -130,6 +132,7 @@ def export_stored_decision_history(
             repository = str(item["repository"])
             repo_payload = analyze_history_store(
                 sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
                 tenant_id=tenant_id,
                 repository=repository,
                 since=since,
@@ -142,6 +145,7 @@ def export_stored_decision_history(
             pack_id = str(item["pack_id"])
             pack_payload = analyze_history_store(
                 sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
                 tenant_id=tenant_id,
                 policy_pack_id=pack_id,
                 since=since,
