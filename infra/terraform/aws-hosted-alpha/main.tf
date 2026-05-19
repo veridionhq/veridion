@@ -8,6 +8,11 @@ locals {
   chosen_vpc_id     = var.create_network ? aws_vpc.main[0].id : var.vpc_id
   public_subnet_ids = var.create_network ? [for subnet in aws_subnet.public : subnet.id] : var.public_subnet_ids
   private_subnet_ids = var.create_network ? [for subnet in aws_subnet.private : subnet.id] : var.private_subnet_ids
+  private_subnet_map = var.create_network ? {
+    for key, subnet in aws_subnet.private : key => subnet.id
+  } : {
+    for idx, subnet_id in var.private_subnet_ids : tostring(idx) => subnet_id
+  }
   ecr_repo_name     = var.ecr_repository_name != "" ? var.ecr_repository_name : local.prefix
   container_image   = var.container_image != "" ? var.container_image : "${aws_ecr_repository.app[0].repository_url}:${var.container_image_tag}"
   materialization_bucket = var.create_s3_bucket ? one(aws_s3_bucket.materializations[*].bucket) : var.s3_bucket_name
@@ -262,7 +267,7 @@ resource "aws_efs_file_system" "materializations" {
 }
 
 resource "aws_efs_mount_target" "materializations" {
-  for_each        = toset(local.private_subnet_ids)
+  for_each        = local.private_subnet_map
   file_system_id  = aws_efs_file_system.materializations.id
   subnet_id       = each.value
   security_groups = [aws_security_group.efs.id]
