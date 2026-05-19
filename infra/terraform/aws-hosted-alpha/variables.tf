@@ -47,6 +47,11 @@ variable "create_network" {
   default = true
 }
 
+variable "create_nat_gateway" {
+  type    = bool
+  default = false
+}
+
 variable "vpc_cidr" {
   type    = string
   default = "10.42.0.0/16"
@@ -134,22 +139,32 @@ variable "worker_desired_count" {
 
 variable "service_cpu" {
   type    = number
-  default = 512
+  default = 256
 }
 
 variable "service_memory" {
   type    = number
-  default = 1024
+  default = 512
 }
 
 variable "worker_cpu" {
   type    = number
-  default = 512
+  default = 256
 }
 
 variable "worker_memory" {
   type    = number
-  default = 1024
+  default = 512
+}
+
+variable "ecs_tasks_in_public_subnets" {
+  type    = bool
+  default = true
+}
+
+variable "log_retention_in_days" {
+  type    = number
+  default = 7
 }
 
 variable "create_s3_bucket" {

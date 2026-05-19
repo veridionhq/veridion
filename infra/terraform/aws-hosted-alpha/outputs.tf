@@ -14,6 +14,14 @@ output "private_subnet_ids" {
   value = local.private_subnet_ids
 }
 
+output "ecs_task_subnet_ids" {
+  value = local.ecs_task_subnet_ids
+}
+
+output "ecs_assign_public_ip" {
+  value = local.ecs_assign_public_ip ? "ENABLED" : "DISABLED"
+}
+
 output "ecs_security_group_id" {
   value = aws_security_group.ecs.id
 }

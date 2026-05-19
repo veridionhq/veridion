@@ -1,6 +1,7 @@
 aws_region         = "us-west-2"
 name               = "veridion-alpha"
 create_network     = true
+create_nat_gateway = false
 vpc_cidr           = "10.42.0.0/16"
 public_subnet_cidrs  = ["10.42.0.0/24", "10.42.1.0/24"]
 private_subnet_cidrs = ["10.42.10.0/24", "10.42.11.0/24"]
@@ -39,3 +40,5 @@ schedules = [
 
 service_desired_count = 0
 worker_desired_count  = 0
+ecs_tasks_in_public_subnets = true
+log_retention_in_days = 7

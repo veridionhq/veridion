@@ -3,22 +3,24 @@ data "aws_availability_zones" "available" {
 }
 
 locals {
-  prefix            = var.name
-  azs               = length(var.availability_zones) > 0 ? var.availability_zones : slice(data.aws_availability_zones.available.names, 0, 2)
-  chosen_vpc_id     = var.create_network ? aws_vpc.main[0].id : var.vpc_id
-  public_subnet_ids = var.create_network ? [for subnet in aws_subnet.public : subnet.id] : var.public_subnet_ids
-  private_subnet_ids = var.create_network ? [for subnet in aws_subnet.private : subnet.id] : var.private_subnet_ids
+  prefix               = var.name
+  azs                  = length(var.availability_zones) > 0 ? var.availability_zones : slice(data.aws_availability_zones.available.names, 0, 2)
+  chosen_vpc_id        = var.create_network ? aws_vpc.main[0].id : var.vpc_id
+  public_subnet_ids    = var.create_network ? [for subnet in aws_subnet.public : subnet.id] : var.public_subnet_ids
+  private_subnet_ids   = var.create_network ? [for subnet in aws_subnet.private : subnet.id] : var.private_subnet_ids
+  ecs_task_subnet_ids  = var.ecs_tasks_in_public_subnets ? local.public_subnet_ids : local.private_subnet_ids
+  ecs_assign_public_ip = var.ecs_tasks_in_public_subnets
   private_subnet_map = var.create_network ? {
     for key, subnet in aws_subnet.private : key => subnet.id
-  } : {
+    } : {
     for idx, subnet_id in var.private_subnet_ids : tostring(idx) => subnet_id
   }
-  ecr_repo_name     = var.ecr_repository_name != "" ? var.ecr_repository_name : local.prefix
-  container_image   = var.container_image != "" ? var.container_image : "${aws_ecr_repository.app[0].repository_url}:${var.container_image_tag}"
+  ecr_repo_name          = var.ecr_repository_name != "" ? var.ecr_repository_name : local.prefix
+  container_image        = var.container_image != "" ? var.container_image : "${aws_ecr_repository.app[0].repository_url}:${var.container_image_tag}"
   materialization_bucket = var.create_s3_bucket ? one(aws_s3_bucket.materializations[*].bucket) : var.s3_bucket_name
-  db_host           = aws_db_instance.postgres.address
-  db_port           = aws_db_instance.postgres.port
-  store_dsn         = "postgresql://${var.db_username}:${var.db_password}@${local.db_host}:${local.db_port}/${var.db_name}"
+  db_host                = aws_db_instance.postgres.address
+  db_port                = aws_db_instance.postgres.port
+  store_dsn              = "postgresql://${var.db_username}:${var.db_password}@${local.db_host}:${local.db_port}/${var.db_name}"
   common_env = [
     { name = "VERIDION_SERVICE_NAME", value = "Veridion Hosted Control Plane" },
     { name = "VERIDION_STORE_DSN", value = local.store_dsn },
@@ -73,12 +75,12 @@ resource "aws_subnet" "private" {
 }
 
 resource "aws_eip" "nat" {
-  count  = var.create_network ? 1 : 0
+  count  = var.create_network && var.create_nat_gateway ? 1 : 0
   domain = "vpc"
 }
 
 resource "aws_nat_gateway" "main" {
-  count         = var.create_network ? 1 : 0
+  count         = var.create_network && var.create_nat_gateway ? 1 : 0
   allocation_id = aws_eip.nat[0].id
   subnet_id     = values(aws_subnet.public)[0].id
 
@@ -105,9 +107,12 @@ resource "aws_route_table" "private" {
   count  = var.create_network ? 1 : 0
   vpc_id = aws_vpc.main[0].id
 
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.main[0].id
+  dynamic "route" {
+    for_each = var.create_nat_gateway ? [1] : []
+    content {
+      cidr_block     = "0.0.0.0/0"
+      nat_gateway_id = aws_nat_gateway.main[0].id
+    }
   }
 }
 
@@ -124,17 +129,17 @@ resource "aws_ecr_repository" "app" {
 
 resource "aws_cloudwatch_log_group" "service" {
   name              = "/ecs/${local.prefix}/service"
-  retention_in_days = 14
+  retention_in_days = var.log_retention_in_days
 }
 
 resource "aws_cloudwatch_log_group" "worker" {
   name              = "/ecs/${local.prefix}/worker"
-  retention_in_days = 14
+  retention_in_days = var.log_retention_in_days
 }
 
 resource "aws_cloudwatch_log_group" "migrate" {
   name              = "/ecs/${local.prefix}/migrate"
-  retention_in_days = 14
+  retention_in_days = var.log_retention_in_days
 }
 
 resource "aws_s3_bucket" "materializations" {
@@ -444,9 +449,9 @@ resource "aws_ecs_service" "service" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = local.private_subnet_ids
+    subnets          = local.ecs_task_subnet_ids
     security_groups  = [aws_security_group.ecs.id]
-    assign_public_ip = false
+    assign_public_ip = local.ecs_assign_public_ip
   }
 
   load_balancer {
@@ -466,8 +471,8 @@ resource "aws_ecs_service" "worker" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = local.private_subnet_ids
+    subnets          = local.ecs_task_subnet_ids
     security_groups  = [aws_security_group.ecs.id]
-    assign_public_ip = false
+    assign_public_ip = local.ecs_assign_public_ip
   }
 }
