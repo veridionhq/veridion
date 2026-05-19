@@ -1,9 +1,19 @@
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
 locals {
-  prefix                 = var.name
+  prefix            = var.name
+  azs               = length(var.availability_zones) > 0 ? var.availability_zones : slice(data.aws_availability_zones.available.names, 0, 2)
+  chosen_vpc_id     = var.create_network ? aws_vpc.main[0].id : var.vpc_id
+  public_subnet_ids = var.create_network ? [for subnet in aws_subnet.public : subnet.id] : var.public_subnet_ids
+  private_subnet_ids = var.create_network ? [for subnet in aws_subnet.private : subnet.id] : var.private_subnet_ids
+  ecr_repo_name     = var.ecr_repository_name != "" ? var.ecr_repository_name : local.prefix
+  container_image   = var.container_image != "" ? var.container_image : "${aws_ecr_repository.app[0].repository_url}:${var.container_image_tag}"
   materialization_bucket = var.create_s3_bucket ? one(aws_s3_bucket.materializations[*].bucket) : var.s3_bucket_name
-  db_host                = aws_db_instance.postgres.address
-  db_port                = aws_db_instance.postgres.port
-  store_dsn              = "postgresql://${var.db_username}:${var.db_password}@${local.db_host}:${local.db_port}/${var.db_name}"
+  db_host           = aws_db_instance.postgres.address
+  db_port           = aws_db_instance.postgres.port
+  store_dsn         = "postgresql://${var.db_username}:${var.db_password}@${local.db_host}:${local.db_port}/${var.db_name}"
   common_env = [
     { name = "VERIDION_SERVICE_NAME", value = "Veridion Hosted Control Plane" },
     { name = "VERIDION_STORE_DSN", value = local.store_dsn },
@@ -15,6 +25,96 @@ locals {
     { name = "VERIDION_TENANTS_JSON", value = var.tenants_json },
     { name = "VERIDION_SCHEDULES_JSON", value = var.schedules_json }
   ]
+}
+
+resource "aws_vpc" "main" {
+  count                = var.create_network ? 1 : 0
+  cidr_block           = var.vpc_cidr
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+  tags = {
+    Name = "${local.prefix}-vpc"
+  }
+}
+
+resource "aws_internet_gateway" "main" {
+  count  = var.create_network ? 1 : 0
+  vpc_id = aws_vpc.main[0].id
+}
+
+resource "aws_subnet" "public" {
+  for_each = var.create_network ? { for idx, cidr in var.public_subnet_cidrs : idx => cidr } : {}
+
+  vpc_id                  = aws_vpc.main[0].id
+  cidr_block              = each.value
+  availability_zone       = local.azs[tonumber(each.key)]
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "${local.prefix}-public-${each.key}"
+  }
+}
+
+resource "aws_subnet" "private" {
+  for_each = var.create_network ? { for idx, cidr in var.private_subnet_cidrs : idx => cidr } : {}
+
+  vpc_id            = aws_vpc.main[0].id
+  cidr_block        = each.value
+  availability_zone = local.azs[tonumber(each.key)]
+
+  tags = {
+    Name = "${local.prefix}-private-${each.key}"
+  }
+}
+
+resource "aws_eip" "nat" {
+  count  = var.create_network ? 1 : 0
+  domain = "vpc"
+}
+
+resource "aws_nat_gateway" "main" {
+  count         = var.create_network ? 1 : 0
+  allocation_id = aws_eip.nat[0].id
+  subnet_id     = values(aws_subnet.public)[0].id
+
+  depends_on = [aws_internet_gateway.main]
+}
+
+resource "aws_route_table" "public" {
+  count  = var.create_network ? 1 : 0
+  vpc_id = aws_vpc.main[0].id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main[0].id
+  }
+}
+
+resource "aws_route_table_association" "public" {
+  for_each       = var.create_network ? aws_subnet.public : {}
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.public[0].id
+}
+
+resource "aws_route_table" "private" {
+  count  = var.create_network ? 1 : 0
+  vpc_id = aws_vpc.main[0].id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.main[0].id
+  }
+}
+
+resource "aws_route_table_association" "private" {
+  for_each       = var.create_network ? aws_subnet.private : {}
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.private[0].id
+}
+
+resource "aws_ecr_repository" "app" {
+  count = var.create_ecr_repository ? 1 : 0
+  name  = local.ecr_repo_name
 }
 
 resource "aws_cloudwatch_log_group" "service" {
@@ -40,7 +140,7 @@ resource "aws_s3_bucket" "materializations" {
 resource "aws_security_group" "alb" {
   name        = "${local.prefix}-alb"
   description = "ALB security group"
-  vpc_id      = var.vpc_id
+  vpc_id      = local.chosen_vpc_id
 
   ingress {
     from_port   = 80
@@ -60,7 +160,7 @@ resource "aws_security_group" "alb" {
 resource "aws_security_group" "ecs" {
   name        = "${local.prefix}-ecs"
   description = "ECS task security group"
-  vpc_id      = var.vpc_id
+  vpc_id      = local.chosen_vpc_id
 
   ingress {
     from_port       = 8787
@@ -80,7 +180,7 @@ resource "aws_security_group" "ecs" {
 resource "aws_security_group" "rds" {
   name        = "${local.prefix}-rds"
   description = "RDS security group"
-  vpc_id      = var.vpc_id
+  vpc_id      = local.chosen_vpc_id
 
   ingress {
     from_port       = 5432
@@ -93,7 +193,7 @@ resource "aws_security_group" "rds" {
 resource "aws_security_group" "efs" {
   name        = "${local.prefix}-efs"
   description = "EFS security group"
-  vpc_id      = var.vpc_id
+  vpc_id      = local.chosen_vpc_id
 
   ingress {
     from_port       = 2049
@@ -106,7 +206,7 @@ resource "aws_security_group" "efs" {
 resource "aws_lb" "service" {
   name               = replace(substr("${local.prefix}-alb", 0, 32), "_", "-")
   load_balancer_type = "application"
-  subnets            = var.public_subnet_ids
+  subnets            = local.public_subnet_ids
   security_groups    = [aws_security_group.alb.id]
 }
 
@@ -115,7 +215,7 @@ resource "aws_lb_target_group" "service" {
   port        = 8787
   protocol    = "HTTP"
   target_type = "ip"
-  vpc_id      = var.vpc_id
+  vpc_id      = local.chosen_vpc_id
 
   health_check {
     path                = "/healthz"
@@ -139,7 +239,7 @@ resource "aws_lb_listener" "http" {
 
 resource "aws_db_subnet_group" "postgres" {
   name       = "${local.prefix}-db-subnets"
-  subnet_ids = var.private_subnet_ids
+  subnet_ids = local.private_subnet_ids
 }
 
 resource "aws_db_instance" "postgres" {
@@ -162,7 +262,7 @@ resource "aws_efs_file_system" "materializations" {
 }
 
 resource "aws_efs_mount_target" "materializations" {
-  for_each        = toset(var.private_subnet_ids)
+  for_each        = toset(local.private_subnet_ids)
   file_system_id  = aws_efs_file_system.materializations.id
   subnet_id       = each.value
   security_groups = [aws_security_group.efs.id]
@@ -229,7 +329,7 @@ resource "aws_ecs_task_definition" "service" {
   container_definitions = jsonencode([
     {
       name      = "history-service"
-      image     = var.container_image
+      image     = local.container_image
       essential = true
       command   = ["/bin/bash", "examples/hosted/start-history-service.sh"]
       portMappings = [
@@ -278,7 +378,7 @@ resource "aws_ecs_task_definition" "worker" {
   container_definitions = jsonencode([
     {
       name      = "scheduler-worker"
-      image     = var.container_image
+      image     = local.container_image
       essential = true
       command   = ["/bin/bash", "examples/hosted/start-history-scheduler.sh"]
       mountPoints = [
@@ -313,7 +413,7 @@ resource "aws_ecs_task_definition" "migrate" {
   container_definitions = jsonencode([
     {
       name      = "migrate"
-      image     = var.container_image
+      image     = local.container_image
       essential = true
       command   = ["/bin/bash", "examples/hosted/start-history-migrate.sh"]
       environment = [
@@ -339,7 +439,7 @@ resource "aws_ecs_service" "service" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = var.private_subnet_ids
+    subnets          = local.private_subnet_ids
     security_groups  = [aws_security_group.ecs.id]
     assign_public_ip = false
   }
@@ -361,7 +461,7 @@ resource "aws_ecs_service" "worker" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = var.private_subnet_ids
+    subnets          = local.private_subnet_ids
     security_groups  = [aws_security_group.ecs.id]
     assign_public_ip = false
   }

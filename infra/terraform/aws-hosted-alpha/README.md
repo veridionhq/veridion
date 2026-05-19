@@ -20,40 +20,55 @@ Why this and not EKS or EC2:
 
 You need:
 
-- an existing VPC
-- public subnets for the ALB
-- private subnets for ECS/RDS/EFS
-- a built container image for Veridion
+- either:
+  - let Terraform create the VPC/subnets/NAT path, or
+  - supply an existing VPC plus public/private subnets
+- a container image for Veridion
 - JWT/JWKS settings for direct service auth
 
 ## Deploy
 
-1. Build and push the image:
+1. Fill in `terraform.tfvars`.
 
-```bash
-docker build -t veridion:alpha .
-```
-
-2. Fill in `terraform.tfvars`.
-
-3. Apply:
+2. Apply the infrastructure with services scaled to zero first:
 
 ```bash
 terraform init
 terraform apply
 ```
 
-4. Run the migration task once after apply:
+3. Build and push the image to the created ECR repository:
+
+```bash
+export AWS_REGION=us-west-2
+export ECR_REPOSITORY_URL="$(terraform output -raw ecr_repository_url)"
+export IMAGE_TAG=alpha
+
+./examples/aws/build-push-ecr.sh
+```
+
+4. Scale the ECS services up by setting:
+
+- `service_desired_count = 1`
+- `worker_desired_count = 1`
+
+and run:
+
+```bash
+terraform apply
+```
+
+5. Run the migration task once after apply:
 
 ```bash
 aws ecs run-task \
   --cluster "$(terraform output -raw ecs_cluster_name)" \
   --task-definition "$(terraform output -raw migrate_task_definition_arn)" \
   --launch-type FARGATE \
-  --network-configuration "awsvpcConfiguration={subnets=[SUBNET_ID],securityGroups=[SECURITY_GROUP_ID],assignPublicIp=DISABLED}"
+  --network-configuration "awsvpcConfiguration={subnets=$(terraform output -json private_subnet_ids),securityGroups=[$(terraform output -raw ecs_security_group_id)],assignPublicIp=DISABLED}"
 ```
 
-5. Create the first producer client through the admin API and start ingesting decision events.
+6. Create the first producer client through the admin API and start ingesting decision events.
 
 ## Opinionated path
 
@@ -63,6 +78,8 @@ Use this for the alpha:
 - producer clients for CI ingestion
 - no reverse proxy auth gateway yet
 - no Kubernetes yet
+- Terraform-created network by default
+- ECS services scaled up only after the image exists
 
 Move to EKS only if:
 

@@ -8,19 +8,63 @@ variable "name" {
 }
 
 variable "vpc_id" {
-  type = string
+  type    = string
+  default = ""
 }
 
 variable "public_subnet_ids" {
-  type = list(string)
+  type    = list(string)
+  default = []
 }
 
 variable "private_subnet_ids" {
-  type = list(string)
+  type    = list(string)
+  default = []
 }
 
 variable "container_image" {
-  type = string
+  type    = string
+  default = ""
+}
+
+variable "container_image_tag" {
+  type    = string
+  default = "alpha"
+}
+
+variable "create_ecr_repository" {
+  type    = bool
+  default = true
+}
+
+variable "ecr_repository_name" {
+  type    = string
+  default = ""
+}
+
+variable "create_network" {
+  type    = bool
+  default = true
+}
+
+variable "vpc_cidr" {
+  type    = string
+  default = "10.42.0.0/16"
+}
+
+variable "public_subnet_cidrs" {
+  type    = list(string)
+  default = ["10.42.0.0/24", "10.42.1.0/24"]
+}
+
+variable "private_subnet_cidrs" {
+  type    = list(string)
+  default = ["10.42.10.0/24", "10.42.11.0/24"]
+}
+
+variable "availability_zones" {
+  type    = list(string)
+  default = []
 }
 
 variable "db_name" {
@@ -69,12 +113,12 @@ variable "schedules_json" {
 
 variable "service_desired_count" {
   type    = number
-  default = 1
+  default = 0
 }
 
 variable "worker_desired_count" {
   type    = number
-  default = 1
+  default = 0
 }
 
 variable "service_cpu" {

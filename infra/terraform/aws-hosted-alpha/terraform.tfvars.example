@@ -1,10 +1,13 @@
 aws_region         = "us-west-2"
 name               = "veridion-alpha"
-vpc_id             = "vpc-xxxxxxxx"
-public_subnet_ids  = ["subnet-public-a", "subnet-public-b"]
-private_subnet_ids = ["subnet-private-a", "subnet-private-b"]
+create_network     = true
+vpc_cidr           = "10.42.0.0/16"
+public_subnet_cidrs  = ["10.42.0.0/24", "10.42.1.0/24"]
+private_subnet_cidrs = ["10.42.10.0/24", "10.42.11.0/24"]
 
-container_image = "123456789012.dkr.ecr.us-west-2.amazonaws.com/veridion:alpha"
+create_ecr_repository = true
+ecr_repository_name   = "veridion-alpha"
+container_image_tag   = "alpha"
 
 db_name     = "veridion_history"
 db_username = "veridion"
@@ -33,3 +36,6 @@ schedules_json = jsonencode([
     athena_s3_location_template  = "s3://veridion-alpha-materializations/veridion/events/repo={tenant_id}/"
   }
 ])
+
+service_desired_count = 0
+worker_desired_count  = 0
