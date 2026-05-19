@@ -9,6 +9,14 @@ def test_load_history_service_config_reads_tenants_and_tokens(tmp_path) -> None:
         json.dumps(
             {
                 "auth_tokens": ["global-token"],
+                "sqlite_path": "/tmp/history.db",
+                "tokens": [
+                    {
+                        "token": "tenant-token",
+                        "tenants": ["acme"],
+                        "roles": ["reader"],
+                    }
+                ],
                 "tenants": [
                     {
                         "tenant_id": "acme",
@@ -23,5 +31,7 @@ def test_load_history_service_config_reads_tenants_and_tokens(tmp_path) -> None:
     config = load_history_service_config(config_path)
 
     assert config.auth_tokens == ("global-token",)
+    assert config.sqlite_path == "/tmp/history.db"
     assert config.tenants[0].tenant_id == "acme"
     assert tenant_map(config)["acme"].auth_tokens == ("acme-token",)
+    assert config.tokens[0].tenants == ("acme",)

@@ -107,3 +107,30 @@ def test_build_runtime_context_supports_provider_shaped_payloads() -> None:
     assert runtime["alert_state"] == "firing"
     assert runtime["canary_health"] == "degraded"
     assert runtime["rollback_viability"] == "unverified"
+
+
+def test_build_runtime_context_supports_extended_provider_shapes() -> None:
+    runtime = build_runtime_context(
+        incident_payload={"data": {"status": "open", "priority": "P1"}},
+        incident_provider="opsgenie",
+        freeze_payload={"items": [{"status": "confirmed"}]},
+        freeze_provider="google-calendar",
+        alerts_payload={"incidents": [{"impact": "major"}]},
+        alerts_provider="statuspage",
+        canary_payload={"status": "terminal"},
+        canary_provider="spinnaker",
+        rollback_payload={"rollback": "available"},
+        rollback_provider="spinnaker",
+        environment="production",
+        deployment_window="after_hours",
+        public_exposure=True,
+        blast_radius="high",
+        rollout_strategy="canary",
+    )
+
+    assert runtime["active_incident"] is True
+    assert runtime["active_incident_severity"] == "critical"
+    assert runtime["deployment_freeze_active"] is True
+    assert runtime["alert_state"] == "firing"
+    assert runtime["canary_health"] == "failing"
+    assert runtime["rollback_viability"] == "ready"

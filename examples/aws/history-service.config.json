@@ -1,19 +1,25 @@
 {
-  "auth_tokens": [
-    "replace-me-with-a-real-shared-token"
+  "sqlite_path": "/tmp/veridion-history.db",
+  "tokens": [
+    {
+      "token": "replace-me-with-a-real-shared-token",
+      "tenants": [
+        "acme",
+        "beta"
+      ],
+      "roles": [
+        "reader"
+      ]
+    }
   ],
   "tenants": [
     {
       "tenant_id": "acme",
-      "history_paths": [
-        "/tmp/veridion-s3-history/acme"
-      ]
+      "history_paths": []
     },
     {
       "tenant_id": "beta",
-      "history_paths": [
-        "/tmp/veridion-s3-history/beta"
-      ]
+      "history_paths": []
     }
   ]
 }

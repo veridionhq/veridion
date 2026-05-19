@@ -123,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        required_approvals = tuple(_parse_required_approvals_json(args.required_approvals_json))
+        required_approvals = tuple(parse_required_approvals_json(args.required_approvals_json))
         approval_map = parse_approval_map(json.loads(Path(args.approval_map_path).read_text()))
         result = request_required_approvals(
             repository=args.repository,
@@ -213,7 +213,7 @@ def _build_requested_reviewers_url(repository: str, pull_request_number: int) ->
     return f"https://api.github.com/repos/{normalized_repository}/pulls/{pull_request_number}/requested_reviewers"
 
 
-def _parse_required_approvals_json(text: str) -> tuple[str, ...]:
+def parse_required_approvals_json(text: str) -> tuple[str, ...]:
     payload = json.loads(text)
     if not isinstance(payload, list) or any(not isinstance(item, str) for item in payload):
         raise ValueError("required-approvals-json must be a JSON array of strings")

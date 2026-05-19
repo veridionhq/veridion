@@ -39,7 +39,7 @@ def test_deliver_decision_event_uses_webhook_sink(monkeypatch) -> None:
         captured["token"] = token
         return {}
 
-    monkeypatch.setattr(decision_sinks, "_post_json", fake_post_json)
+    monkeypatch.setattr(decision_sinks, "post_json", fake_post_json)
 
     results = decision_sinks.deliver_decision_event(
         {"decision": {"verdict": "NO GO"}},

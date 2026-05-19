@@ -160,9 +160,12 @@ python3 -m veridion.action.decision_history \
 Helper script:
 
 - [examples/aws/replay-s3-history.sh](../examples/aws/replay-s3-history.sh)
+- [examples/aws/ingest-history-store.sh](../examples/aws/ingest-history-store.sh)
 - [examples/aws/materialize-history.sh](../examples/aws/materialize-history.sh)
 - [examples/aws/run-history-service.sh](../examples/aws/run-history-service.sh)
 - [examples/aws/history-service.config.json](../examples/aws/history-service.config.json)
+
+The default example uses SQLite as the first persistent hosted backend. Teams that outgrow it can keep the same service/export/materialization surfaces and switch to a Postgres-style store DSN later.
 
 ## Athena query examples
 

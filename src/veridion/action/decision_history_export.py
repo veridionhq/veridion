@@ -8,6 +8,7 @@ from pathlib import Path
 
 from veridion.action.decision_history_config import load_history_service_config
 from veridion.action.decision_history import analyze_history
+from veridion.action.decision_history_store import analyze_history_store
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -79,13 +80,28 @@ def export_configured_decision_history(
     output_dir: str | Path,
     since: str | None = None,
     until: str | None = None,
+    tenant_ids: tuple[str, ...] = (),
 ) -> None:
     config = load_history_service_config(config_path)
     root = Path(output_dir)
     root.mkdir(parents=True, exist_ok=True)
+
+    if config.sqlite_path or config.store_dsn:
+        export_stored_decision_history(
+            sqlite_path=config.sqlite_path,
+            store_dsn=config.store_dsn,
+            tenant_ids=tuple(tenant.tenant_id for tenant in config.tenants if not tenant_ids or tenant.tenant_id in tenant_ids),
+            output_dir=root,
+            since=since,
+            until=until,
+        )
+        return
+
     tenants_dir = root / "tenants"
     tenants_dir.mkdir(exist_ok=True)
     for tenant in config.tenants:
+        if tenant_ids and tenant.tenant_id not in tenant_ids:
+            continue
         tenant_root = tenants_dir / tenant.tenant_id
         export_decision_history(
             history_paths=tenant.history_paths,
@@ -93,6 +109,52 @@ def export_configured_decision_history(
             since=since,
             until=until,
         )
+
+
+def export_stored_decision_history(
+    *,
+    sqlite_path: str,
+    store_dsn: str = "",
+    tenant_ids: tuple[str, ...],
+    output_dir: str | Path,
+    since: str | None = None,
+    until: str | None = None,
+) -> None:
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    tenants_dir = root / "tenants"
+    tenants_dir.mkdir(exist_ok=True)
+    for tenant_id in tenant_ids:
+        tenant_root = tenants_dir / tenant_id
+        tenant_root.mkdir(parents=True, exist_ok=True)
+        payload = analyze_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id, since=since, until=until)
+        (tenant_root / "overall.json").write_text(json.dumps(payload, indent=2) + "\n")
+        repos_dir = tenant_root / "repositories"
+        repos_dir.mkdir(exist_ok=True)
+        for item in payload["policy_rollout"]["latest_by_repository"]:
+            repository = str(item["repository"])
+            repo_payload = analyze_history_store(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                repository=repository,
+                since=since,
+                until=until,
+            )
+            (repos_dir / f"{repository.replace('/', '_')}.json").write_text(json.dumps(repo_payload, indent=2) + "\n")
+        packs_dir = tenant_root / "policy-packs"
+        packs_dir.mkdir(exist_ok=True)
+        for item in payload["by_policy_pack"]:
+            pack_id = str(item["pack_id"])
+            pack_payload = analyze_history_store(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                policy_pack_id=pack_id,
+                since=since,
+                until=until,
+            )
+            (packs_dir / f"{pack_id}.json").write_text(json.dumps(pack_payload, indent=2) + "\n")
 
 
 if __name__ == "__main__":

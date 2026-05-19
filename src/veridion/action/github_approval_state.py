@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from veridion.action.github_approvals import ApprovalMap, parse_approval_map
+from veridion.action.github_approvals import ApprovalMap, parse_approval_map, parse_required_approvals_json
 from veridion.action.github_comment import _github_request_with_headers, _next_link
 
 
@@ -270,7 +270,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        required_approvals = tuple(_parse_required_approvals_json(args.required_approvals_json))
+        required_approvals = tuple(parse_required_approvals_json(args.required_approvals_json))
         approval_map = parse_approval_map(json.loads(Path(args.approval_map_path).read_text()))
         result = evaluate_required_approval_state(
             repository=args.repository,
@@ -407,13 +407,6 @@ def _review_is_stale_approval(review: ReviewRecord | None, pull_request_head_sha
         and bool(review.commit_id)
         and review.commit_id != pull_request_head_sha
     )
-
-
-def _parse_required_approvals_json(text: str) -> tuple[str, ...]:
-    payload = json.loads(text)
-    if not isinstance(payload, list) or any(not isinstance(item, str) for item in payload):
-        raise ValueError("required-approvals-json must be a JSON array of strings")
-    return tuple(item.strip() for item in payload if item.strip())
 
 
 def _write_github_outputs(result: ApprovalSatisfactionResult, gate: ApprovalGateEvaluation) -> None:
