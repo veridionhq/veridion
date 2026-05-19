@@ -159,6 +159,7 @@ def test_decision_history_service_supports_tenants_and_auth(tmp_path) -> None:
     )
     assert dashboard_status == 200
     assert "<html>" in dashboard["html"]
+    assert "Store Status" in dashboard["html"]
     assert versioned_dashboard_status == 200
     assert "<html>" in versioned_dashboard["html"]
 
@@ -399,6 +400,36 @@ def test_decision_history_service_accepts_jwt_identity_for_versioned_api(tmp_pat
     assert payload["data"]["summary"]["events"] == 1
 
 
+def test_decision_history_service_requires_auth_when_jwks_is_configured(tmp_path) -> None:
+    history_path = tmp_path / "history.ndjson"
+    jwks_path = tmp_path / "jwks.json"
+    history_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-05-14T12:00:00Z",
+                "repository": "acme/service-a",
+                "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+                "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+                "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+            }
+        )
+        + "\n"
+    )
+    jwks_path.write_text(json.dumps({"keys": []}))
+    tenants = {"acme": HistoryTenant(tenant_id="acme", history_paths=(str(history_path),))}
+
+    status, payload = resolve_history_request(
+        "/api/v1/analytics?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        headers={},
+        jwt_config=JWTAuthConfig(jwks_path=str(jwks_path)),
+    )
+
+    assert status == 401
+    assert payload["data"]["error"] == "unauthorized"
+
+
 def test_decision_history_service_accepts_trusted_header_identity(tmp_path) -> None:
     history_path = tmp_path / "history.ndjson"
     history_path.write_text(
@@ -432,6 +463,53 @@ def test_decision_history_service_accepts_trusted_header_identity(tmp_path) -> N
     assert status == 200
     assert payload["identity"]["auth_type"] == "trusted_header"
     assert payload["identity"]["principal_name"] == "alice@example.com"
+
+
+def test_decision_history_service_exposes_overview_and_identity_endpoints(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    materialization_root = tmp_path / "materialized"
+    history_path = tmp_path / "history.ndjson"
+    config_path = tmp_path / "config.json"
+    history_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-05-14T12:00:00Z",
+                "repository": "acme/service-a",
+                "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+                "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+                "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+            }
+        )
+        + "\n"
+    )
+    upsert_history_store(sqlite_path=sqlite_path, tenant_id="acme", history_paths=(str(history_path),))
+    config_path.write_text(json.dumps({"sqlite_path": str(sqlite_path), "materialization_root": str(materialization_root), "tenants": [{"tenant_id": "acme", "history_paths": []}]}))
+    tenants = {"acme": HistoryTenant(tenant_id="acme", history_paths=())}
+
+    overview_status, overview = resolve_history_request(
+        "/api/v1/overview?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        materialization_root=str(materialization_root),
+        config_path=str(config_path),
+        headers={"Authorization": "Bearer reader"},
+        scoped_tokens={"reader": HistoryToken(token="reader", tenants=("acme",), roles=("reader",), principal_name="Reader One", token_id="reader-1")},
+    )
+    identity_status, identity = resolve_history_request(
+        "/api/v1/identity",
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer reader"},
+        scoped_tokens={"reader": HistoryToken(token="reader", tenants=("acme",), roles=("reader",), principal_name="Reader One", token_id="reader-1")},
+    )
+
+    assert overview_status == 200
+    assert overview["data"]["analytics"]["summary"]["events"] == 1
+    assert overview["data"]["status"]["store"]["backend"] == "sqlite"
+    assert identity_status == 200
+    assert identity["data"]["identity"]["principal_name"] == "Reader One"
 
 
 def _build_test_jwt(*, secret: str, payload: dict[str, object]) -> str:

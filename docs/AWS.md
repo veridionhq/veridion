@@ -161,6 +161,7 @@ Helper script:
 
 - [examples/aws/replay-s3-history.sh](../examples/aws/replay-s3-history.sh)
 - [examples/aws/ingest-history-store.sh](../examples/aws/ingest-history-store.sh)
+- [examples/aws/migrate-history-store.sh](../examples/aws/migrate-history-store.sh)
 - [examples/aws/materialize-history.sh](../examples/aws/materialize-history.sh)
 - [examples/aws/run-history-service.sh](../examples/aws/run-history-service.sh)
 - [examples/aws/history-service.config.json](../examples/aws/history-service.config.json)
@@ -183,6 +184,8 @@ This keeps the same service/API surface while making database lifecycle state vi
 
 The preferred service contract now lives under `/api/v1`:
 
+- `/api/v1/overview`
+- `/api/v1/identity`
 - `/api/v1/analytics`
 - `/api/v1/repositories`
 - `/api/v1/policy-rollouts`
@@ -198,6 +201,8 @@ The service now supports both:
 - trusted-header identities from an upstream auth gateway or reverse proxy
 
 JWTs remain optional. They are the first bridge toward external identity-provider integration without making the deterministic core depend on a hosted auth service.
+
+For stronger JWT verification in hosted environments, the service can now verify RS256 tokens against a local JWKS file or a JWKS URL.
 
 For hosted environments behind an auth gateway, the service can also trust scoped identity headers guarded by a configured shared secret. That gives teams a pragmatic bridge to external IdPs without embedding OAuth/OIDC flows directly in the history service.
 
@@ -219,6 +224,19 @@ python3 -m veridion.action.decision_history_scheduler \
   --config-path examples/aws/history-service.config.json \
   --dry-run
 ```
+
+Run the scheduler continuously as a worker:
+
+```bash
+python3 -m veridion.action.decision_history_scheduler \
+  --config-path examples/aws/history-service.config.json \
+  --daemon \
+  --poll-interval-seconds 60
+```
+
+For Postgres rollout and migration assets:
+
+- [docs/POSTGRES.md](POSTGRES.md)
 
 ## Athena query examples
 

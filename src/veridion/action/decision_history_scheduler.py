@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,25 +30,90 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--at", help="Optional ISO-8601 UTC timestamp for due evaluation")
     parser.add_argument("--run-all", action="store_true", help="Run all enabled schedules regardless of due state")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--daemon", action="store_true", help="Run continuously and evaluate schedules on an interval")
+    parser.add_argument("--poll-interval-seconds", type=int, default=60)
+    parser.add_argument("--max-iterations", type=int, default=0)
     parser.add_argument("--output-path", help="Optional JSON output path")
     args = parser.parse_args(argv)
 
     config = load_history_service_config(args.config_path)
-    at = _parse_at(args.at)
-    payload = run_configured_history_schedules(
-        config=config,
-        config_path=args.config_path,
-        output_root=args.output_root or config.materialization_root,
-        at=at,
-        schedule_ids=tuple(args.schedule_id),
-        run_all=args.run_all,
-        dry_run=args.dry_run,
-    )
+    if args.daemon:
+        payload = run_scheduler_loop(
+            config=config,
+            config_path=args.config_path,
+            output_root=args.output_root or config.materialization_root,
+            schedule_ids=tuple(args.schedule_id),
+            poll_interval_seconds=max(1, args.poll_interval_seconds),
+            max_iterations=max(0, args.max_iterations),
+            dry_run=args.dry_run,
+        )
+    else:
+        at = _parse_at(args.at)
+        payload = run_configured_history_schedules(
+            config=config,
+            config_path=args.config_path,
+            output_root=args.output_root or config.materialization_root,
+            at=at,
+            schedule_ids=tuple(args.schedule_id),
+            run_all=args.run_all,
+            dry_run=args.dry_run,
+        )
     rendered = json.dumps(payload, indent=2) + "\n"
     if args.output_path:
         Path(args.output_path).write_text(rendered)
     print(rendered, end="")
     return 0
+
+
+def run_scheduler_loop(
+    *,
+    config: HistoryServiceConfig,
+    config_path: str,
+    output_root: str,
+    schedule_ids: tuple[str, ...] = (),
+    poll_interval_seconds: int = 60,
+    max_iterations: int = 0,
+    dry_run: bool = False,
+) -> dict[str, object]:
+    state_path = Path(output_root) / ".scheduler-state.json"
+    state = _load_scheduler_state(state_path)
+    runs: list[dict[str, object]] = []
+    iterations = 0
+    while True:
+        now = datetime.now(timezone.utc)
+        due_now = tuple(
+            schedule
+            for schedule in config.schedules
+            if schedule.enabled
+            and (not schedule_ids or schedule.schedule_id in schedule_ids)
+            and schedule_is_due(schedule.cron, now)
+            and state.get(schedule.schedule_id) != _state_bucket(now)
+        )
+        if due_now:
+            payload = run_configured_history_schedules(
+                config=config,
+                config_path=config_path,
+                output_root=output_root,
+                at=now,
+                schedule_ids=tuple(schedule.schedule_id for schedule in due_now),
+                run_all=True,
+                dry_run=dry_run,
+            )
+            runs.extend(payload["runs"])
+            for schedule in due_now:
+                state[schedule.schedule_id] = _state_bucket(now)
+            _write_scheduler_state(state_path, state)
+        iterations += 1
+        if max_iterations and iterations >= max_iterations:
+            break
+        time.sleep(poll_interval_seconds)
+    return {
+        "schema_version": 1,
+        "source": "veridion.action.decision_history_scheduler.loop@1",
+        "iterations": iterations,
+        "poll_interval_seconds": poll_interval_seconds,
+        "runs": runs,
+    }
 
 
 def run_configured_history_schedules(
@@ -160,6 +226,24 @@ def _parse_at(raw: str | None) -> datetime:
         value = value[:-1] + "+00:00"
     parsed = datetime.fromisoformat(value)
     return parsed.astimezone(timezone.utc) if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
+
+def _load_scheduler_state(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text())
+    if not isinstance(payload, dict):
+        return {}
+    return {str(key): str(value) for key, value in payload.items()}
+
+
+def _write_scheduler_state(path: Path, payload: dict[str, str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n")
+
+
+def _state_bucket(at: datetime) -> str:
+    return at.astimezone(timezone.utc).strftime("%Y%m%dT%H%M")
 
 
 if __name__ == "__main__":

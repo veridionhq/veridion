@@ -6,6 +6,8 @@ import base64
 import hashlib
 import hmac
 import json
+from pathlib import Path
+from urllib import error, request
 
 from veridion.action.decision_history_config import HistoryToken, JWTAuthConfig, TrustedHeaderAuthConfig
 
@@ -50,9 +52,11 @@ def resolve_trusted_header_identity(
     )
 
 
+def jwt_auth_enabled(config: JWTAuthConfig) -> bool:
+    return bool(config.shared_secret or config.jwks_path or config.jwks_url)
+
+
 def _resolve_jwt_identity(*, token: str, jwt_config: JWTAuthConfig) -> HistoryToken | None:
-    if not jwt_config.shared_secret:
-        return None
     parts = token.split(".")
     if len(parts) != 3:
         return None
@@ -64,15 +68,28 @@ def _resolve_jwt_identity(*, token: str, jwt_config: JWTAuthConfig) -> HistoryTo
         return None
     if not isinstance(header, dict) or not isinstance(payload, dict):
         return None
-    if str(header.get("alg", "")).upper() != "HS256":
-        return None
-    signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
-    expected = hmac.new(jwt_config.shared_secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
-    try:
-        provided = _urlsafe_b64decode(signature_b64)
-    except Exception:
-        return None
-    if not hmac.compare_digest(expected, provided):
+    algorithm = str(header.get("alg", "")).upper()
+    if algorithm == "HS256":
+        if not jwt_config.shared_secret:
+            return None
+        signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
+        expected = hmac.new(jwt_config.shared_secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
+        try:
+            provided = _urlsafe_b64decode(signature_b64)
+        except Exception:
+            return None
+        if not hmac.compare_digest(expected, provided):
+            return None
+    elif algorithm == "RS256":
+        if not _verify_rs256_jwt(
+            header=header,
+            payload_b64=payload_b64,
+            header_b64=header_b64,
+            signature_b64=signature_b64,
+            jwt_config=jwt_config,
+        ):
+            return None
+    else:
         return None
     if jwt_config.issuer and str(payload.get("iss", "")) != jwt_config.issuer:
         return None
@@ -95,6 +112,80 @@ def _resolve_jwt_identity(*, token: str, jwt_config: JWTAuthConfig) -> HistoryTo
         tenants=tuple(tenants),
         roles=tuple(roles),
     )
+
+
+def _verify_rs256_jwt(
+    *,
+    header: dict[str, object],
+    header_b64: str,
+    payload_b64: str,
+    signature_b64: str,
+    jwt_config: JWTAuthConfig,
+) -> bool:
+    jwks = _load_jwks(jwt_config)
+    if jwks is None:
+        return False
+    kid = str(header.get("kid", ""))
+    key = _select_jwk(jwks, kid)
+    if key is None:
+        return False
+    modulus_b64 = str(key.get("n", ""))
+    exponent_b64 = str(key.get("e", ""))
+    if not modulus_b64 or not exponent_b64:
+        return False
+    try:
+        modulus = int.from_bytes(_urlsafe_b64decode(modulus_b64), "big")
+        exponent = int.from_bytes(_urlsafe_b64decode(exponent_b64), "big")
+        signature = int.from_bytes(_urlsafe_b64decode(signature_b64), "big")
+    except Exception:
+        return False
+    signed = pow(signature, exponent, modulus)
+    key_bytes = max(1, (modulus.bit_length() + 7) // 8)
+    em = signed.to_bytes(key_bytes, "big")
+    digest = hashlib.sha256(f"{header_b64}.{payload_b64}".encode("utf-8")).digest()
+    digest_info = bytes.fromhex("3031300d060960864801650304020105000420") + digest
+    return _verify_pkcs1_v1_5(em, digest_info)
+
+
+def _verify_pkcs1_v1_5(em: bytes, digest_info: bytes) -> bool:
+    if len(em) < len(digest_info) + 11:
+        return False
+    if not em.startswith(b"\x00\x01"):
+        return False
+    try:
+        separator = em.index(b"\x00", 2)
+    except ValueError:
+        return False
+    padding = em[2:separator]
+    if len(padding) < 8 or any(byte != 0xFF for byte in padding):
+        return False
+    return em[separator + 1 :] == digest_info
+
+
+def _load_jwks(jwt_config: JWTAuthConfig) -> dict[str, object] | None:
+    if jwt_config.jwks_path:
+        payload = json.loads(Path(jwt_config.jwks_path).read_text())
+        return payload if isinstance(payload, dict) else None
+    if jwt_config.jwks_url:
+        try:
+            with request.urlopen(jwt_config.jwks_url, timeout=15) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+                payload = json.loads(response.read().decode("utf-8"))
+        except (error.URLError, error.HTTPError, json.JSONDecodeError):
+            return None
+        return payload if isinstance(payload, dict) else None
+    return None
+
+
+def _select_jwk(jwks: dict[str, object], kid: str) -> dict[str, object] | None:
+    keys = jwks.get("keys")
+    if not isinstance(keys, list):
+        return None
+    candidates = [item for item in keys if isinstance(item, dict)]
+    if kid:
+        for item in candidates:
+            if str(item.get("kid", "")) == kid:
+                return item
+    return candidates[0] if candidates else None
 
 
 def _load_segment(segment: str) -> object:

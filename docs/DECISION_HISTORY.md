@@ -159,6 +159,8 @@ Legacy endpoints remain available:
 The preferred service contract is now versioned under `/api/v1`:
 
 - `/api/v1/health`
+- `/api/v1/overview`
+- `/api/v1/identity`
 - `/api/v1/analytics`
 - `/api/v1/repositories`
 - `/api/v1/policy-rollouts`
@@ -196,6 +198,7 @@ The dashboard is now a proper service surface, not just a raw JSON dump:
 - rollout tables
 - blocking-category views
 - identity and API metadata
+- store status, recent materializations, and schedule state
 
 Example:
 
@@ -222,6 +225,8 @@ Roles currently drive:
 
 Inactive identities are rejected before request execution.
 
+JWT auth is no longer limited to shared-secret mode. The service can also enforce JWT-backed access with a local JWKS file or JWKS URL in config.
+
 ## First-class schedule execution
 
 Materialization schedules are no longer just config metadata.
@@ -231,6 +236,15 @@ You can execute due schedules directly:
 ```bash
 python3 -m veridion.action.decision_history_scheduler \
   --config-path examples/aws/history-service.config.json
+```
+
+Run it as a long-lived worker:
+
+```bash
+python3 -m veridion.action.decision_history_scheduler \
+  --config-path examples/aws/history-service.config.json \
+  --daemon \
+  --poll-interval-seconds 60
 ```
 
 Or inspect planned runs without executing them:
@@ -244,6 +258,10 @@ python3 -m veridion.action.decision_history_scheduler \
 Example helper:
 
 - [examples/aws/run-history-scheduler.sh](../examples/aws/run-history-scheduler.sh)
+
+For managed Postgres deployments and migration assets:
+
+- [docs/POSTGRES.md](POSTGRES.md)
 
 ## Filter for rollout analysis
 

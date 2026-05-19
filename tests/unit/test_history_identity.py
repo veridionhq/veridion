@@ -1,5 +1,5 @@
 from veridion.action.decision_history_config import JWTAuthConfig, TrustedHeaderAuthConfig
-from veridion.action.history_identity import resolve_bearer_identity, resolve_trusted_header_identity
+from veridion.action.history_identity import jwt_auth_enabled, resolve_bearer_identity, resolve_trusted_header_identity
 
 import base64
 import hashlib
@@ -52,6 +52,13 @@ def test_resolve_bearer_identity_accepts_hs256_jwt() -> None:
     assert identity is not None
     assert identity.auth_type == "jwt"
     assert identity.token_id == "jwt-1"
+
+
+def test_jwt_auth_enabled_for_jwks_configs() -> None:
+    assert jwt_auth_enabled(JWTAuthConfig(shared_secret="secret")) is True
+    assert jwt_auth_enabled(JWTAuthConfig(jwks_path="/tmp/jwks.json")) is True
+    assert jwt_auth_enabled(JWTAuthConfig(jwks_url="https://issuer.example/jwks.json")) is True
+    assert jwt_auth_enabled(JWTAuthConfig()) is False
 
 
 def _build_test_jwt(*, secret: str, payload: dict[str, object]) -> str:

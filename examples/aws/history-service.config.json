@@ -1,10 +1,13 @@
 {
   "service_name": "Veridion Control Plane",
   "sqlite_path": "/tmp/veridion-history.db",
+  "store_dsn": "",
   "jwt": {
     "issuer": "https://issuer.example",
     "audience": "veridion-history",
-    "shared_secret": "replace-me-with-a-real-jwt-secret"
+    "shared_secret": "replace-me-with-a-real-jwt-secret",
+    "jwks_path": "",
+    "jwks_url": ""
   },
   "trusted_headers": {
     "enabled": false,
