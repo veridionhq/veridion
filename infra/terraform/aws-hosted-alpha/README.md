@@ -50,6 +50,9 @@ You need:
   - supply an existing VPC plus public/private subnets
 - a container image for Veridion
 - JWT/JWKS settings for direct service auth
+- optionally:
+  - let Terraform create the GitHub Actions OIDC provider and ECR publish role, or
+  - point Terraform at an existing GitHub OIDC provider ARN
 
 ## Deploy
 
@@ -76,6 +79,19 @@ bash ./examples/aws/build-push-ecr.sh
 
 The hosted image is also built in CI on every push and pull request via `.github/workflows/hosted-image.yml`.
 Use the workflow-dispatch path there when you want GitHub Actions to publish the image to ECR instead of pushing it manually from a shell.
+
+For the CI publish path:
+
+1. Apply Terraform.
+2. Take the `github_actions_ecr_role_arn` output.
+3. Set repository variable `AWS_GITHUB_ACTIONS_ROLE_ARN` to that value.
+4. Ensure repository variable `ECR_REPOSITORY_URL` is set.
+5. Run the `hosted-image` workflow with `push_to_ecr=true`.
+
+If your AWS account already has the GitHub OIDC provider, set:
+
+- `create_github_oidc_provider = false`
+- `github_oidc_provider_arn = "<existing provider arn>"`
 
 4. Scale the ECS services up by setting:
 

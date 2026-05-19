@@ -9,6 +9,7 @@ private_subnet_cidrs = ["10.42.10.0/24", "10.42.11.0/24"]
 create_ecr_repository = true
 ecr_repository_name   = "veridion-alpha"
 container_image_tag   = "alpha"
+github_repository     = "veridionhq/veridion"
 
 db_name     = "veridion_history"
 db_username = "veridion"

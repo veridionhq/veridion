@@ -37,6 +37,31 @@ variable "create_ecr_repository" {
   default = true
 }
 
+variable "create_github_actions_oidc_role" {
+  type    = bool
+  default = true
+}
+
+variable "create_github_oidc_provider" {
+  type    = bool
+  default = true
+}
+
+variable "github_oidc_provider_arn" {
+  type    = string
+  default = ""
+}
+
+variable "github_repository" {
+  type    = string
+  default = "veridionhq/veridion"
+}
+
+variable "github_allowed_branches" {
+  type    = list(string)
+  default = ["develop", "main"]
+}
+
 variable "ecr_repository_name" {
   type    = string
   default = ""

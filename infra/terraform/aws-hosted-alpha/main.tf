@@ -32,6 +32,10 @@ locals {
     { name = "VERIDION_TENANTS_JSON", value = jsonencode(var.tenants) },
     { name = "VERIDION_SCHEDULES_JSON", value = jsonencode(var.schedules) }
   ]
+  github_oidc_provider_arn = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github_actions[0].arn : var.github_oidc_provider_arn
+  github_oidc_subjects = [
+    for branch in var.github_allowed_branches : "repo:${var.github_repository}:ref:refs/heads/${branch}"
+  ]
 }
 
 resource "aws_vpc" "main" {
@@ -125,6 +129,14 @@ resource "aws_route_table_association" "private" {
 resource "aws_ecr_repository" "app" {
   count = var.create_ecr_repository ? 1 : 0
   name  = local.ecr_repo_name
+}
+
+resource "aws_iam_openid_connect_provider" "github_actions" {
+  count = var.create_github_actions_oidc_role && var.create_github_oidc_provider ? 1 : 0
+
+  url             = "https://token.actions.githubusercontent.com"
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
 }
 
 resource "aws_cloudwatch_log_group" "service" {
@@ -314,6 +326,67 @@ resource "aws_iam_role_policy" "task" {
   name   = "${local.prefix}-task"
   role   = aws_iam_role.task.id
   policy = data.aws_iam_policy_document.task.json
+}
+
+data "aws_iam_policy_document" "github_actions_assume" {
+  count = var.create_github_actions_oidc_role ? 1 : 0
+
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [local.github_oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = local.github_oidc_subjects
+    }
+  }
+}
+
+resource "aws_iam_role" "github_actions_ecr" {
+  count = var.create_github_actions_oidc_role ? 1 : 0
+
+  name               = "${local.prefix}-github-actions-ecr"
+  assume_role_policy = data.aws_iam_policy_document.github_actions_assume[0].json
+}
+
+data "aws_iam_policy_document" "github_actions_ecr" {
+  count = var.create_github_actions_oidc_role ? 1 : 0
+
+  statement {
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+
+  statement {
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:CompleteLayerUpload",
+      "ecr:InitiateLayerUpload",
+      "ecr:PutImage",
+      "ecr:UploadLayerPart",
+      "ecr:BatchGetImage"
+    ]
+    resources = [var.create_ecr_repository ? aws_ecr_repository.app[0].arn : "arn:aws:ecr:${var.aws_region}:*:repository/${local.ecr_repo_name}"]
+  }
+}
+
+resource "aws_iam_role_policy" "github_actions_ecr" {
+  count = var.create_github_actions_oidc_role ? 1 : 0
+
+  name   = "${local.prefix}-github-actions-ecr"
+  role   = aws_iam_role.github_actions_ecr[0].id
+  policy = data.aws_iam_policy_document.github_actions_ecr[0].json
 }
 
 resource "aws_ecs_cluster" "main" {
