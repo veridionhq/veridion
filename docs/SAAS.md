@@ -107,6 +107,10 @@ Producer-side hosted auth now also has a persistent path:
 - get a generated ingestor token
 - send `veridion-decision-event.json` to `POST /api/v1/events`
 
+Recommended first hosted infra path:
+
+- [infra/terraform/aws-hosted-alpha](../infra/terraform/aws-hosted-alpha/README.md)
+
 ## What still becomes a true SaaS concern later
 
 The repo now has the right foundations, but a full hosted product would still add:

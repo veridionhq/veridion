@@ -111,6 +111,7 @@ That separation is intentional:
 The repo now includes:
 
 - [examples/hosted/docker-compose.postgres.yml](../examples/hosted/docker-compose.postgres.yml)
+- [infra/terraform/aws-hosted-alpha](../infra/terraform/aws-hosted-alpha/README.md)
 - [examples/hosted/history-service.jwt.config.json](../examples/hosted/history-service.jwt.config.json)
 - [examples/hosted/history-service.trusted-header.config.json](../examples/hosted/history-service.trusted-header.config.json)
 - [examples/hosted/nginx-trusted-proxy.conf](../examples/hosted/nginx-trusted-proxy.conf)

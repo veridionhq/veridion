@@ -1,0 +1,35 @@
+aws_region         = "us-west-2"
+name               = "veridion-alpha"
+vpc_id             = "vpc-xxxxxxxx"
+public_subnet_ids  = ["subnet-public-a", "subnet-public-b"]
+private_subnet_ids = ["subnet-private-a", "subnet-private-b"]
+
+container_image = "123456789012.dkr.ecr.us-west-2.amazonaws.com/veridion:alpha"
+
+db_name     = "veridion_history"
+db_username = "veridion"
+db_password = "replace-me"
+
+jwt_issuer         = "https://auth.example.com/"
+jwt_audience       = "veridion-history"
+jwks_url           = "https://auth.example.com/.well-known/jwks.json"
+oidc_discovery_url = ""
+
+tenants_json = jsonencode([
+  {
+    tenant_id    = "acme"
+    display_name = "Acme Production"
+    history_paths = []
+  }
+])
+
+schedules_json = jsonencode([
+  {
+    schedule_id                  = "nightly-acme"
+    cron                         = "0 3 * * *"
+    tenants                      = ["acme"]
+    athena_database              = "analytics"
+    athena_table                 = "veridion_decision_events"
+    athena_s3_location_template  = "s3://veridion-alpha-materializations/veridion/events/repo={tenant_id}/"
+  }
+])

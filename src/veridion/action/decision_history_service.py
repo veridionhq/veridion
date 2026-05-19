@@ -190,8 +190,8 @@ def resolve_history_request(
     service_name: str = "Veridion History Service",
     tenants: dict[str, HistoryTenant] | None = None,
     schedules: dict[str, MaterializationSchedule] | None = None,
-    jwt_config: JWTAuthConfig = JWTAuthConfig(),
-    trusted_header_auth: TrustedHeaderAuthConfig = TrustedHeaderAuthConfig(),
+    jwt_config: JWTAuthConfig | None = None,
+    trusted_header_auth: TrustedHeaderAuthConfig | None = None,
     sqlite_path: str = "",
     store_dsn: str = "",
     materialization_root: str = "",
@@ -212,8 +212,8 @@ def resolve_history_request(
         headers=headers or {},
         auth_tokens=auth_tokens,
         scoped_tokens=scoped_lookup,
-        jwt_config=jwt_config,
-        trusted_header_auth=trusted_header_auth,
+        jwt_config=jwt_config or JWTAuthConfig(),
+        trusted_header_auth=trusted_header_auth or TrustedHeaderAuthConfig(),
         sqlite_path=sqlite_path,
         store_dsn=store_dsn,
         tenant_id=params.get("tenant", ""),
@@ -279,9 +279,11 @@ def resolve_history_request(
             until=params.get("until"),
             identity=identity,
         )
+        if overview is None:
+            return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
         return _respond(
             200,
-            {"html": render_app_html(overview or {}, api_version=api_version or API_VERSION, identity=identity, service_name=service_name)},
+            {"html": render_app_html(overview, api_version=api_version or API_VERSION, identity=identity, service_name=service_name)},
             route=route,
             api_version=api_version,
             identity=identity,
@@ -478,7 +480,7 @@ def _respond(
         {
             "api_version": api_version,
             "route": route,
-            "identity": _identity_payload(identity),
+            "identity": _identity_payload(identity) if status < 400 else {},
             "data": payload,
         },
     )
@@ -502,8 +504,6 @@ def _analyze_request(
     until: str | None = None,
 ) -> dict[str, object] | None:
     if sqlite_path or store_dsn:
-        if tenant_id and tenant_id not in tenants:
-            return None
         return analyze_history_store(
             sqlite_path=sqlite_path,
             store_dsn=store_dsn,
@@ -574,9 +574,15 @@ def _authorize_request(
             return ((401, {"error": "unauthorized"}), None)
     if scoped.status and scoped.status != "active":
         return ((403, {"error": "identity_inactive"}), scoped)
-    if path == "/events" and not _has_role(scoped, "ingestor", "materializer", "admin"):
+    # Tenant boundary checks run before role checks so that accessing the wrong
+    # tenant always returns "forbidden" rather than "insufficient_role".
+    if not tenant_id and scoped.tenants and path not in {"/tenants", "/materialization-schedules", "/identity", "/admin/tenants"} and method == "GET":
+        return ((403, {"error": "tenant_scope_required"}), scoped)
+    if tenant_id and scoped.tenants and tenant_id not in scoped.tenants:
+        return ((403, {"error": "forbidden"}), scoped)
+    if path == "/events" and not _has_explicit_role(scoped, "ingestor", "materializer", "admin"):
         return ((403, {"error": "insufficient_role"}), scoped)
-    if method != "GET" and path != "/events" and not _has_role(scoped, "materializer", "admin"):
+    if method != "GET" and path != "/events" and not _has_explicit_role(scoped, "materializer", "admin"):
         return ((403, {"error": "insufficient_role"}), scoped)
     if path in {"/analytics", "/repositories", "/policy-rollouts", "/dashboard", "/overview", "/materializations", "/materialization-schedules", "/service/status"} and not _has_role(
         scoped, "reader", "materializer", "admin"
@@ -584,14 +590,10 @@ def _authorize_request(
         return ((403, {"error": "insufficient_role"}), scoped)
     if path in {"/organizations", "/projects", "/services"} and not _has_role(scoped, "reader", "materializer", "admin"):
         return ((403, {"error": "insufficient_role"}), scoped)
-    if path in {"/admin/tenants", "/admin/users", "/admin/provider-secrets", "/admin/producer-clients"} and not _has_role(scoped, "admin"):
+    if path in {"/admin/tenants", "/admin/users", "/admin/provider-secrets", "/admin/producer-clients"} and not _has_explicit_role(scoped, "admin"):
         return ((403, {"error": "insufficient_role"}), scoped)
     if path == "/auth/sessions" and not _has_role(scoped, "reader", "materializer", "admin"):
         return ((403, {"error": "insufficient_role"}), scoped)
-    if not tenant_id and scoped.tenants and path not in {"/tenants", "/materialization-schedules", "/identity", "/admin/tenants"} and method == "GET":
-        return ((403, {"error": "tenant_scope_required"}), scoped)
-    if tenant_id and scoped.tenants and tenant_id not in scoped.tenants:
-        return ((403, {"error": "forbidden"}), scoped)
     return (None, scoped)
 
 
@@ -691,7 +693,10 @@ def _handle_post_request(
     scoped_token: HistoryToken | None,
 ) -> tuple[int, dict[str, object]]:
     if path == "/admin/tenants":
-        payload = json.loads(body) if body.strip() else {}
+        try:
+            payload = json.loads(body) if body.strip() else {}
+        except json.JSONDecodeError:
+            return (400, {"error": "invalid_json"})
         if not isinstance(payload, dict):
             return (400, {"error": "invalid_json"})
         tenant_id = _body_string(payload, "tenant_id")
@@ -707,7 +712,10 @@ def _handle_post_request(
         )
         return (201, {"status": "created", "tenant_id": tenant_id})
     if path == "/admin/users":
-        payload = json.loads(body) if body.strip() else {}
+        try:
+            payload = json.loads(body) if body.strip() else {}
+        except json.JSONDecodeError:
+            return (400, {"error": "invalid_json"})
         if not isinstance(payload, dict):
             return (400, {"error": "invalid_json"})
         tenant_id = _body_string(payload, "tenant")
@@ -726,7 +734,10 @@ def _handle_post_request(
         )
         return (201, {"status": "created", "tenant": tenant_id, "user_id": user_id})
     if path == "/admin/provider-secrets":
-        payload = json.loads(body) if body.strip() else {}
+        try:
+            payload = json.loads(body) if body.strip() else {}
+        except json.JSONDecodeError:
+            return (400, {"error": "invalid_json"})
         if not isinstance(payload, dict):
             return (400, {"error": "invalid_json"})
         tenant_id = _body_string(payload, "tenant")
@@ -744,7 +755,10 @@ def _handle_post_request(
         )
         return (201, {"status": "created", "tenant": tenant_id, "secret_name": secret_name})
     if path == "/admin/producer-clients":
-        payload = json.loads(body) if body.strip() else {}
+        try:
+            payload = json.loads(body) if body.strip() else {}
+        except json.JSONDecodeError:
+            return (400, {"error": "invalid_json"})
         if not isinstance(payload, dict):
             return (400, {"error": "invalid_json"})
         tenant_id = _body_string(payload, "tenant")
@@ -762,7 +776,10 @@ def _handle_post_request(
         )
         return (201, {"status": "created", "producer_client": result})
     if path == "/auth/sessions":
-        payload = json.loads(body) if body.strip() else {}
+        try:
+            payload = json.loads(body) if body.strip() else {}
+        except json.JSONDecodeError:
+            payload = {}
         if not isinstance(payload, dict):
             payload = {}
         if scoped_token is None:
@@ -892,8 +909,14 @@ def _materialization_run_id() -> str:
 
 
 def _has_role(token: HistoryToken, *roles: str) -> bool:
+    """Permissive check: a token with no roles assigned passes (reader-level default)."""
     if not token.roles:
         return True
+    return any(role in token.roles for role in roles)
+
+
+def _has_explicit_role(token: HistoryToken, *roles: str) -> bool:
+    """Strict check: roles must be explicitly assigned; no roles → no access."""
     return any(role in token.roles for role in roles)
 
 

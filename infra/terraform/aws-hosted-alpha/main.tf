@@ -1,0 +1,368 @@
+locals {
+  prefix                 = var.name
+  materialization_bucket = var.create_s3_bucket ? one(aws_s3_bucket.materializations[*].bucket) : var.s3_bucket_name
+  db_host                = aws_db_instance.postgres.address
+  db_port                = aws_db_instance.postgres.port
+  store_dsn              = "postgresql://${var.db_username}:${var.db_password}@${local.db_host}:${local.db_port}/${var.db_name}"
+  common_env = [
+    { name = "VERIDION_SERVICE_NAME", value = "Veridion Hosted Control Plane" },
+    { name = "VERIDION_STORE_DSN", value = local.store_dsn },
+    { name = "VERIDION_MATERIALIZATION_ROOT", value = "/mnt/veridion-materialized" },
+    { name = "VERIDION_JWT_ISSUER", value = var.jwt_issuer },
+    { name = "VERIDION_JWT_AUDIENCE", value = var.jwt_audience },
+    { name = "VERIDION_JWKS_URL", value = var.jwks_url },
+    { name = "VERIDION_OIDC_DISCOVERY_URL", value = var.oidc_discovery_url },
+    { name = "VERIDION_TENANTS_JSON", value = var.tenants_json },
+    { name = "VERIDION_SCHEDULES_JSON", value = var.schedules_json }
+  ]
+}
+
+resource "aws_cloudwatch_log_group" "service" {
+  name              = "/ecs/${local.prefix}/service"
+  retention_in_days = 14
+}
+
+resource "aws_cloudwatch_log_group" "worker" {
+  name              = "/ecs/${local.prefix}/worker"
+  retention_in_days = 14
+}
+
+resource "aws_cloudwatch_log_group" "migrate" {
+  name              = "/ecs/${local.prefix}/migrate"
+  retention_in_days = 14
+}
+
+resource "aws_s3_bucket" "materializations" {
+  count  = var.create_s3_bucket ? 1 : 0
+  bucket = var.s3_bucket_name != "" ? var.s3_bucket_name : "${local.prefix}-materializations"
+}
+
+resource "aws_security_group" "alb" {
+  name        = "${local.prefix}-alb"
+  description = "ALB security group"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_security_group" "ecs" {
+  name        = "${local.prefix}-ecs"
+  description = "ECS task security group"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    from_port       = 8787
+    to_port         = 8787
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_security_group" "rds" {
+  name        = "${local.prefix}-rds"
+  description = "RDS security group"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ecs.id]
+  }
+}
+
+resource "aws_security_group" "efs" {
+  name        = "${local.prefix}-efs"
+  description = "EFS security group"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    from_port       = 2049
+    to_port         = 2049
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ecs.id]
+  }
+}
+
+resource "aws_lb" "service" {
+  name               = replace(substr("${local.prefix}-alb", 0, 32), "_", "-")
+  load_balancer_type = "application"
+  subnets            = var.public_subnet_ids
+  security_groups    = [aws_security_group.alb.id]
+}
+
+resource "aws_lb_target_group" "service" {
+  name        = replace(substr("${local.prefix}-tg", 0, 32), "_", "-")
+  port        = 8787
+  protocol    = "HTTP"
+  target_type = "ip"
+  vpc_id      = var.vpc_id
+
+  health_check {
+    path                = "/healthz"
+    matcher             = "200"
+    interval            = 30
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+  }
+}
+
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.service.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.service.arn
+  }
+}
+
+resource "aws_db_subnet_group" "postgres" {
+  name       = "${local.prefix}-db-subnets"
+  subnet_ids = var.private_subnet_ids
+}
+
+resource "aws_db_instance" "postgres" {
+  identifier             = "${local.prefix}-postgres"
+  allocated_storage      = 20
+  engine                 = "postgres"
+  engine_version         = "16"
+  instance_class         = "db.t4g.micro"
+  db_name                = var.db_name
+  username               = var.db_username
+  password               = var.db_password
+  db_subnet_group_name   = aws_db_subnet_group.postgres.name
+  vpc_security_group_ids = [aws_security_group.rds.id]
+  skip_final_snapshot    = true
+  publicly_accessible    = false
+}
+
+resource "aws_efs_file_system" "materializations" {
+  creation_token = "${local.prefix}-efs"
+}
+
+resource "aws_efs_mount_target" "materializations" {
+  for_each        = toset(var.private_subnet_ids)
+  file_system_id  = aws_efs_file_system.materializations.id
+  subnet_id       = each.value
+  security_groups = [aws_security_group.efs.id]
+}
+
+data "aws_iam_policy_document" "ecs_task_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["ecs-tasks.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "execution" {
+  name               = "${local.prefix}-ecs-execution"
+  assume_role_policy = data.aws_iam_policy_document.ecs_task_assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "execution" {
+  role       = aws_iam_role.execution.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_role" "task" {
+  name               = "${local.prefix}-ecs-task"
+  assume_role_policy = data.aws_iam_policy_document.ecs_task_assume.json
+}
+
+data "aws_iam_policy_document" "task" {
+  statement {
+    actions   = ["s3:PutObject", "s3:GetObject", "s3:ListBucket"]
+    resources = var.create_s3_bucket ? [aws_s3_bucket.materializations[0].arn, "${aws_s3_bucket.materializations[0].arn}/*"] : ["arn:aws:s3:::${var.s3_bucket_name}", "arn:aws:s3:::${var.s3_bucket_name}/*"]
+  }
+}
+
+resource "aws_iam_role_policy" "task" {
+  name   = "${local.prefix}-task"
+  role   = aws_iam_role.task.id
+  policy = data.aws_iam_policy_document.task.json
+}
+
+resource "aws_ecs_cluster" "main" {
+  name = "${local.prefix}-cluster"
+}
+
+resource "aws_ecs_task_definition" "service" {
+  family                   = "${local.prefix}-service"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = tostring(var.service_cpu)
+  memory                   = tostring(var.service_memory)
+  execution_role_arn       = aws_iam_role.execution.arn
+  task_role_arn            = aws_iam_role.task.arn
+
+  volume {
+    name = "materializations"
+    efs_volume_configuration {
+      file_system_id = aws_efs_file_system.materializations.id
+    }
+  }
+
+  container_definitions = jsonencode([
+    {
+      name      = "history-service"
+      image     = var.container_image
+      essential = true
+      command   = ["/bin/bash", "examples/hosted/start-history-service.sh"]
+      portMappings = [
+        {
+          containerPort = 8787
+          hostPort      = 8787
+          protocol      = "tcp"
+        }
+      ]
+      mountPoints = [
+        {
+          sourceVolume  = "materializations"
+          containerPath = "/mnt/veridion-materialized"
+          readOnly      = false
+        }
+      ]
+      environment = local.common_env
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.service.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
+    }
+  ])
+}
+
+resource "aws_ecs_task_definition" "worker" {
+  family                   = "${local.prefix}-worker"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = tostring(var.worker_cpu)
+  memory                   = tostring(var.worker_memory)
+  execution_role_arn       = aws_iam_role.execution.arn
+  task_role_arn            = aws_iam_role.task.arn
+
+  volume {
+    name = "materializations"
+    efs_volume_configuration {
+      file_system_id = aws_efs_file_system.materializations.id
+    }
+  }
+
+  container_definitions = jsonencode([
+    {
+      name      = "scheduler-worker"
+      image     = var.container_image
+      essential = true
+      command   = ["/bin/bash", "examples/hosted/start-history-scheduler.sh"]
+      mountPoints = [
+        {
+          sourceVolume  = "materializations"
+          containerPath = "/mnt/veridion-materialized"
+          readOnly      = false
+        }
+      ]
+      environment = local.common_env
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.worker.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
+    }
+  ])
+}
+
+resource "aws_ecs_task_definition" "migrate" {
+  family                   = "${local.prefix}-migrate"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = "256"
+  memory                   = "512"
+  execution_role_arn       = aws_iam_role.execution.arn
+  task_role_arn            = aws_iam_role.task.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "migrate"
+      image     = var.container_image
+      essential = true
+      command   = ["/bin/bash", "examples/hosted/start-history-migrate.sh"]
+      environment = [
+        { name = "VERIDION_STORE_DSN", value = local.store_dsn }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.migrate.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
+    }
+  ])
+}
+
+resource "aws_ecs_service" "service" {
+  name            = "${local.prefix}-service"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.service.arn
+  desired_count   = var.service_desired_count
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = var.private_subnet_ids
+    security_groups  = [aws_security_group.ecs.id]
+    assign_public_ip = false
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.service.arn
+    container_name   = "history-service"
+    container_port   = 8787
+  }
+
+  depends_on = [aws_lb_listener.http]
+}
+
+resource "aws_ecs_service" "worker" {
+  name            = "${local.prefix}-worker"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.worker.arn
+  desired_count   = var.worker_desired_count
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = var.private_subnet_ids
+    security_groups  = [aws_security_group.ecs.id]
+    assign_public_ip = false
+  }
+}

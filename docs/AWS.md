@@ -168,6 +168,10 @@ Helper script:
 
 The default example uses SQLite as the first persistent hosted backend. Teams that outgrow it can keep the same service/export/materialization surfaces and switch to a Postgres-style store DSN later.
 
+For the first real hosted alpha on AWS, use:
+
+- [infra/terraform/aws-hosted-alpha](../infra/terraform/aws-hosted-alpha/README.md)
+
 ## Service-grade persistence and lifecycle
 
 If you are moving from local hosting to a real service deployment, the next recommended path is:
