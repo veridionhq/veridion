@@ -53,7 +53,7 @@ def resolve_trusted_header_identity(
 
 
 def jwt_auth_enabled(config: JWTAuthConfig) -> bool:
-    return bool(config.shared_secret or config.jwks_path or config.jwks_url)
+    return bool(config.shared_secret or config.jwks_path or config.jwks_url or config.oidc_discovery_url)
 
 
 def _resolve_jwt_identity(*, token: str, jwt_config: JWTAuthConfig) -> HistoryToken | None:
@@ -173,6 +173,14 @@ def _load_jwks(jwt_config: JWTAuthConfig) -> dict[str, object] | None:
         except (error.URLError, error.HTTPError, json.JSONDecodeError):
             return None
         return payload if isinstance(payload, dict) else None
+    if jwt_config.oidc_discovery_url:
+        discovery = _fetch_json(jwt_config.oidc_discovery_url)
+        if discovery is None:
+            return None
+        jwks_uri = str(discovery.get("jwks_uri", "")) if isinstance(discovery, dict) else ""
+        if not jwks_uri:
+            return None
+        return _fetch_json(jwks_uri)
     return None
 
 
@@ -186,6 +194,15 @@ def _select_jwk(jwks: dict[str, object], kid: str) -> dict[str, object] | None:
             if str(item.get("kid", "")) == kid:
                 return item
     return candidates[0] if candidates else None
+
+
+def _fetch_json(url: str) -> dict[str, object] | None:
+    try:
+        with request.urlopen(url, timeout=15) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+            payload = json.loads(response.read().decode("utf-8"))
+    except (error.URLError, error.HTTPError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def _load_segment(segment: str) -> object:

@@ -12,10 +12,11 @@ from typing import Iterator
 from veridion.action.athena_queries import build_athena_query_pack
 from veridion.action.decision_history import _load_history, analyze_history_events
 
-STORE_SCHEMA_VERSION = 2
+STORE_SCHEMA_VERSION = 3
 STORE_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("001_decision_events", "core decision event history"),
     ("002_materialization_runs", "managed materialization tracking"),
+    ("003_catalog_models", "tenant org/project/service catalog"),
 )
 
 
@@ -111,6 +112,26 @@ def upsert_history_store(
             )
         store.commit()
     return len(events)
+
+
+def upsert_decision_event_store(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str,
+    event: dict[str, object],
+) -> None:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        store.upsert_event(
+            tenant_id=tenant_id,
+            event_key=build_event_key(event),
+            generated_at=str(event.get("generated_at", "")),
+            repository=str(event.get("repository", "")),
+            policy_pack_id=_policy_value(event, "pack_id"),
+            event_payload=json.dumps(event, sort_keys=True),
+        )
+        store.commit()
 
 
 def analyze_history_store(
@@ -223,6 +244,9 @@ class HistoryStore:
     ) -> None:  # pragma: no cover - interface
         raise NotImplementedError
 
+    def list_catalog(self, *, tenant_id: str) -> dict[str, tuple[dict[str, str], ...]]:  # pragma: no cover - interface
+        raise NotImplementedError
+
     def load_events(
         self,
         *,
@@ -300,6 +324,37 @@ class SQLiteHistoryStore(HistoryStore):
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (tenant_id, event_key, generated_at, repository, policy_pack_id, event_payload),
+        )
+        self._upsert_catalog(
+            tenant_id=tenant_id,
+            event_payload=event_payload,
+            repository=repository,
+        )
+
+    def _upsert_catalog(self, *, tenant_id: str, event_payload: str, repository: str) -> None:
+        event = json.loads(event_payload)
+        organization_id = _catalog_value(event, "organization") or _repo_owner(repository)
+        project_id = _catalog_value(event, "project") or repository
+        service_id = _catalog_value(event, "service") or _repo_name(repository)
+        trust = event.get("trust_context") if isinstance(event.get("trust_context"), dict) else {}
+        service_owner = str(trust.get("service_owner", "")) if isinstance(trust, dict) else ""
+        owning_team = str(trust.get("owning_team", "")) if isinstance(trust, dict) else ""
+        criticality = str(trust.get("service_criticality", "")) if isinstance(trust, dict) else ""
+        self.connection.execute(
+            "INSERT OR REPLACE INTO organizations (tenant_id, organization_id, display_name) VALUES (?, ?, ?)",
+            (tenant_id, organization_id, organization_id),
+        )
+        self.connection.execute(
+            "INSERT OR REPLACE INTO projects (tenant_id, organization_id, project_id, display_name, repository) VALUES (?, ?, ?, ?, ?)",
+            (tenant_id, organization_id, project_id, project_id, repository),
+        )
+        self.connection.execute(
+            """
+            INSERT OR REPLACE INTO services
+            (tenant_id, organization_id, project_id, service_id, display_name, repository, service_owner, owning_team, service_criticality)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (tenant_id, organization_id, project_id, service_id, service_id, repository, service_owner, owning_team, criticality),
         )
 
     def load_events(
@@ -393,6 +448,48 @@ class SQLiteHistoryStore(HistoryStore):
             tenant_id=tenant_id,
         )
 
+    def list_catalog(self, *, tenant_id: str) -> dict[str, tuple[dict[str, str], ...]]:
+        tenant_filter = " WHERE tenant_id = ?" if tenant_id else ""
+        params: list[object] = [tenant_id] if tenant_id else []
+        orgs = tuple(
+            {"tenant_id": str(row[0]), "organization_id": str(row[1]), "display_name": str(row[2])}
+            for row in self.connection.execute(
+                f"SELECT tenant_id, organization_id, display_name FROM organizations{tenant_filter} ORDER BY organization_id ASC",
+                params,
+            ).fetchall()
+        )
+        projects = tuple(
+            {
+                "tenant_id": str(row[0]),
+                "organization_id": str(row[1]),
+                "project_id": str(row[2]),
+                "display_name": str(row[3]),
+                "repository": str(row[4]),
+            }
+            for row in self.connection.execute(
+                f"SELECT tenant_id, organization_id, project_id, display_name, repository FROM projects{tenant_filter} ORDER BY project_id ASC",
+                params,
+            ).fetchall()
+        )
+        services = tuple(
+            {
+                "tenant_id": str(row[0]),
+                "organization_id": str(row[1]),
+                "project_id": str(row[2]),
+                "service_id": str(row[3]),
+                "display_name": str(row[4]),
+                "repository": str(row[5]),
+                "service_owner": str(row[6]),
+                "owning_team": str(row[7]),
+                "service_criticality": str(row[8]),
+            }
+            for row in self.connection.execute(
+                f"SELECT tenant_id, organization_id, project_id, service_id, display_name, repository, service_owner, owning_team, service_criticality FROM services{tenant_filter} ORDER BY service_id ASC",
+                params,
+            ).fetchall()
+        )
+        return {"organizations": orgs, "projects": projects, "services": services}
+
     def commit(self) -> None:
         self.connection.commit()
 
@@ -435,6 +532,55 @@ class PostgresHistoryStore(HistoryStore):
                   event_payload = EXCLUDED.event_payload
                 """,
                 (tenant_id, event_key, generated_at, repository, policy_pack_id, event_payload),
+            )
+        self._upsert_catalog(tenant_id=tenant_id, event_payload=event_payload, repository=repository)
+
+    def _upsert_catalog(self, *, tenant_id: str, event_payload: str, repository: str) -> None:
+        event = json.loads(event_payload)
+        organization_id = _catalog_value(event, "organization") or _repo_owner(repository)
+        project_id = _catalog_value(event, "project") or repository
+        service_id = _catalog_value(event, "service") or _repo_name(repository)
+        trust = event.get("trust_context") if isinstance(event.get("trust_context"), dict) else {}
+        service_owner = str(trust.get("service_owner", "")) if isinstance(trust, dict) else ""
+        owning_team = str(trust.get("owning_team", "")) if isinstance(trust, dict) else ""
+        criticality = str(trust.get("service_criticality", "")) if isinstance(trust, dict) else ""
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO organizations (tenant_id, organization_id, display_name)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (tenant_id, organization_id)
+                DO UPDATE SET display_name = EXCLUDED.display_name
+                """,
+                (tenant_id, organization_id, organization_id),
+            )
+            cursor.execute(
+                """
+                INSERT INTO projects (tenant_id, organization_id, project_id, display_name, repository)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (tenant_id, project_id)
+                DO UPDATE SET
+                  organization_id = EXCLUDED.organization_id,
+                  display_name = EXCLUDED.display_name,
+                  repository = EXCLUDED.repository
+                """,
+                (tenant_id, organization_id, project_id, project_id, repository),
+            )
+            cursor.execute(
+                """
+                INSERT INTO services (tenant_id, organization_id, project_id, service_id, display_name, repository, service_owner, owning_team, service_criticality)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (tenant_id, service_id)
+                DO UPDATE SET
+                  organization_id = EXCLUDED.organization_id,
+                  project_id = EXCLUDED.project_id,
+                  display_name = EXCLUDED.display_name,
+                  repository = EXCLUDED.repository,
+                  service_owner = EXCLUDED.service_owner,
+                  owning_team = EXCLUDED.owning_team,
+                  service_criticality = EXCLUDED.service_criticality
+                """,
+                (tenant_id, organization_id, project_id, service_id, service_id, repository, service_owner, owning_team, criticality),
             )
 
     def load_events(
@@ -545,6 +691,52 @@ class PostgresHistoryStore(HistoryStore):
             tenant_id=tenant_id,
         )
 
+    def list_catalog(self, *, tenant_id: str) -> dict[str, tuple[dict[str, str], ...]]:
+        where = " WHERE tenant_id = %s" if tenant_id else ""
+        params: list[object] = [tenant_id] if tenant_id else []
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT tenant_id, organization_id, display_name FROM organizations{where} ORDER BY organization_id ASC",
+                params,
+            )
+            orgs = tuple(
+                {"tenant_id": str(row[0]), "organization_id": str(row[1]), "display_name": str(row[2])}
+                for row in cursor.fetchall()
+            )
+            cursor.execute(
+                f"SELECT tenant_id, organization_id, project_id, display_name, repository FROM projects{where} ORDER BY project_id ASC",
+                params,
+            )
+            projects = tuple(
+                {
+                    "tenant_id": str(row[0]),
+                    "organization_id": str(row[1]),
+                    "project_id": str(row[2]),
+                    "display_name": str(row[3]),
+                    "repository": str(row[4]),
+                }
+                for row in cursor.fetchall()
+            )
+            cursor.execute(
+                f"SELECT tenant_id, organization_id, project_id, service_id, display_name, repository, service_owner, owning_team, service_criticality FROM services{where} ORDER BY service_id ASC",
+                params,
+            )
+            services = tuple(
+                {
+                    "tenant_id": str(row[0]),
+                    "organization_id": str(row[1]),
+                    "project_id": str(row[2]),
+                    "service_id": str(row[3]),
+                    "display_name": str(row[4]),
+                    "repository": str(row[5]),
+                    "service_owner": str(row[6]),
+                    "owning_team": str(row[7]),
+                    "service_criticality": str(row[8]),
+                }
+                for row in cursor.fetchall()
+            )
+        return {"organizations": orgs, "projects": projects, "services": services}
+
     def commit(self) -> None:
         self.connection.commit()
 
@@ -596,6 +788,44 @@ def _apply_sqlite_migrations(connection: sqlite3.Connection) -> None:
         ON materialization_runs (tenant_id, generated_at)
         """
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS organizations (
+            tenant_id TEXT NOT NULL,
+            organization_id TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, organization_id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS projects (
+            tenant_id TEXT NOT NULL,
+            organization_id TEXT NOT NULL,
+            project_id TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            repository TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, project_id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS services (
+            tenant_id TEXT NOT NULL,
+            organization_id TEXT NOT NULL,
+            project_id TEXT NOT NULL,
+            service_id TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            repository TEXT NOT NULL,
+            service_owner TEXT NOT NULL,
+            owning_team TEXT NOT NULL,
+            service_criticality TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, service_id)
+        )
+        """
+    )
 
 def _apply_postgres_migrations(connection) -> None:
     with connection.cursor() as cursor:
@@ -640,6 +870,44 @@ def _apply_postgres_migrations(connection) -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_materialization_runs_lookup
             ON materialization_runs (tenant_id, generated_at)
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS organizations (
+                tenant_id TEXT NOT NULL,
+                organization_id TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                PRIMARY KEY (tenant_id, organization_id)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS projects (
+                tenant_id TEXT NOT NULL,
+                organization_id TEXT NOT NULL,
+                project_id TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                repository TEXT NOT NULL,
+                PRIMARY KEY (tenant_id, project_id)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS services (
+                tenant_id TEXT NOT NULL,
+                organization_id TEXT NOT NULL,
+                project_id TEXT NOT NULL,
+                service_id TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                repository TEXT NOT NULL,
+                service_owner TEXT NOT NULL,
+                owning_team TEXT NOT NULL,
+                service_criticality TEXT NOT NULL,
+                PRIMARY KEY (tenant_id, service_id)
+            )
             """
         )
 
@@ -750,6 +1018,17 @@ def _build_service_status(
     }
 
 
+def list_catalog_models(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str = "",
+) -> dict[str, tuple[dict[str, str], ...]]:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        return store.list_catalog(tenant_id=tenant_id)
+
+
 def _open_store_dsn(store_dsn: str) -> HistoryStore:
     if store_dsn.startswith("sqlite:///"):
         return SQLiteHistoryStore(store_dsn[len("sqlite:///") :])
@@ -809,6 +1088,19 @@ def _decision_value(event: dict[str, object], key: str) -> str:
 def _policy_value(event: dict[str, object], key: str) -> str:
     policy = event.get("policy")
     return policy.get(key, "") if isinstance(policy, dict) and isinstance(policy.get(key, ""), str) else ""
+
+
+def _catalog_value(event: dict[str, object], key: str) -> str:
+    value = event.get(key, "")
+    return value if isinstance(value, str) else ""
+
+
+def _repo_owner(repository: str) -> str:
+    return repository.split("/", 1)[0] if "/" in repository else repository
+
+
+def _repo_name(repository: str) -> str:
+    return repository.split("/", 1)[1] if "/" in repository else repository
 
 
 def record_materialization_run(

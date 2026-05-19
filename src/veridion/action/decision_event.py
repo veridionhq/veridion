@@ -37,6 +37,9 @@ def build_decision_event(
         "source": "veridion/action",
         "event_version_source": "veridion.action.decision_event@1",
         "repository": repository,
+        "organization": _repo_owner(repository),
+        "project": repository,
+        "service": _repo_name(repository),
         "pull_request_number": pull_request_number,
         "decision": {
             "verdict": decision.get("verdict", ""),
@@ -145,6 +148,14 @@ def _as_int(value: object) -> int:
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _repo_owner(repository: str) -> str:
+    return repository.split("/", 1)[0] if "/" in repository else repository
+
+
+def _repo_name(repository: str) -> str:
+    return repository.split("/", 1)[1] if "/" in repository else repository
 
 
 if __name__ == "__main__":

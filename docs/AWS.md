@@ -238,6 +238,7 @@ For Postgres rollout and migration assets:
 
 - [docs/POSTGRES.md](POSTGRES.md)
 - [docs/HOSTED.md](HOSTED.md)
+- [docs/SAAS.md](SAAS.md)
 
 ## Athena query examples
 

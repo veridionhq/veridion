@@ -58,6 +58,7 @@ def test_jwt_auth_enabled_for_jwks_configs() -> None:
     assert jwt_auth_enabled(JWTAuthConfig(shared_secret="secret")) is True
     assert jwt_auth_enabled(JWTAuthConfig(jwks_path="/tmp/jwks.json")) is True
     assert jwt_auth_enabled(JWTAuthConfig(jwks_url="https://issuer.example/jwks.json")) is True
+    assert jwt_auth_enabled(JWTAuthConfig(oidc_discovery_url="https://issuer.example/.well-known/openid-configuration")) is True
     assert jwt_auth_enabled(JWTAuthConfig()) is False
 
 

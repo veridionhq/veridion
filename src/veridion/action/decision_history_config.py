@@ -33,6 +33,7 @@ class JWTAuthConfig:
     shared_secret: str = ""
     jwks_path: str = ""
     jwks_url: str = ""
+    oidc_discovery_url: str = ""
     roles_claim: str = "roles"
     tenants_claim: str = "tenants"
     principal_claim: str = "sub"
@@ -176,6 +177,7 @@ def _parse_jwt(value: object) -> JWTAuthConfig:
         shared_secret=_optional_string(value.get("shared_secret")),
         jwks_path=_optional_string(value.get("jwks_path")),
         jwks_url=_optional_string(value.get("jwks_url")),
+        oidc_discovery_url=_optional_string(value.get("oidc_discovery_url")),
         roles_claim=_optional_string(value.get("roles_claim")) or "roles",
         tenants_claim=_optional_string(value.get("tenants_claim")) or "tenants",
         principal_claim=_optional_string(value.get("principal_claim")) or "sub",

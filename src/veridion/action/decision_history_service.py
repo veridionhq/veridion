@@ -21,7 +21,13 @@ from veridion.action.decision_history_config import (
 )
 from veridion.action.decision_history import analyze_history
 from veridion.action.decision_history_materialize import materialize_decision_history
-from veridion.action.decision_history_store import analyze_history_store, get_history_store_status, list_materialization_runs
+from veridion.action.decision_history_store import (
+    analyze_history_store,
+    get_history_store_status,
+    list_catalog_models,
+    list_materialization_runs,
+    upsert_decision_event_store,
+)
 from veridion.action.history_identity import jwt_auth_enabled, resolve_bearer_identity, resolve_trusted_header_identity
 
 API_VERSION = "v1"
@@ -259,6 +265,15 @@ def resolve_history_request(
             return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
         repositories = [item["repository"] for item in payload["policy_rollout"]["latest_by_repository"]]
         return _respond(200, {"repositories": repositories}, route=route, api_version=api_version, identity=identity)
+    if route == "/organizations":
+        catalog = _catalog_payload(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=params.get("tenant", ""))
+        return _respond(200, {"organizations": list(catalog["organizations"])}, route=route, api_version=api_version, identity=identity)
+    if route == "/projects":
+        catalog = _catalog_payload(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=params.get("tenant", ""))
+        return _respond(200, {"projects": list(catalog["projects"])}, route=route, api_version=api_version, identity=identity)
+    if route == "/services":
+        catalog = _catalog_payload(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=params.get("tenant", ""))
+        return _respond(200, {"services": list(catalog["services"])}, route=route, api_version=api_version, identity=identity)
     if route == "/policy-rollouts":
         payload = _analyze_request(
             history_paths=history_paths,
@@ -512,11 +527,15 @@ def _authorize_request(
             return ((401, {"error": "unauthorized"}), None)
     if scoped.status and scoped.status != "active":
         return ((403, {"error": "identity_inactive"}), scoped)
-    if method != "GET" and not _has_role(scoped, "materializer", "admin"):
+    if path == "/events" and not _has_role(scoped, "ingestor", "materializer", "admin"):
+        return ((403, {"error": "insufficient_role"}), scoped)
+    if method != "GET" and path != "/events" and not _has_role(scoped, "materializer", "admin"):
         return ((403, {"error": "insufficient_role"}), scoped)
     if path in {"/analytics", "/repositories", "/policy-rollouts", "/dashboard", "/overview", "/materializations", "/materialization-schedules", "/service/status"} and not _has_role(
         scoped, "reader", "materializer", "admin"
     ):
+        return ((403, {"error": "insufficient_role"}), scoped)
+    if path in {"/organizations", "/projects", "/services"} and not _has_role(scoped, "reader", "materializer", "admin"):
         return ((403, {"error": "insufficient_role"}), scoped)
     if not tenant_id and scoped.tenants and path not in {"/tenants", "/materialization-schedules", "/identity"} and method == "GET":
         return ((403, {"error": "tenant_scope_required"}), scoped)
@@ -596,6 +615,7 @@ def _build_overview_payload(
             "history_paths": list(history_paths),
             "has_persistent_store": bool(sqlite_path or store_dsn),
         },
+        "catalog": _catalog_payload(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id),
     }
 
 
@@ -612,6 +632,35 @@ def _handle_post_request(
     config_path: str,
     scoped_token: HistoryToken | None,
 ) -> tuple[int, dict[str, object]]:
+    if path == "/events":
+        if not (sqlite_path or store_dsn):
+            return (400, {"error": "persistent_store_required"})
+        try:
+            payload = json.loads(body) if body.strip() else {}
+        except json.JSONDecodeError:
+            return (400, {"error": "invalid_json"})
+        if not isinstance(payload, dict):
+            return (400, {"error": "invalid_json"})
+        tenant_id = _body_string(payload, "tenant")
+        if not tenant_id:
+            return (400, {"error": "tenant_required"})
+        if tenants and tenant_id not in tenants:
+            return (404, {"error": "tenant_not_found"})
+        if scoped_token is not None and scoped_token.tenants and tenant_id not in scoped_token.tenants:
+            return (403, {"error": "forbidden"})
+        event = payload.get("event")
+        if not isinstance(event, dict):
+            return (400, {"error": "event_required"})
+        repository = event.get("repository", "")
+        if not isinstance(repository, str) or not repository.strip():
+            return (400, {"error": "repository_required"})
+        upsert_decision_event_store(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=tenant_id,
+            event=event,
+        )
+        return (202, {"status": "accepted", "tenant": tenant_id, "repository": repository})
     if path != "/materializations":
         return (404, {"error": "not_found"})
     if not materialization_root or not config_path:
@@ -709,6 +758,12 @@ def _identity_payload(identity: HistoryToken | None) -> dict[str, object]:
     }
 
 
+def _catalog_payload(*, sqlite_path: str, store_dsn: str, tenant_id: str) -> dict[str, tuple[dict[str, str], ...]]:
+    if not (sqlite_path or store_dsn):
+        return {"organizations": (), "projects": (), "services": ()}
+    return list_catalog_models(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id)
+
+
 def _visible_schedules(
     schedules: dict[str, MaterializationSchedule],
     identity: HistoryToken | None,
@@ -740,8 +795,16 @@ def render_dashboard_html(
     latest_repositories = policy_rollout.get("latest_by_repository", []) if isinstance(policy_rollout, dict) else []
     materializations = payload.get("materializations", [])
     schedules = payload.get("schedules", [])
+    catalog = payload.get("catalog", {})
+    organizations = catalog.get("organizations", []) if isinstance(catalog, dict) else []
+    projects = catalog.get("projects", []) if isinstance(catalog, dict) else []
+    services = catalog.get("services", []) if isinstance(catalog, dict) else []
     status_store = status.get("store", {}) if isinstance(status, dict) else {}
     principal = identity.principal_name or identity.token_id if identity is not None else "anonymous"
+    service_items = "".join(
+        f"<li>{_html_escape(str(item.get('service_id', '')))}{_service_criticality_suffix(item)}</li>"
+        for item in services[:5]
+    ) or "<li>No services recorded</li>"
     return f"""<!doctype html>
 <html>
   <head>
@@ -831,11 +894,31 @@ def render_dashboard_html(
           </ul>
         </div>
       </div>
+      <div class="panels-3">
+        <div class="card">
+          <h2 class="section-title">Organizations</h2>
+          <ul>
+            {"".join(f"<li>{_html_escape(str(item.get('organization_id', '')))}</li>" for item in organizations[:5]) or "<li>No organizations recorded</li>"}
+          </ul>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Projects</h2>
+          <ul>
+            {"".join(f"<li>{_html_escape(str(item.get('project_id', '')))}</li>" for item in projects[:5]) or "<li>No projects recorded</li>"}
+          </ul>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Services</h2>
+          <ul>
+            {service_items}
+          </ul>
+        </div>
+      </div>
       <div class="card" style="margin-top:1rem;">
         <h2 class="section-title">Policy Rollout JSON</h2>
         <pre>{_html_escape(json.dumps(policy_rollout, indent=2))}</pre>
       </div>
-      <div class="footer">Versioned endpoints are available under /api/{_html_escape(api_version)}/overview, /identity, /analytics, /repositories, /policy-rollouts, /materializations, /materialization-schedules, /service/status, and /tenants.</div>
+      <div class="footer">Versioned endpoints are available under /api/{_html_escape(api_version)}/overview, /identity, /analytics, /repositories, /organizations, /projects, /services, /policy-rollouts, /materializations, /materialization-schedules, /service/status, /events, and /tenants.</div>
     </div>
   </body>
 </html>"""
@@ -843,6 +926,11 @@ def render_dashboard_html(
 
 def _html_escape(value: str) -> str:
     return html.escape(value, quote=True)
+
+
+def _service_criticality_suffix(item: dict[str, object]) -> str:
+    criticality = str(item.get("service_criticality", "")).strip()
+    return f" {_html_escape(f'({criticality})')}" if criticality else ""
 
 
 def _merge_auth_tokens(config_tokens: tuple[str, ...], cli_token: str) -> tuple[str, ...]:

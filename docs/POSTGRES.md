@@ -113,4 +113,5 @@ This continuously evaluates due schedules and records runs through the same host
 For a full hosted deployment bundle:
 
 - [docs/HOSTED.md](HOSTED.md)
+- [docs/SAAS.md](SAAS.md)
 - [examples/hosted/docker-compose.postgres.yml](../examples/hosted/docker-compose.postgres.yml)

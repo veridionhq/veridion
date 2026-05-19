@@ -3,6 +3,7 @@ import json
 from veridion.action.decision_history_store import (
     analyze_history_store,
     get_history_store_status,
+    list_catalog_models,
     list_materialization_runs,
     record_materialization_run,
     upsert_history_store,
@@ -80,6 +81,34 @@ def test_decision_history_store_reports_schema_status(tmp_path) -> None:
     status = get_history_store_status(sqlite_path=sqlite_path, tenant_id="acme")
 
     assert status["store"]["backend"] == "sqlite"
-    assert status["store"]["schema_version"] >= 2
-    assert len(status["store"]["migrations"]) >= 2
+    assert status["store"]["schema_version"] >= 3
+    assert len(status["store"]["migrations"]) >= 3
     assert status["store"]["pending_migration_count"] == 0
+
+
+def test_decision_history_store_persists_catalog_models(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    history_path = tmp_path / "history.ndjson"
+    history_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-05-14T12:00:00Z",
+                "repository": "acme/service-a",
+                "organization": "acme",
+                "project": "acme/service-a",
+                "service": "service-a",
+                "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+                "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+                "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+                "trust_context": {"service_owner": "payments-owner", "owning_team": "payments", "service_criticality": "high"},
+            }
+        )
+        + "\n"
+    )
+    upsert_history_store(sqlite_path=sqlite_path, tenant_id="acme", history_paths=(str(history_path),))
+
+    catalog = list_catalog_models(sqlite_path=sqlite_path, tenant_id="acme")
+
+    assert catalog["organizations"][0]["organization_id"] == "acme"
+    assert catalog["projects"][0]["project_id"] == "acme/service-a"
+    assert catalog["services"][0]["service_id"] == "service-a"

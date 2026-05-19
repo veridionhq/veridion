@@ -114,3 +114,7 @@ The repo now includes:
 - [examples/hosted/pagerduty-end-to-end.sh](../examples/hosted/pagerduty-end-to-end.sh)
 
 This is the intended bridge from "tool in a repo" to "shared release-control service".
+
+For the multi-tenant SaaS direction specifically:
+
+- [docs/SAAS.md](SAAS.md)

@@ -6,6 +6,7 @@
     "issuer": "https://auth.example.com/",
     "audience": "veridion-history",
     "jwks_path": "examples/hosted/jwks.json",
+    "oidc_discovery_url": "",
     "shared_secret": ""
   },
   "schedules": [

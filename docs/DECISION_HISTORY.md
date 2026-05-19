@@ -163,11 +163,15 @@ The preferred service contract is now versioned under `/api/v1`:
 - `/api/v1/identity`
 - `/api/v1/analytics`
 - `/api/v1/repositories`
+- `/api/v1/organizations`
+- `/api/v1/projects`
+- `/api/v1/services`
 - `/api/v1/policy-rollouts`
 - `/api/v1/tenants`
 - `/api/v1/materializations`
 - `/api/v1/materialization-schedules`
 - `/api/v1/service/status`
+- `/api/v1/events`
 
 Versioned endpoints return:
 
@@ -175,6 +179,8 @@ Versioned endpoints return:
 - `route`
 - `identity`
 - `data`
+
+`POST /api/v1/events` is the hosted ingestion path for remote decision producers. It requires a scoped identity with `ingestor`, `materializer`, or `admin` role.
 
 If you configure bearer-token auth:
 

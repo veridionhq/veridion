@@ -508,8 +508,49 @@ def test_decision_history_service_exposes_overview_and_identity_endpoints(tmp_pa
     assert overview_status == 200
     assert overview["data"]["analytics"]["summary"]["events"] == 1
     assert overview["data"]["status"]["store"]["backend"] == "sqlite"
+    assert overview["data"]["catalog"]["services"][0]["service_id"] == "service-a"
     assert identity_status == 200
     assert identity["data"]["identity"]["principal_name"] == "Reader One"
+
+
+def test_decision_history_service_ingests_events_and_exposes_catalog(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    tenants = {"acme": HistoryTenant(tenant_id="acme", history_paths=())}
+    event = {
+        "generated_at": "2026-05-14T12:00:00Z",
+        "repository": "acme/service-a",
+        "organization": "acme",
+        "project": "acme/service-a",
+        "service": "service-a",
+        "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+        "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+        "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+        "trust_context": {"service_owner": "payments-owner", "owning_team": "payments", "service_criticality": "high"},
+    }
+
+    ingest_status, ingest = resolve_history_request(
+        "/api/v1/events",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "event": event}),
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer ingestor"},
+        scoped_tokens={"ingestor": HistoryToken(token="ingestor", tenants=("acme",), roles=("ingestor",))},
+    )
+    services_status, services = resolve_history_request(
+        "/api/v1/services?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer reader"},
+        scoped_tokens={"reader": HistoryToken(token="reader", tenants=("acme",), roles=("reader",))},
+    )
+
+    assert ingest_status == 202
+    assert ingest["data"]["repository"] == "acme/service-a"
+    assert services_status == 200
+    assert services["data"]["services"][0]["service_id"] == "service-a"
 
 
 def _build_test_jwt(*, secret: str, payload: dict[str, object]) -> str:
