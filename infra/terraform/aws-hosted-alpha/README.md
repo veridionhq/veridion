@@ -80,6 +80,12 @@ bash ./examples/aws/build-push-ecr.sh
 The hosted image is also built in CI on every push and pull request via `.github/workflows/hosted-image.yml`.
 Use the workflow-dispatch path there when you want GitHub Actions to publish the image to ECR instead of pushing it manually from a shell.
 
+Default CI publish behavior:
+
+- pushes to `develop` publish `:alpha`
+- pushes to `main` publish `:latest`
+- pull requests still build only and do not publish
+
 For the CI publish path:
 
 1. Apply Terraform.

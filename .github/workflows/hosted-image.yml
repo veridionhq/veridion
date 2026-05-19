@@ -50,7 +50,7 @@ jobs:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
       ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
       AWS_GITHUB_ACTIONS_ROLE_ARN: ${{ vars.AWS_GITHUB_ACTIONS_ROLE_ARN != '' && vars.AWS_GITHUB_ACTIONS_ROLE_ARN || secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
-      IMAGE_TAG: ${{ inputs.image_tag != '' && inputs.image_tag || github.sha }}
+      IMAGE_TAG: ${{ github.ref_name == 'develop' && 'alpha' || github.ref_name == 'main' && 'latest' || inputs.image_tag != '' && inputs.image_tag || github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,18 +68,18 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Configure AWS credentials
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.push_to_ecr && env.ECR_REPOSITORY_URL != '' && env.AWS_GITHUB_ACTIONS_ROLE_ARN != '' }}
+        if: ${{ ((github.event_name == 'workflow_dispatch' && inputs.push_to_ecr) || (github.event_name == 'push' && (github.ref_name == 'develop' || github.ref_name == 'main'))) && env.ECR_REPOSITORY_URL != '' && env.AWS_GITHUB_ACTIONS_ROLE_ARN != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_GITHUB_ACTIONS_ROLE_ARN }}
 
       - name: Log in to ECR
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.push_to_ecr && env.ECR_REPOSITORY_URL != '' && env.AWS_GITHUB_ACTIONS_ROLE_ARN != '' }}
+        if: ${{ ((github.event_name == 'workflow_dispatch' && inputs.push_to_ecr) || (github.event_name == 'push' && (github.ref_name == 'develop' || github.ref_name == 'main'))) && env.ECR_REPOSITORY_URL != '' && env.AWS_GITHUB_ACTIONS_ROLE_ARN != '' }}
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Push hosted image to ECR
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.push_to_ecr && env.ECR_REPOSITORY_URL != '' && env.AWS_GITHUB_ACTIONS_ROLE_ARN != '' }}
+        if: ${{ ((github.event_name == 'workflow_dispatch' && inputs.push_to_ecr) || (github.event_name == 'push' && (github.ref_name == 'develop' || github.ref_name == 'main'))) && env.ECR_REPOSITORY_URL != '' && env.AWS_GITHUB_ACTIONS_ROLE_ARN != '' }}
         uses: docker/build-push-action@v6
         with:
           context: .
