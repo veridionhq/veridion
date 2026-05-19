@@ -140,6 +140,20 @@ variable "tenants" {
   }))
 }
 
+variable "service_tokens" {
+  type = list(object({
+    token          = string
+    token_id       = optional(string)
+    principal_name = optional(string)
+    auth_type      = optional(string)
+    status         = optional(string)
+    tenants        = optional(list(string))
+    roles          = optional(list(string))
+  }))
+  default   = []
+  sensitive = true
+}
+
 variable "schedules" {
   type = list(object({
     schedule_id                 = string

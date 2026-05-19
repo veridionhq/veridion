@@ -53,6 +53,7 @@ You need:
 - optionally:
   - let Terraform create the GitHub Actions OIDC provider and ECR publish role, or
   - point Terraform at an existing GitHub OIDC provider ARN
+  - define one or more static service tokens for alpha bootstrap access
 
 ## Deploy
 
@@ -122,6 +123,53 @@ aws ecs run-task \
 ```
 
 6. Create the first producer client through the admin API and start ingesting decision events.
+
+## Alpha bootstrap auth
+
+The cheapest bootstrap path is a static scoped bearer token carried in Terraform:
+
+```hcl
+service_tokens = [
+  {
+    token          = "replace-me-with-a-long-random-admin-token"
+    token_id       = "bootstrap-admin"
+    principal_name = "alpha-admin"
+    roles          = ["admin"]
+    tenants        = ["acme"]
+    status         = "active"
+  }
+]
+```
+
+After `terraform apply`, use it like:
+
+```bash
+export SERVICE_URL="http://veridion-alpha-alb-1214008410.us-west-2.elb.amazonaws.com"
+export ADMIN_TOKEN="replace-me-with-a-long-random-admin-token"
+
+curl -i \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  "${SERVICE_URL}/api/v1/app?tenant=acme"
+```
+
+Create the first producer client:
+
+```bash
+curl \
+  -X POST \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  -H "Content-Type: application/json" \
+  "${SERVICE_URL}/api/v1/admin/producer-clients" \
+  -d '{
+    "tenant": "acme",
+    "client_id": "github-actions",
+    "display_name": "GitHub Actions",
+    "roles_csv": "ingestor",
+    "status": "active"
+  }'
+```
+
+That response includes the generated ingestor token for `POST /api/v1/events`.
 
 ## Opinionated path
 

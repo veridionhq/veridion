@@ -20,6 +20,17 @@ jwt_audience       = "veridion-history"
 jwks_url           = "https://auth.example.com/.well-known/jwks.json"
 oidc_discovery_url = ""
 
+service_tokens = [
+  {
+    token          = "replace-me-with-a-long-random-admin-token"
+    token_id       = "bootstrap-admin"
+    principal_name = "alpha-admin"
+    roles          = ["admin"]
+    tenants        = ["acme"]
+    status         = "active"
+  }
+]
+
 tenants = [
   {
     tenant_id    = "acme"

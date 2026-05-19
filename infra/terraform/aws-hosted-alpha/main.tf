@@ -30,7 +30,8 @@ locals {
     { name = "VERIDION_JWKS_URL", value = var.jwks_url },
     { name = "VERIDION_OIDC_DISCOVERY_URL", value = var.oidc_discovery_url },
     { name = "VERIDION_TENANTS_JSON", value = jsonencode(var.tenants) },
-    { name = "VERIDION_SCHEDULES_JSON", value = jsonencode(var.schedules) }
+    { name = "VERIDION_SCHEDULES_JSON", value = jsonencode(var.schedules) },
+    { name = "VERIDION_SERVICE_TOKENS_JSON", value = jsonencode(var.service_tokens) }
   ]
   github_oidc_provider_arn = var.create_github_oidc_provider ? aws_iam_openid_connect_provider.github_actions[0].arn : var.github_oidc_provider_arn
   github_oidc_subjects = [

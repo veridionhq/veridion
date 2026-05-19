@@ -15,6 +15,7 @@ cat > "${CONFIG_PATH}" <<EOF
     "jwks_url": "${VERIDION_JWKS_URL:-}",
     "oidc_discovery_url": "${VERIDION_OIDC_DISCOVERY_URL:-}"
   },
+  "tokens": ${VERIDION_SERVICE_TOKENS_JSON:-[]},
   "tenants": ${VERIDION_TENANTS_JSON:-[]},
   "schedules": ${VERIDION_SCHEDULES_JSON:-[]}
 }
