@@ -1,0 +1,185 @@
+name: hosted-producer
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+  workflow_dispatch:
+
+jobs:
+  release-decision-event:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate diff artifact
+        shell: bash
+        run: |
+          if git rev-parse HEAD^ >/dev/null 2>&1; then
+            git diff --no-ext-diff --unified=0 HEAD^ HEAD > push.diff
+          else
+            : > push.diff
+          fi
+
+      - name: Build trust profile artifact
+        shell: bash
+        env:
+          PYTHONPATH: src
+        run: |
+          python3 -m veridion.action.trust_profile_builder \
+            --catalog-path examples/trust/trust-catalog.source.json \
+            --config-path examples/trust/trust-profile.source.json \
+            --output-path trust-profile.json
+
+      - name: Build operational context artifact
+        shell: bash
+        env:
+          PYTHONPATH: src
+        run: |
+          python3 -m veridion.action.operational_context_builder \
+            --event-path "${GITHUB_EVENT_PATH}" \
+            --trust-profile-path trust-profile.json \
+            --output-path operational-context.json
+
+      - name: Prepare baseline worktree
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          if git rev-parse HEAD^ >/dev/null 2>&1; then
+            git worktree add --detach ../veridion-base HEAD^
+          else
+            cp -R . ../veridion-base
+          fi
+
+      - name: Install Semgrep CLI
+        shell: bash
+        run: python3 -m pip install "semgrep>=1,<2"
+
+      - name: Run Semgrep on current workspace
+        shell: bash
+        run: semgrep scan --config auto --json --output artifacts/semgrep.json .
+
+      - name: Run Semgrep on baseline workspace
+        shell: bash
+        run: semgrep scan --config auto --json --output artifacts/baseline-semgrep.json ../veridion-base
+
+      - name: Run Trivy on current workspace
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: json
+          output: artifacts/trivy.json
+          exit-code: "0"
+          scanners: vuln
+          hide-progress: true
+
+      - name: Run Trivy on baseline workspace
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: fs
+          scan-ref: ../veridion-base
+          format: json
+          output: artifacts/baseline-trivy.json
+          exit-code: "0"
+          scanners: vuln
+          hide-progress: true
+          skip-setup-trivy: true
+
+      - name: Run Grype on current workspace
+        uses: anchore/scan-action@v7.4.0
+        with:
+          path: .
+          output-format: json
+          output-file: artifacts/grype.json
+          fail-build: false
+
+      - name: Run Grype on baseline workspace
+        uses: anchore/scan-action@v7.4.0
+        with:
+          path: ../veridion-base
+          output-format: json
+          output-file: artifacts/baseline-grype.json
+          fail-build: false
+
+      - name: Install Syft CLI
+        uses: anchore/sbom-action/download-syft@v0.24.0
+        id: syft
+
+      - name: Run Syft on current workspace
+        shell: bash
+        run: ${{ steps.syft.outputs.cmd }} . -o syft-json=artifacts/syft.json
+
+      - name: Run Syft on baseline workspace
+        shell: bash
+        run: ${{ steps.syft.outputs.cmd }} ../veridion-base -o syft-json=artifacts/baseline-syft.json
+
+      - name: Run Veridion hosted producer
+        id: run-rdi
+        uses: ./
+        with:
+          diff-path: push.diff
+          reports: |
+            trivy=artifacts/trivy.json
+            semgrep=artifacts/semgrep.json
+            grype=artifacts/grype.json
+            syft=artifacts/syft.json
+          baseline-reports: |
+            trivy=artifacts/baseline-trivy.json
+            semgrep=artifacts/baseline-semgrep.json
+            grype=artifacts/baseline-grype.json
+            syft=artifacts/baseline-syft.json
+          policy-path: examples/policy-packs/application-team.yaml
+          operational-context-path: operational-context.json
+          comment-summary-provider: ${{ vars.VERIDION_COMMENT_SUMMARY_PROVIDER }}
+          comment-summary-model: ${{ vars.VERIDION_COMMENT_SUMMARY_MODEL }}
+          comment-summary-api-key: ${{ secrets.VERIDION_COMMENT_SUMMARY_API_KEY }}
+          comment-summary-base-url: ${{ vars.VERIDION_COMMENT_SUMMARY_BASE_URL }}
+          comment-summary-region: ${{ vars.VERIDION_COMMENT_SUMMARY_REGION }}
+          comment-summary-style: terse
+          comment-path: veridion-pr-comment.md
+          json-output-path: veridion-result.json
+          decision-contract-path: veridion-decision.json
+          decision-event-path: veridion-decision-event.json
+          decision-sinks: |
+            ${{ vars.VERIDION_HOSTED_SERVICE_URL != '' && secrets.VERIDION_HOSTED_INGESTOR_TOKEN != '' && vars.VERIDION_HOSTED_TENANT_ID != '' && format('veridion-service:url={0},tenant={1},token={2}', vars.VERIDION_HOSTED_SERVICE_URL, vars.VERIDION_HOSTED_TENANT_ID, secrets.VERIDION_HOSTED_INGESTOR_TOKEN) || '' }}
+          post-comment: "false"
+          repository: ${{ github.repository }}
+
+      - name: Show outputs
+        shell: bash
+        run: |
+          echo "Decision: ${{ steps.run-rdi.outputs.decision }}"
+          echo "Score: ${{ steps.run-rdi.outputs.score }}"
+          echo "Confidence: ${{ steps.run-rdi.outputs.confidence }}"
+          echo "Gate: ${{ steps.run-rdi.outputs.gate_status }}"
+          echo "Sink summary: ${{ steps.run-rdi.outputs.sink_delivery_summary_json }}"
+
+      - name: Clean up baseline worktree
+        if: always()
+        shell: bash
+        run: |
+          git worktree remove ../veridion-base --force 2>/dev/null || true
+          rm -rf ../veridion-base
+
+      - name: Upload producer artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-producer-artifacts
+          path: |
+            veridion-pr-comment.md
+            veridion-result.json
+            veridion-decision.json
+            veridion-decision-event.json
+            trust-profile.json
+            operational-context.json

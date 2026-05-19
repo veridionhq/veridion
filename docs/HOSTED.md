@@ -99,17 +99,25 @@ Recommended production posture:
 
 ## First GitHub producer path
 
-The repo's internal `rdi-pr-comment` workflow can now act as a hosted producer when these are set:
+The repo's `hosted-producer` workflow is the dedicated push-driven hosted producer.
+
+It runs on:
+
+- pushes to `develop`
+- pushes to `main`
+- manual dispatch
+
+It sends `veridion-decision-event.json` directly to:
+
+- `POST /api/v1/events`
+
+when these are set:
 
 - repo variable `VERIDION_HOSTED_SERVICE_URL`
 - repo variable `VERIDION_HOSTED_TENANT_ID`
 - repo secret `VERIDION_HOSTED_INGESTOR_TOKEN`
 
-When present, the workflow sends `veridion-decision-event.json` directly to:
-
-- `POST /api/v1/events`
-
-through the `veridion-service` decision sink.
+The repo's internal `rdi-pr-comment` workflow can also use the same sink on PR/self-test paths.
 
 ## Worker model
 
