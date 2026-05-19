@@ -37,6 +37,18 @@ class JWTAuthConfig:
 
 
 @dataclass(frozen=True)
+class TrustedHeaderAuthConfig:
+    enabled: bool = False
+    shared_secret: str = ""
+    secret_header: str = "X-Veridion-Auth-Secret"
+    principal_header: str = "X-Veridion-Principal"
+    token_id_header: str = "X-Veridion-Token-Id"
+    roles_header: str = "X-Veridion-Roles"
+    tenants_header: str = "X-Veridion-Tenants"
+    status_header: str = "X-Veridion-Status"
+
+
+@dataclass(frozen=True)
 class HistoryToken:
     token: str
     token_id: str = ""
@@ -57,6 +69,7 @@ class HistoryServiceConfig:
     auth_tokens: tuple[str, ...] = ()
     tokens: tuple[HistoryToken, ...] = ()
     jwt: JWTAuthConfig = JWTAuthConfig()
+    trusted_headers: TrustedHeaderAuthConfig = TrustedHeaderAuthConfig()
     schedules: tuple[MaterializationSchedule, ...] = ()
 
 
@@ -97,6 +110,7 @@ def load_history_service_config(path: str | Path) -> HistoryServiceConfig:
         auth_tokens=tuple(_string_list(payload.get("auth_tokens"))),
         tokens=tuple(_parse_tokens(payload.get("tokens"))),
         jwt=_parse_jwt(payload.get("jwt")),
+        trusted_headers=_parse_trusted_headers(payload.get("trusted_headers")),
         schedules=tuple(_parse_schedules(payload.get("schedules"))),
     )
 
@@ -183,6 +197,21 @@ def _parse_schedules(value: object) -> list[MaterializationSchedule]:
             )
         )
     return schedules
+
+
+def _parse_trusted_headers(value: object) -> TrustedHeaderAuthConfig:
+    if not isinstance(value, dict):
+        return TrustedHeaderAuthConfig()
+    return TrustedHeaderAuthConfig(
+        enabled=_bool_value(value.get("enabled"), default=False),
+        shared_secret=_optional_string(value.get("shared_secret")),
+        secret_header=_optional_string(value.get("secret_header")) or "X-Veridion-Auth-Secret",
+        principal_header=_optional_string(value.get("principal_header")) or "X-Veridion-Principal",
+        token_id_header=_optional_string(value.get("token_id_header")) or "X-Veridion-Token-Id",
+        roles_header=_optional_string(value.get("roles_header")) or "X-Veridion-Roles",
+        tenants_header=_optional_string(value.get("tenants_header")) or "X-Veridion-Tenants",
+        status_header=_optional_string(value.get("status_header")) or "X-Veridion-Status",
+    )
 
 
 def _bool_value(value: object, *, default: bool) -> bool:

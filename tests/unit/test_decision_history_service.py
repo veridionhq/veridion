@@ -3,7 +3,7 @@ import hashlib
 import hmac
 import json
 
-from veridion.action.decision_history_config import HistoryTenant, HistoryToken, JWTAuthConfig, MaterializationSchedule
+from veridion.action.decision_history_config import HistoryTenant, HistoryToken, JWTAuthConfig, MaterializationSchedule, TrustedHeaderAuthConfig
 from veridion.action.decision_history_store import upsert_history_store
 from veridion.action.decision_history_service import resolve_history_request
 
@@ -397,6 +397,41 @@ def test_decision_history_service_accepts_jwt_identity_for_versioned_api(tmp_pat
     assert payload["identity"]["auth_type"] == "jwt"
     assert payload["identity"]["token_id"] == "jwt-1"
     assert payload["data"]["summary"]["events"] == 1
+
+
+def test_decision_history_service_accepts_trusted_header_identity(tmp_path) -> None:
+    history_path = tmp_path / "history.ndjson"
+    history_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-05-14T12:00:00Z",
+                "repository": "acme/service-a",
+                "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+                "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+                "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+            }
+        )
+        + "\n"
+    )
+    tenants = {"acme": HistoryTenant(tenant_id="acme", history_paths=(str(history_path),))}
+
+    status, payload = resolve_history_request(
+        "/api/v1/analytics?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        headers={
+            "X-Veridion-Auth-Secret": "secret",
+            "X-Veridion-Principal": "alice@example.com",
+            "X-Veridion-Token-Id": "tok_hdr",
+            "X-Veridion-Roles": "reader",
+            "X-Veridion-Tenants": "acme",
+        },
+        trusted_header_auth=TrustedHeaderAuthConfig(enabled=True, shared_secret="secret"),
+    )
+
+    assert status == 200
+    assert payload["identity"]["auth_type"] == "trusted_header"
+    assert payload["identity"]["principal_name"] == "alice@example.com"
 
 
 def _build_test_jwt(*, secret: str, payload: dict[str, object]) -> str:

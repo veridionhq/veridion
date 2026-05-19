@@ -6,6 +6,16 @@
     "audience": "veridion-history",
     "shared_secret": "replace-me-with-a-real-jwt-secret"
   },
+  "trusted_headers": {
+    "enabled": false,
+    "shared_secret": "replace-me-with-a-real-proxy-secret",
+    "secret_header": "X-Veridion-Auth-Secret",
+    "principal_header": "X-Veridion-Principal",
+    "token_id_header": "X-Veridion-Token-Id",
+    "roles_header": "X-Veridion-Roles",
+    "tenants_header": "X-Veridion-Tenants",
+    "status_header": "X-Veridion-Status"
+  },
   "tokens": [
     {
       "token": "replace-me-with-a-real-shared-token",

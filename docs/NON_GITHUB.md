@@ -60,6 +60,7 @@ python3 -m veridion.action.runtime_context_builder \
 Reference script:
 
 - [examples/non-github/build-runtime-context.sh](../examples/non-github/build-runtime-context.sh)
+- [examples/non-github/fetch-runtime-context.sh](../examples/non-github/fetch-runtime-context.sh)
 
 Supported provider-shaped inputs today:
 
@@ -76,6 +77,30 @@ Supported provider-shaped inputs today:
 - canary / rollback: `harness`
 
 The goal is still one normalized runtime contract. Provider support is just a convenience layer at ingestion time.
+
+## Fetch live runtime context from provider APIs
+
+If you want Veridion to fetch provider payloads directly instead of reading pre-exported JSON, use the live fetcher:
+
+```bash
+python3 -m veridion.action.runtime_live_fetch \
+  --output-path runtime.json \
+  --incident-provider incident-io \
+  --incident-base-url https://api.incident.io \
+  --incident-token "$INCIDENT_TOKEN" \
+  --alerts-provider statuspage \
+  --alerts-base-url https://status.example.com \
+  --alerts-token "$STATUSPAGE_TOKEN" \
+  --canary-provider harness \
+  --canary-base-url https://app.harness.io \
+  --canary-token "$HARNESS_TOKEN"
+```
+
+This currently supports live fetch paths for:
+
+- incidents: `pagerduty`, `incident-io`
+- alerts: `statuspage`, `cloudwatch`
+- canary / rollback: `spinnaker`, `harness`
 
 ## Run Veridion without GitHub Actions
 

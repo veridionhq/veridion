@@ -195,8 +195,30 @@ The service now supports both:
 
 - static scoped bearer identities from config
 - JWT-backed identities verified locally with issuer/audience/shared-secret settings
+- trusted-header identities from an upstream auth gateway or reverse proxy
 
 JWTs remain optional. They are the first bridge toward external identity-provider integration without making the deterministic core depend on a hosted auth service.
+
+For hosted environments behind an auth gateway, the service can also trust scoped identity headers guarded by a configured shared secret. That gives teams a pragmatic bridge to external IdPs without embedding OAuth/OIDC flows directly in the history service.
+
+## Scheduled execution
+
+Materialization schedules are now executable service config, not just documentation.
+
+Run due schedules:
+
+```bash
+python3 -m veridion.action.decision_history_scheduler \
+  --config-path examples/aws/history-service.config.json
+```
+
+Preview due runs:
+
+```bash
+python3 -m veridion.action.decision_history_scheduler \
+  --config-path examples/aws/history-service.config.json \
+  --dry-run
+```
 
 ## Athena query examples
 

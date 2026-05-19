@@ -6,9 +6,8 @@ import base64
 import hashlib
 import hmac
 import json
-from dataclasses import replace
 
-from veridion.action.decision_history_config import HistoryToken, JWTAuthConfig
+from veridion.action.decision_history_config import HistoryToken, JWTAuthConfig, TrustedHeaderAuthConfig
 
 
 def resolve_bearer_identity(
@@ -21,6 +20,34 @@ def resolve_bearer_identity(
     if scoped is not None:
         return scoped
     return _resolve_jwt_identity(token=token, jwt_config=jwt_config)
+
+
+def resolve_trusted_header_identity(
+    *,
+    headers: dict[str, str],
+    config: TrustedHeaderAuthConfig,
+) -> HistoryToken | None:
+    if not config.enabled or not config.shared_secret:
+        return None
+    header_lookup = {key.lower(): value for key, value in headers.items()}
+    if header_lookup.get(config.secret_header.lower(), "").strip() != config.shared_secret:
+        return None
+    principal = header_lookup.get(config.principal_header.lower(), "").strip()
+    if not principal:
+        return None
+    token_id = header_lookup.get(config.token_id_header.lower(), "").strip() or principal
+    roles = _split_csv(header_lookup.get(config.roles_header.lower(), ""))
+    tenants = _split_csv(header_lookup.get(config.tenants_header.lower(), ""))
+    status = header_lookup.get(config.status_header.lower(), "").strip() or "active"
+    return HistoryToken(
+        token=f"trusted:{token_id}",
+        token_id=token_id,
+        principal_name=principal,
+        auth_type="trusted_header",
+        status=status,
+        tenants=tuple(tenants),
+        roles=tuple(roles),
+    )
 
 
 def _resolve_jwt_identity(*, token: str, jwt_config: JWTAuthConfig) -> HistoryToken | None:
@@ -89,3 +116,7 @@ def _claim_strings(value: object) -> list[str]:
 
 def _claim_string(value: object) -> str:
     return value.strip() if isinstance(value, str) else ""
+
+
+def _split_csv(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]

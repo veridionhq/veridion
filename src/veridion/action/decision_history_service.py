@@ -13,6 +13,7 @@ from veridion.action.decision_history_config import (
     HistoryToken,
     JWTAuthConfig,
     MaterializationSchedule,
+    TrustedHeaderAuthConfig,
     load_history_service_config,
     schedule_map,
     tenant_map,
@@ -21,7 +22,7 @@ from veridion.action.decision_history_config import (
 from veridion.action.decision_history import analyze_history
 from veridion.action.decision_history_materialize import materialize_decision_history
 from veridion.action.decision_history_store import analyze_history_store, get_history_store_status, list_materialization_runs
-from veridion.action.history_identity import resolve_bearer_identity
+from veridion.action.history_identity import resolve_bearer_identity, resolve_trusted_header_identity
 
 API_VERSION = "v1"
 
@@ -68,6 +69,7 @@ def serve_decision_history(
         tenants=tenant_map(config) if config else {},
         schedules=schedule_map(config) if config else {},
         jwt_config=config.jwt if config else JWTAuthConfig(),
+        trusted_header_auth=config.trusted_headers if config else TrustedHeaderAuthConfig(),
         sqlite_path=config.sqlite_path if config else "",
         store_dsn=config.store_dsn if config else "",
         materialization_root=config.materialization_root if config else "",
@@ -86,6 +88,7 @@ def _build_handler(
     tenants: dict[str, HistoryTenant],
     schedules: dict[str, MaterializationSchedule],
     jwt_config: JWTAuthConfig,
+    trusted_header_auth: TrustedHeaderAuthConfig,
     sqlite_path: str,
     store_dsn: str,
     materialization_root: str,
@@ -102,6 +105,7 @@ def _build_handler(
                 tenants=tenants,
                 schedules=schedules,
                 jwt_config=jwt_config,
+                trusted_header_auth=trusted_header_auth,
                 sqlite_path=sqlite_path,
                 store_dsn=store_dsn,
                 materialization_root=materialization_root,
@@ -127,6 +131,7 @@ def _build_handler(
                 tenants=tenants,
                 schedules=schedules,
                 jwt_config=jwt_config,
+                trusted_header_auth=trusted_header_auth,
                 sqlite_path=sqlite_path,
                 store_dsn=store_dsn,
                 materialization_root=materialization_root,
@@ -169,6 +174,7 @@ def resolve_history_request(
     tenants: dict[str, HistoryTenant] | None = None,
     schedules: dict[str, MaterializationSchedule] | None = None,
     jwt_config: JWTAuthConfig = JWTAuthConfig(),
+    trusted_header_auth: TrustedHeaderAuthConfig = TrustedHeaderAuthConfig(),
     sqlite_path: str = "",
     store_dsn: str = "",
     materialization_root: str = "",
@@ -190,6 +196,7 @@ def resolve_history_request(
         auth_tokens=auth_tokens,
         scoped_tokens=scoped_lookup,
         jwt_config=jwt_config,
+        trusted_header_auth=trusted_header_auth,
         tenant_id=params.get("tenant", ""),
         path=route,
         method=method,
@@ -452,21 +459,26 @@ def _authorize_request(
     auth_tokens: tuple[str, ...],
     scoped_tokens: dict[str, HistoryToken],
     jwt_config: JWTAuthConfig,
+    trusted_header_auth: TrustedHeaderAuthConfig,
     tenant_id: str,
     path: str,
     method: str,
 ) -> tuple[tuple[int, dict[str, object]] | None, HistoryToken | None]:
     auth_header = headers.get("Authorization", "") or headers.get("authorization", "")
-    if not auth_tokens and not scoped_tokens and not jwt_config.shared_secret:
+    header_identity = resolve_trusted_header_identity(headers=headers, config=trusted_header_auth)
+    if not auth_tokens and not scoped_tokens and not jwt_config.shared_secret and header_identity is None:
         return (None, None)
-    if not auth_header.startswith("Bearer "):
-        return ((401, {"error": "unauthorized"}), None)
-    token = auth_header[len("Bearer ") :].strip()
-    if token in auth_tokens:
-        return (None, None)
-    scoped = resolve_bearer_identity(token=token, scoped_tokens=scoped_tokens, jwt_config=jwt_config)
-    if scoped is None:
-        return ((401, {"error": "unauthorized"}), None)
+    if header_identity is not None:
+        scoped = header_identity
+    else:
+        if not auth_header.startswith("Bearer "):
+            return ((401, {"error": "unauthorized"}), None)
+        token = auth_header[len("Bearer ") :].strip()
+        if token in auth_tokens:
+            return (None, None)
+        scoped = resolve_bearer_identity(token=token, scoped_tokens=scoped_tokens, jwt_config=jwt_config)
+        if scoped is None:
+            return ((401, {"error": "unauthorized"}), None)
     if scoped.status and scoped.status != "active":
         return ((403, {"error": "identity_inactive"}), scoped)
     if method != "GET" and not _has_role(scoped, "materializer", "admin"):

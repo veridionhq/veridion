@@ -164,6 +164,7 @@ The preferred service contract is now versioned under `/api/v1`:
 - `/api/v1/policy-rollouts`
 - `/api/v1/tenants`
 - `/api/v1/materializations`
+- `/api/v1/materialization-schedules`
 - `/api/v1/service/status`
 
 Versioned endpoints return:
@@ -220,6 +221,29 @@ Roles currently drive:
 - `admin`
 
 Inactive identities are rejected before request execution.
+
+## First-class schedule execution
+
+Materialization schedules are no longer just config metadata.
+
+You can execute due schedules directly:
+
+```bash
+python3 -m veridion.action.decision_history_scheduler \
+  --config-path examples/aws/history-service.config.json
+```
+
+Or inspect planned runs without executing them:
+
+```bash
+python3 -m veridion.action.decision_history_scheduler \
+  --config-path examples/aws/history-service.config.json \
+  --dry-run
+```
+
+Example helper:
+
+- [examples/aws/run-history-scheduler.sh](../examples/aws/run-history-scheduler.sh)
 
 ## Filter for rollout analysis
 
