@@ -32,12 +32,12 @@ on:
       push_to_ecr:
         description: "Push the built image to ECR"
         required: false
-        default: false
+        default: true
         type: boolean
       image_tag:
         description: "Image tag to publish when pushing to ECR"
         required: false
-        default: ""
+        default: "alpha"
         type: string
 
 jobs:
