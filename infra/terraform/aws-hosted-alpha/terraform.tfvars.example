@@ -18,15 +18,15 @@ jwt_audience       = "veridion-history"
 jwks_url           = "https://auth.example.com/.well-known/jwks.json"
 oidc_discovery_url = ""
 
-tenants_json = jsonencode([
+tenants = [
   {
     tenant_id    = "acme"
     display_name = "Acme Production"
     history_paths = []
   }
-])
+]
 
-schedules_json = jsonencode([
+schedules = [
   {
     schedule_id                  = "nightly-acme"
     cron                         = "0 3 * * *"
@@ -35,7 +35,7 @@ schedules_json = jsonencode([
     athena_table                 = "veridion_decision_events"
     athena_s3_location_template  = "s3://veridion-alpha-materializations/veridion/events/repo={tenant_id}/"
   }
-])
+]
 
 service_desired_count = 0
 worker_desired_count  = 0

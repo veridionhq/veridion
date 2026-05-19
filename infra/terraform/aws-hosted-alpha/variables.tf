@@ -102,13 +102,24 @@ variable "oidc_discovery_url" {
   default = ""
 }
 
-variable "tenants_json" {
-  type = string
+variable "tenants" {
+  type = list(object({
+    tenant_id     = string
+    display_name  = string
+    history_paths = list(string)
+  }))
 }
 
-variable "schedules_json" {
-  type    = string
-  default = "[]"
+variable "schedules" {
+  type = list(object({
+    schedule_id                 = string
+    cron                        = string
+    tenants                     = list(string)
+    athena_database             = string
+    athena_table                = string
+    athena_s3_location_template = string
+  }))
+  default = []
 }
 
 variable "service_desired_count" {

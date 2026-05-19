@@ -22,8 +22,8 @@ locals {
     { name = "VERIDION_JWT_AUDIENCE", value = var.jwt_audience },
     { name = "VERIDION_JWKS_URL", value = var.jwks_url },
     { name = "VERIDION_OIDC_DISCOVERY_URL", value = var.oidc_discovery_url },
-    { name = "VERIDION_TENANTS_JSON", value = var.tenants_json },
-    { name = "VERIDION_SCHEDULES_JSON", value = var.schedules_json }
+    { name = "VERIDION_TENANTS_JSON", value = jsonencode(var.tenants) },
+    { name = "VERIDION_SCHEDULES_JSON", value = jsonencode(var.schedules) }
   ]
 }
 

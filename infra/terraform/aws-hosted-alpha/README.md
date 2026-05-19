@@ -30,6 +30,8 @@ You need:
 
 1. Fill in `terraform.tfvars`.
 
+Use normal HCL values there. Do not use `jsonencode(...)` inside the tfvars file.
+
 2. Apply the infrastructure with services scaled to zero first:
 
 ```bash
