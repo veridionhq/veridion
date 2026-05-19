@@ -42,6 +42,7 @@ The producer emits the decision event to one or more sinks:
 - S3
 - webhook
 - Postgres-backed hosted service
+- Veridion hosted service sink
 
 The key point is:
 
@@ -95,6 +96,20 @@ Recommended production posture:
 - JWT/JWKS when the service is reached directly by clients
 - trusted headers when the service sits behind an internal auth gateway
 - producer clients with ingestor tokens for remote CI/event publishers
+
+## First GitHub producer path
+
+The repo's internal `rdi-pr-comment` workflow can now act as a hosted producer when these are set:
+
+- repo variable `VERIDION_HOSTED_SERVICE_URL`
+- repo variable `VERIDION_HOSTED_TENANT_ID`
+- repo secret `VERIDION_HOSTED_INGESTOR_TOKEN`
+
+When present, the workflow sends `veridion-decision-event.json` directly to:
+
+- `POST /api/v1/events`
+
+through the `veridion-service` decision sink.
 
 ## Worker model
 

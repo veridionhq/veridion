@@ -63,6 +63,10 @@ jobs:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
       ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
       AWS_GITHUB_ACTIONS_ROLE_ARN: ${{ vars.AWS_GITHUB_ACTIONS_ROLE_ARN != '' && vars.AWS_GITHUB_ACTIONS_ROLE_ARN || secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+      AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN: ${{ vars.AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN != '' && vars.AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN || secrets.AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN }}
+      HOSTED_ECS_CLUSTER: ${{ vars.HOSTED_ECS_CLUSTER }}
+      HOSTED_ECS_SERVICE: ${{ vars.HOSTED_ECS_SERVICE }}
+      HOSTED_ECS_WORKER_SERVICE: ${{ vars.HOSTED_ECS_WORKER_SERVICE }}
       IMAGE_TAG: alpha
     steps:
       - uses: actions/checkout@v4
@@ -93,6 +97,31 @@ jobs:
           tags: ${{ env.ECR_REPOSITORY_URL }}:${{ env.IMAGE_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Configure AWS deploy credentials
+        if: ${{ env.AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN != '' && env.HOSTED_ECS_CLUSTER != '' && env.HOSTED_ECS_SERVICE != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN }}
+
+      - name: Roll hosted ECS services
+        if: ${{ env.AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN != '' && env.HOSTED_ECS_CLUSTER != '' && env.HOSTED_ECS_SERVICE != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws ecs update-service \
+            --region "${AWS_REGION}" \
+            --cluster "${HOSTED_ECS_CLUSTER}" \
+            --service "${HOSTED_ECS_SERVICE}" \
+            --force-new-deployment
+          if [[ -n "${HOSTED_ECS_WORKER_SERVICE}" ]]; then
+            aws ecs update-service \
+              --region "${AWS_REGION}" \
+              --cluster "${HOSTED_ECS_CLUSTER}" \
+              --service "${HOSTED_ECS_WORKER_SERVICE}" \
+              --force-new-deployment
+          fi
 
   publish-main:
     if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}

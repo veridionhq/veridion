@@ -54,6 +54,10 @@ output "github_actions_ecr_role_arn" {
   value = var.create_github_actions_oidc_role ? aws_iam_role.github_actions_ecr[0].arn : ""
 }
 
+output "github_actions_deploy_role_arn" {
+  value = var.create_github_actions_deploy_role ? aws_iam_role.github_actions_deploy[0].arn : ""
+}
+
 output "db_endpoint" {
   value = aws_db_instance.postgres.address
 }

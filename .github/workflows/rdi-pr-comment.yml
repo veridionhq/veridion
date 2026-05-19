@@ -181,6 +181,9 @@ jobs:
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           decision-contract-path: veridion-decision.json
+          decision-event-path: veridion-decision-event.json
+          decision-sinks: |
+            ${{ vars.VERIDION_HOSTED_SERVICE_URL != '' && secrets.VERIDION_HOSTED_INGESTOR_TOKEN != '' && vars.VERIDION_HOSTED_TENANT_ID != '' && format('veridion-service:url={0},tenant={1},token={2}', vars.VERIDION_HOSTED_SERVICE_URL, vars.VERIDION_HOSTED_TENANT_ID, secrets.VERIDION_HOSTED_INGESTOR_TOKEN) || '' }}
           post-comment: "true"
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}

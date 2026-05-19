@@ -101,6 +101,16 @@ If your AWS account already has the GitHub OIDC provider, set:
 - `create_github_oidc_provider = false`
 - `github_oidc_provider_arn = "<existing provider arn>"`
 
+For automatic ECS rollout after the `develop` image publish:
+
+1. Take the `github_actions_deploy_role_arn` output.
+2. Set repository variable `AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN` to that value.
+3. Set repository variable `HOSTED_ECS_CLUSTER` to `veridion-alpha-cluster`.
+4. Set repository variable `HOSTED_ECS_SERVICE` to `veridion-alpha-service`.
+5. Optionally set `HOSTED_ECS_WORKER_SERVICE` when the worker is enabled.
+
+That lets `.github/workflows/hosted-image.yml` force a new ECS deployment after pushing `:alpha`.
+
 4. Scale the ECS services up by setting:
 
 - `service_desired_count = 1`

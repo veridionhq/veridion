@@ -133,6 +133,17 @@ def _deliver_one(spec: SinkSpec, event: dict[str, object]) -> SinkDeliveryResult
         post_json(url=url, payload=payload, token=token)
         return SinkDeliveryResult(sink=spec.kind, status="delivered", destination=url)
 
+    if spec.kind == "veridion-service":
+        url = validate_webhook_url(_require_option(spec, "url")).rstrip("/")
+        tenant = _require_option(spec, "tenant")
+        token = _require_option(spec, "token")
+        payload = {
+            "tenant": tenant,
+            "event": event,
+        }
+        post_json(url=f"{url}/api/v1/events", payload=payload, token=token)
+        return SinkDeliveryResult(sink=spec.kind, status="delivered", destination=f"{url}/api/v1/events")
+
     if spec.kind == "s3":
         return _deliver_s3(spec, event)
     if spec.kind == "postgres":
@@ -415,6 +426,8 @@ def _destination_label(spec: SinkSpec) -> str:
         return spec.options.get("path", "")
     if spec.kind == "webhook":
         return spec.options.get("url", "")
+    if spec.kind == "veridion-service":
+        return f"{spec.options.get('url', '').rstrip('/')}/api/v1/events"
     if spec.kind == "s3":
         bucket = spec.options.get("bucket", "")
         key = spec.options.get("key", "")

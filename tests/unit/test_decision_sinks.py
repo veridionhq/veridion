@@ -58,6 +58,35 @@ def test_deliver_decision_event_uses_webhook_sink(monkeypatch) -> None:
     assert captured["payload"]["decision_event"]["decision"]["verdict"] == "NO GO"
 
 
+def test_deliver_decision_event_uses_veridion_service_sink(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_post_json(*, url: str, payload: dict[str, object], token: str):
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["token"] = token
+        return {}
+
+    monkeypatch.setattr(decision_sinks, "post_json", fake_post_json)
+
+    event = {"repository": "acme/service-a", "decision": {"verdict": "CONDITIONAL GO"}}
+    results = decision_sinks.deliver_decision_event(
+        event,
+        sink_specs=(
+            decision_sinks.SinkSpec(
+                kind="veridion-service",
+                options={"url": "https://control-plane.example.test", "tenant": "acme", "token": "ingestor-secret"},
+            ),
+        ),
+    )
+
+    assert results[0].status == "delivered"
+    assert captured["url"] == "https://control-plane.example.test/api/v1/events"
+    assert captured["token"] == "ingestor-secret"
+    assert captured["payload"]["tenant"] == "acme"
+    assert captured["payload"]["event"]["repository"] == "acme/service-a"
+
+
 def test_deliver_decision_event_collects_failures_without_raising_by_default() -> None:
     results = decision_sinks.deliver_decision_event(
         {"decision": {"verdict": "GO"}},
@@ -91,3 +120,11 @@ def test_destination_label_uses_s3_prefix_when_key_is_not_explicit() -> None:
     )
 
     assert label == "s3://veridion-prod-events/veridion/events/..."
+
+
+def test_destination_label_uses_veridion_service_events_endpoint() -> None:
+    label = decision_sinks._destination_label(  # noqa: SLF001 - unit test for label formatting
+        decision_sinks.SinkSpec(kind="veridion-service", options={"url": "https://control-plane.example.test", "tenant": "acme"})
+    )
+
+    assert label == "https://control-plane.example.test/api/v1/events"

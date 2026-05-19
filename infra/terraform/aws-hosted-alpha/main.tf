@@ -390,6 +390,43 @@ resource "aws_iam_role_policy" "github_actions_ecr" {
   policy = data.aws_iam_policy_document.github_actions_ecr[0].json
 }
 
+resource "aws_iam_role" "github_actions_deploy" {
+  count = var.create_github_actions_deploy_role ? 1 : 0
+
+  name               = "${local.prefix}-github-actions-deploy"
+  assume_role_policy = data.aws_iam_policy_document.github_actions_assume[0].json
+}
+
+data "aws_iam_policy_document" "github_actions_deploy" {
+  count = var.create_github_actions_deploy_role ? 1 : 0
+
+  statement {
+    actions = [
+      "ecs:UpdateService",
+      "ecs:DescribeServices",
+      "ecs:DescribeTaskDefinition",
+      "ecs:ListTasks",
+      "ecs:DescribeTasks"
+    ]
+    resources = [
+      aws_ecs_cluster.main.arn,
+      aws_ecs_service.service.id,
+      aws_ecs_service.worker.id,
+      aws_ecs_task_definition.service.arn,
+      aws_ecs_task_definition.worker.arn,
+      aws_ecs_task_definition.migrate.arn
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "github_actions_deploy" {
+  count = var.create_github_actions_deploy_role ? 1 : 0
+
+  name   = "${local.prefix}-github-actions-deploy"
+  role   = aws_iam_role.github_actions_deploy[0].id
+  policy = data.aws_iam_policy_document.github_actions_deploy[0].json
+}
+
 resource "aws_ecs_cluster" "main" {
   name = "${local.prefix}-cluster"
 }

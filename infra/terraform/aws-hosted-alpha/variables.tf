@@ -42,6 +42,11 @@ variable "create_github_actions_oidc_role" {
   default = true
 }
 
+variable "create_github_actions_deploy_role" {
+  type    = bool
+  default = true
+}
+
 variable "create_github_oidc_provider" {
   type    = bool
   default = true
