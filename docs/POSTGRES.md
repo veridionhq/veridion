@@ -37,6 +37,8 @@ Canonical SQL assets live in:
 - [db/migrations/000_schema_migrations.sql](../db/migrations/000_schema_migrations.sql)
 - [db/migrations/001_decision_events.sql](../db/migrations/001_decision_events.sql)
 - [db/migrations/002_materialization_runs.sql](../db/migrations/002_materialization_runs.sql)
+- [db/migrations/003_catalog_models.sql](../db/migrations/003_catalog_models.sql)
+- [db/migrations/004_control_plane_state.sql](../db/migrations/004_control_plane_state.sql)
 
 These mirror the service store schema used by:
 

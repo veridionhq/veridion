@@ -553,6 +553,102 @@ def test_decision_history_service_ingests_events_and_exposes_catalog(tmp_path) -
     assert services["data"]["services"][0]["service_id"] == "service-a"
 
 
+def test_decision_history_service_admin_and_session_surfaces(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    admin = {"Authorization": "Bearer admin"}
+    scoped = {"admin": HistoryToken(token="admin", tenants=("acme",), roles=("admin",), principal_name="Admin One", token_id="admin-1")}
+
+    create_tenant_status, _ = resolve_history_request(
+        "/api/v1/admin/tenants",
+        method="POST",
+        body=json.dumps({"tenant_id": "acme", "display_name": "Acme", "organization_name": "Acme Org"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    create_user_status, _ = resolve_history_request(
+        "/api/v1/admin/users",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "user_id": "alice", "principal_name": "Alice", "roles_csv": "reader,admin"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    create_secret_status, _ = resolve_history_request(
+        "/api/v1/admin/provider-secrets",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "secret_name": "pagerduty-token", "provider": "pagerduty", "secret_ref": "aws-sm://pagerduty/acme"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    create_client_status, create_client = resolve_history_request(
+        "/api/v1/admin/producer-clients",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "client_id": "ci-acme", "display_name": "CI Acme"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    producer_token = create_client["data"]["producer_client"]["token"]
+    ingest_status, ingest = resolve_history_request(
+        "/api/v1/events",
+        method="POST",
+        body=json.dumps(
+            {
+                "tenant": "acme",
+                "event": {
+                    "generated_at": "2026-05-14T12:00:00Z",
+                    "repository": "acme/service-a",
+                    "organization": "acme",
+                    "project": "acme/service-a",
+                    "service": "service-a",
+                    "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+                    "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+                    "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+                    "trust_context": {"service_owner": "payments-owner", "owning_team": "payments", "service_criticality": "high"},
+                },
+            }
+        ),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {producer_token}"},
+        scoped_tokens={},
+    )
+    session_status, session = resolve_history_request(
+        "/api/v1/auth/sessions",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "session_id": "sess-1"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    app_status, app = resolve_history_request(
+        "/api/v1/app?tenant=acme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+
+    assert create_tenant_status == 201
+    assert create_user_status == 201
+    assert create_secret_status == 201
+    assert create_client_status == 201
+    assert create_client["data"]["producer_client"]["token"]
+    assert ingest_status == 202
+    assert ingest["data"]["repository"] == "acme/service-a"
+    assert session_status == 201
+    assert session["data"]["session_id"] == "sess-1"
+    assert app_status == 200
+    assert "Managed Tenants" in app["html"]
+
+
 def _build_test_jwt(*, secret: str, payload: dict[str, object]) -> str:
     header = {"alg": "HS256", "typ": "JWT"}
     header_b64 = _b64(header)

@@ -3,20 +3,24 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import secrets
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
 from veridion.action.athena_queries import build_athena_query_pack
+from veridion.action.decision_history_config import HistoryToken
 from veridion.action.decision_history import _load_history, analyze_history_events
 
-STORE_SCHEMA_VERSION = 3
+STORE_SCHEMA_VERSION = 4
 STORE_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("001_decision_events", "core decision event history"),
     ("002_materialization_runs", "managed materialization tracking"),
     ("003_catalog_models", "tenant org/project/service catalog"),
+    ("004_control_plane_state", "tenant admin, secret, session, and producer state"),
 )
 
 
@@ -245,6 +249,82 @@ class HistoryStore:
         raise NotImplementedError
 
     def list_catalog(self, *, tenant_id: str) -> dict[str, tuple[dict[str, str], ...]]:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def upsert_managed_tenant(
+        self,
+        *,
+        tenant_id: str,
+        display_name: str,
+        organization_name: str,
+        status: str,
+    ) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def list_managed_tenants(self) -> tuple[dict[str, str], ...]:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def upsert_provider_secret_ref(
+        self,
+        *,
+        tenant_id: str,
+        secret_name: str,
+        provider: str,
+        secret_ref: str,
+        description: str,
+    ) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def list_provider_secret_refs(self, *, tenant_id: str) -> tuple[dict[str, str], ...]:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def upsert_service_user(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        principal_name: str,
+        email: str,
+        roles_csv: str,
+        status: str,
+    ) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def list_service_users(self, *, tenant_id: str) -> tuple[dict[str, str], ...]:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def create_session(
+        self,
+        *,
+        session_id: str,
+        tenant_id: str,
+        user_id: str,
+        principal_name: str,
+        auth_type: str,
+        roles_csv: str,
+        status: str,
+        expires_at: str,
+    ) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def list_sessions(self, *, tenant_id: str, limit: int = 20) -> tuple[dict[str, str], ...]:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def create_producer_client(
+        self,
+        *,
+        tenant_id: str,
+        client_id: str,
+        display_name: str,
+        roles_csv: str,
+        status: str,
+    ) -> dict[str, str]:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def list_producer_clients(self, *, tenant_id: str) -> tuple[dict[str, str], ...]:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def resolve_producer_token(self, *, token: str) -> HistoryToken | None:  # pragma: no cover - interface
         raise NotImplementedError
 
     def load_events(
@@ -489,6 +569,120 @@ class SQLiteHistoryStore(HistoryStore):
             ).fetchall()
         )
         return {"organizations": orgs, "projects": projects, "services": services}
+
+    def upsert_managed_tenant(self, *, tenant_id: str, display_name: str, organization_name: str, status: str) -> None:
+        self.connection.execute(
+            """
+            INSERT OR REPLACE INTO managed_tenants
+            (tenant_id, display_name, organization_name, status, created_at)
+            VALUES (?, ?, ?, ?, COALESCE((SELECT created_at FROM managed_tenants WHERE tenant_id = ?), CURRENT_TIMESTAMP))
+            """,
+            (tenant_id, display_name, organization_name, status, tenant_id),
+        )
+
+    def list_managed_tenants(self) -> tuple[dict[str, str], ...]:
+        rows = self.connection.execute(
+            "SELECT tenant_id, display_name, organization_name, status, created_at FROM managed_tenants ORDER BY tenant_id ASC"
+        ).fetchall()
+        return tuple(_managed_tenant_row(row) for row in rows)
+
+    def upsert_provider_secret_ref(self, *, tenant_id: str, secret_name: str, provider: str, secret_ref: str, description: str) -> None:
+        self.connection.execute(
+            """
+            INSERT OR REPLACE INTO provider_secret_refs
+            (tenant_id, secret_name, provider, secret_ref, description, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (tenant_id, secret_name, provider, secret_ref, description),
+        )
+
+    def list_provider_secret_refs(self, *, tenant_id: str) -> tuple[dict[str, str], ...]:
+        rows = self.connection.execute(
+            "SELECT tenant_id, secret_name, provider, secret_ref, description, updated_at FROM provider_secret_refs WHERE tenant_id = ? ORDER BY provider, secret_name",
+            (tenant_id,),
+        ).fetchall()
+        return tuple(_provider_secret_row(row) for row in rows)
+
+    def upsert_service_user(self, *, tenant_id: str, user_id: str, principal_name: str, email: str, roles_csv: str, status: str) -> None:
+        self.connection.execute(
+            """
+            INSERT OR REPLACE INTO service_users
+            (tenant_id, user_id, principal_name, email, roles_csv, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM service_users WHERE tenant_id = ? AND user_id = ?), CURRENT_TIMESTAMP))
+            """,
+            (tenant_id, user_id, principal_name, email, roles_csv, status, tenant_id, user_id),
+        )
+
+    def list_service_users(self, *, tenant_id: str) -> tuple[dict[str, str], ...]:
+        rows = self.connection.execute(
+            "SELECT tenant_id, user_id, principal_name, email, roles_csv, status, created_at FROM service_users WHERE tenant_id = ? ORDER BY user_id ASC",
+            (tenant_id,),
+        ).fetchall()
+        return tuple(_service_user_row(row) for row in rows)
+
+    def create_session(self, *, session_id: str, tenant_id: str, user_id: str, principal_name: str, auth_type: str, roles_csv: str, status: str, expires_at: str) -> None:
+        self.connection.execute(
+            """
+            INSERT OR REPLACE INTO service_sessions
+            (session_id, tenant_id, user_id, principal_name, auth_type, roles_csv, status, created_at, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+            """,
+            (session_id, tenant_id, user_id, principal_name, auth_type, roles_csv, status, expires_at),
+        )
+
+    def list_sessions(self, *, tenant_id: str, limit: int = 20) -> tuple[dict[str, str], ...]:
+        rows = self.connection.execute(
+            "SELECT session_id, tenant_id, user_id, principal_name, auth_type, roles_csv, status, created_at, expires_at FROM service_sessions WHERE tenant_id = ? ORDER BY created_at DESC, session_id DESC LIMIT ?",
+            (tenant_id, limit),
+        ).fetchall()
+        return tuple(_service_session_row(row) for row in rows)
+
+    def create_producer_client(self, *, tenant_id: str, client_id: str, display_name: str, roles_csv: str, status: str) -> dict[str, str]:
+        token = secrets.token_urlsafe(24)
+        token_hash = _token_hash(token)
+        token_prefix = token[:8]
+        self.connection.execute(
+            """
+            INSERT OR REPLACE INTO producer_clients
+            (tenant_id, client_id, display_name, token_hash, token_prefix, roles_csv, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM producer_clients WHERE tenant_id = ? AND client_id = ?), CURRENT_TIMESTAMP))
+            """,
+            (tenant_id, client_id, display_name, token_hash, token_prefix, roles_csv, status, tenant_id, client_id),
+        )
+        return {
+            "tenant_id": tenant_id,
+            "client_id": client_id,
+            "display_name": display_name,
+            "token": token,
+            "token_prefix": token_prefix,
+            "roles_csv": roles_csv,
+            "status": status,
+        }
+
+    def list_producer_clients(self, *, tenant_id: str) -> tuple[dict[str, str], ...]:
+        rows = self.connection.execute(
+            "SELECT tenant_id, client_id, display_name, token_prefix, roles_csv, status, created_at FROM producer_clients WHERE tenant_id = ? ORDER BY client_id ASC",
+            (tenant_id,),
+        ).fetchall()
+        return tuple(_producer_client_row(row) for row in rows)
+
+    def resolve_producer_token(self, *, token: str) -> HistoryToken | None:
+        row = self.connection.execute(
+            "SELECT tenant_id, client_id, display_name, token_hash, roles_csv, status FROM producer_clients WHERE token_prefix = ?",
+            (token[:8],),
+        ).fetchone()
+        if row is None or not secrets.compare_digest(str(row[3]), _token_hash(token)):
+            return None
+        roles = tuple(item for item in str(row[4]).split(",") if item)
+        return HistoryToken(
+            token=token,
+            token_id=str(row[1]),
+            principal_name=str(row[2]),
+            auth_type="producer_token",
+            status=str(row[5]),
+            tenants=(str(row[0]),),
+            roles=roles,
+        )
 
     def commit(self) -> None:
         self.connection.commit()
@@ -737,6 +931,140 @@ class PostgresHistoryStore(HistoryStore):
             )
         return {"organizations": orgs, "projects": projects, "services": services}
 
+    def upsert_managed_tenant(self, *, tenant_id: str, display_name: str, organization_name: str, status: str) -> None:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO managed_tenants (tenant_id, display_name, organization_name, status, created_at)
+                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (tenant_id)
+                DO UPDATE SET display_name = EXCLUDED.display_name, organization_name = EXCLUDED.organization_name, status = EXCLUDED.status
+                """,
+                (tenant_id, display_name, organization_name, status),
+            )
+
+    def list_managed_tenants(self) -> tuple[dict[str, str], ...]:
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT tenant_id, display_name, organization_name, status, created_at FROM managed_tenants ORDER BY tenant_id ASC")
+            rows = cursor.fetchall()
+        return tuple(_managed_tenant_row(row) for row in rows)
+
+    def upsert_provider_secret_ref(self, *, tenant_id: str, secret_name: str, provider: str, secret_ref: str, description: str) -> None:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO provider_secret_refs (tenant_id, secret_name, provider, secret_ref, description, updated_at)
+                VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (tenant_id, secret_name)
+                DO UPDATE SET provider = EXCLUDED.provider, secret_ref = EXCLUDED.secret_ref, description = EXCLUDED.description, updated_at = CURRENT_TIMESTAMP
+                """,
+                (tenant_id, secret_name, provider, secret_ref, description),
+            )
+
+    def list_provider_secret_refs(self, *, tenant_id: str) -> tuple[dict[str, str], ...]:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT tenant_id, secret_name, provider, secret_ref, description, updated_at FROM provider_secret_refs WHERE tenant_id = %s ORDER BY provider, secret_name",
+                (tenant_id,),
+            )
+            rows = cursor.fetchall()
+        return tuple(_provider_secret_row(row) for row in rows)
+
+    def upsert_service_user(self, *, tenant_id: str, user_id: str, principal_name: str, email: str, roles_csv: str, status: str) -> None:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO service_users (tenant_id, user_id, principal_name, email, roles_csv, status, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (tenant_id, user_id)
+                DO UPDATE SET principal_name = EXCLUDED.principal_name, email = EXCLUDED.email, roles_csv = EXCLUDED.roles_csv, status = EXCLUDED.status
+                """,
+                (tenant_id, user_id, principal_name, email, roles_csv, status),
+            )
+
+    def list_service_users(self, *, tenant_id: str) -> tuple[dict[str, str], ...]:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT tenant_id, user_id, principal_name, email, roles_csv, status, created_at FROM service_users WHERE tenant_id = %s ORDER BY user_id ASC",
+                (tenant_id,),
+            )
+            rows = cursor.fetchall()
+        return tuple(_service_user_row(row) for row in rows)
+
+    def create_session(self, *, session_id: str, tenant_id: str, user_id: str, principal_name: str, auth_type: str, roles_csv: str, status: str, expires_at: str) -> None:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO service_sessions (session_id, tenant_id, user_id, principal_name, auth_type, roles_csv, status, created_at, expires_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s)
+                ON CONFLICT (session_id)
+                DO UPDATE SET status = EXCLUDED.status, expires_at = EXCLUDED.expires_at
+                """,
+                (session_id, tenant_id, user_id, principal_name, auth_type, roles_csv, status, expires_at),
+            )
+
+    def list_sessions(self, *, tenant_id: str, limit: int = 20) -> tuple[dict[str, str], ...]:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT session_id, tenant_id, user_id, principal_name, auth_type, roles_csv, status, created_at, expires_at FROM service_sessions WHERE tenant_id = %s ORDER BY created_at DESC, session_id DESC LIMIT %s",
+                (tenant_id, limit),
+            )
+            rows = cursor.fetchall()
+        return tuple(_service_session_row(row) for row in rows)
+
+    def create_producer_client(self, *, tenant_id: str, client_id: str, display_name: str, roles_csv: str, status: str) -> dict[str, str]:
+        token = secrets.token_urlsafe(24)
+        token_hash = _token_hash(token)
+        token_prefix = token[:8]
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO producer_clients (tenant_id, client_id, display_name, token_hash, token_prefix, roles_csv, status, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (tenant_id, client_id)
+                DO UPDATE SET display_name = EXCLUDED.display_name, token_hash = EXCLUDED.token_hash, token_prefix = EXCLUDED.token_prefix, roles_csv = EXCLUDED.roles_csv, status = EXCLUDED.status
+                """,
+                (tenant_id, client_id, display_name, token_hash, token_prefix, roles_csv, status),
+            )
+        return {
+            "tenant_id": tenant_id,
+            "client_id": client_id,
+            "display_name": display_name,
+            "token": token,
+            "token_prefix": token_prefix,
+            "roles_csv": roles_csv,
+            "status": status,
+        }
+
+    def list_producer_clients(self, *, tenant_id: str) -> tuple[dict[str, str], ...]:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT tenant_id, client_id, display_name, token_prefix, roles_csv, status, created_at FROM producer_clients WHERE tenant_id = %s ORDER BY client_id ASC",
+                (tenant_id,),
+            )
+            rows = cursor.fetchall()
+        return tuple(_producer_client_row(row) for row in rows)
+
+    def resolve_producer_token(self, *, token: str) -> HistoryToken | None:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT tenant_id, client_id, display_name, token_hash, roles_csv, status FROM producer_clients WHERE token_prefix = %s",
+                (token[:8],),
+            )
+            row = cursor.fetchone()
+        if row is None or not secrets.compare_digest(str(row[3]), _token_hash(token)):
+            return None
+        roles = tuple(item for item in str(row[4]).split(",") if item)
+        return HistoryToken(
+            token=token,
+            token_id=str(row[1]),
+            principal_name=str(row[2]),
+            auth_type="producer_token",
+            status=str(row[5]),
+            tenants=(str(row[0]),),
+            roles=roles,
+        )
+
     def commit(self) -> None:
         self.connection.commit()
 
@@ -826,6 +1154,74 @@ def _apply_sqlite_migrations(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS managed_tenants (
+            tenant_id TEXT NOT NULL PRIMARY KEY,
+            display_name TEXT NOT NULL,
+            organization_name TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS provider_secret_refs (
+            tenant_id TEXT NOT NULL,
+            secret_name TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            secret_ref TEXT NOT NULL,
+            description TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, secret_name)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS service_users (
+            tenant_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            principal_name TEXT NOT NULL,
+            email TEXT NOT NULL,
+            roles_csv TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, user_id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS service_sessions (
+            session_id TEXT NOT NULL PRIMARY KEY,
+            tenant_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            principal_name TEXT NOT NULL,
+            auth_type TEXT NOT NULL,
+            roles_csv TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS producer_clients (
+            tenant_id TEXT NOT NULL,
+            client_id TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            token_hash TEXT NOT NULL,
+            token_prefix TEXT NOT NULL,
+            roles_csv TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, client_id)
+        )
+        """
+    )
 
 def _apply_postgres_migrations(connection) -> None:
     with connection.cursor() as cursor:
@@ -907,6 +1303,74 @@ def _apply_postgres_migrations(connection) -> None:
                 owning_team TEXT NOT NULL,
                 service_criticality TEXT NOT NULL,
                 PRIMARY KEY (tenant_id, service_id)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS managed_tenants (
+                tenant_id TEXT NOT NULL PRIMARY KEY,
+                display_name TEXT NOT NULL,
+                organization_name TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS provider_secret_refs (
+                tenant_id TEXT NOT NULL,
+                secret_name TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                secret_ref TEXT NOT NULL,
+                description TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (tenant_id, secret_name)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS service_users (
+                tenant_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                principal_name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                roles_csv TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (tenant_id, user_id)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS service_sessions (
+                session_id TEXT NOT NULL PRIMARY KEY,
+                tenant_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                principal_name TEXT NOT NULL,
+                auth_type TEXT NOT NULL,
+                roles_csv TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS producer_clients (
+                tenant_id TEXT NOT NULL,
+                client_id TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                token_hash TEXT NOT NULL,
+                token_prefix TEXT NOT NULL,
+                roles_csv TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (tenant_id, client_id)
             )
             """
         )
@@ -1027,6 +1491,191 @@ def list_catalog_models(
     ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
     with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
         return store.list_catalog(tenant_id=tenant_id)
+
+
+def provision_managed_tenant(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str,
+    display_name: str,
+    organization_name: str,
+    status: str = "active",
+) -> None:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        store.upsert_managed_tenant(
+            tenant_id=tenant_id,
+            display_name=display_name,
+            organization_name=organization_name,
+            status=status,
+        )
+        store.commit()
+
+
+def list_managed_tenants(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+) -> tuple[dict[str, str], ...]:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        return store.list_managed_tenants()
+
+
+def upsert_provider_secret_ref(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str,
+    secret_name: str,
+    provider: str,
+    secret_ref: str,
+    description: str = "",
+) -> None:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        store.upsert_provider_secret_ref(
+            tenant_id=tenant_id,
+            secret_name=secret_name,
+            provider=provider,
+            secret_ref=secret_ref,
+            description=description,
+        )
+        store.commit()
+
+
+def list_provider_secret_refs(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str,
+) -> tuple[dict[str, str], ...]:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        return store.list_provider_secret_refs(tenant_id=tenant_id)
+
+
+def upsert_service_user(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str,
+    user_id: str,
+    principal_name: str,
+    email: str,
+    roles_csv: str,
+    status: str = "active",
+) -> None:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        store.upsert_service_user(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            principal_name=principal_name,
+            email=email,
+            roles_csv=roles_csv,
+            status=status,
+        )
+        store.commit()
+
+
+def list_service_users(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str,
+) -> tuple[dict[str, str], ...]:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        return store.list_service_users(tenant_id=tenant_id)
+
+
+def create_service_session(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    session_id: str,
+    tenant_id: str,
+    user_id: str,
+    principal_name: str,
+    auth_type: str,
+    roles_csv: str,
+    status: str,
+    expires_at: str,
+) -> None:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        store.create_session(
+            session_id=session_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            principal_name=principal_name,
+            auth_type=auth_type,
+            roles_csv=roles_csv,
+            status=status,
+            expires_at=expires_at,
+        )
+        store.commit()
+
+
+def list_service_sessions(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str,
+    limit: int = 20,
+) -> tuple[dict[str, str], ...]:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        return store.list_sessions(tenant_id=tenant_id, limit=limit)
+
+
+def create_producer_client(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str,
+    client_id: str,
+    display_name: str,
+    roles_csv: str = "ingestor",
+    status: str = "active",
+) -> dict[str, str]:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        result = store.create_producer_client(
+            tenant_id=tenant_id,
+            client_id=client_id,
+            display_name=display_name,
+            roles_csv=roles_csv,
+            status=status,
+        )
+        store.commit()
+        return result
+
+
+def list_producer_clients(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str,
+) -> tuple[dict[str, str], ...]:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        return store.list_producer_clients(tenant_id=tenant_id)
+
+
+def resolve_persistent_bearer_identity(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    token: str,
+) -> HistoryToken | None:
+    if not (sqlite_path or store_dsn):
+        return None
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        return store.resolve_producer_token(token=token)
 
 
 def _open_store_dsn(store_dsn: str) -> HistoryStore:
@@ -1163,6 +1812,69 @@ def _materialization_row_to_dict(row: tuple[object, ...]) -> dict[str, str]:
         "athena_table": str(row[9]),
         "athena_s3_location": str(row[10]),
     }
+
+
+def _managed_tenant_row(row: tuple[object, ...]) -> dict[str, str]:
+    return {
+        "tenant_id": str(row[0]),
+        "display_name": str(row[1]),
+        "organization_name": str(row[2]),
+        "status": str(row[3]),
+        "created_at": str(row[4]),
+    }
+
+
+def _provider_secret_row(row: tuple[object, ...]) -> dict[str, str]:
+    return {
+        "tenant_id": str(row[0]),
+        "secret_name": str(row[1]),
+        "provider": str(row[2]),
+        "secret_ref": str(row[3]),
+        "description": str(row[4]),
+        "updated_at": str(row[5]),
+    }
+
+
+def _service_user_row(row: tuple[object, ...]) -> dict[str, str]:
+    return {
+        "tenant_id": str(row[0]),
+        "user_id": str(row[1]),
+        "principal_name": str(row[2]),
+        "email": str(row[3]),
+        "roles_csv": str(row[4]),
+        "status": str(row[5]),
+        "created_at": str(row[6]),
+    }
+
+
+def _service_session_row(row: tuple[object, ...]) -> dict[str, str]:
+    return {
+        "session_id": str(row[0]),
+        "tenant_id": str(row[1]),
+        "user_id": str(row[2]),
+        "principal_name": str(row[3]),
+        "auth_type": str(row[4]),
+        "roles_csv": str(row[5]),
+        "status": str(row[6]),
+        "created_at": str(row[7]),
+        "expires_at": str(row[8]),
+    }
+
+
+def _producer_client_row(row: tuple[object, ...]) -> dict[str, str]:
+    return {
+        "tenant_id": str(row[0]),
+        "client_id": str(row[1]),
+        "display_name": str(row[2]),
+        "token_prefix": str(row[3]),
+        "roles_csv": str(row[4]),
+        "status": str(row[5]),
+        "created_at": str(row[6]),
+    }
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 if __name__ == "__main__":

@@ -23,9 +23,20 @@ from veridion.action.decision_history import analyze_history
 from veridion.action.decision_history_materialize import materialize_decision_history
 from veridion.action.decision_history_store import (
     analyze_history_store,
+    create_producer_client,
+    create_service_session,
     get_history_store_status,
     list_catalog_models,
+    list_managed_tenants,
     list_materialization_runs,
+    list_producer_clients,
+    list_provider_secret_refs,
+    list_service_sessions,
+    list_service_users,
+    provision_managed_tenant,
+    resolve_persistent_bearer_identity,
+    upsert_provider_secret_ref,
+    upsert_service_user,
     upsert_decision_event_store,
 )
 from veridion.action.history_identity import jwt_auth_enabled, resolve_bearer_identity, resolve_trusted_header_identity
@@ -203,6 +214,8 @@ def resolve_history_request(
         scoped_tokens=scoped_lookup,
         jwt_config=jwt_config,
         trusted_header_auth=trusted_header_auth,
+        sqlite_path=sqlite_path,
+        store_dsn=store_dsn,
         tenant_id=params.get("tenant", ""),
         path=route,
         method=method,
@@ -253,6 +266,26 @@ def resolve_history_request(
         if payload is None:
             return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
         return _respond(200, payload, route=route, api_version=api_version, identity=identity)
+    if route == "/app":
+        overview = _build_overview_payload(
+            history_paths=history_paths,
+            tenants=tenant_lookup,
+            schedules=schedule_lookup,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            materialization_root=materialization_root,
+            tenant_id=params.get("tenant", ""),
+            since=params.get("since"),
+            until=params.get("until"),
+            identity=identity,
+        )
+        return _respond(
+            200,
+            {"html": render_app_html(overview or {}, api_version=api_version or API_VERSION, identity=identity, service_name=service_name)},
+            route=route,
+            api_version=api_version,
+            identity=identity,
+        )
     if route == "/repositories":
         payload = _analyze_request(
             history_paths=history_paths,
@@ -274,6 +307,16 @@ def resolve_history_request(
     if route == "/services":
         catalog = _catalog_payload(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=params.get("tenant", ""))
         return _respond(200, {"services": list(catalog["services"])}, route=route, api_version=api_version, identity=identity)
+    if route == "/admin/tenants":
+        return _respond(200, {"tenants": list(list_managed_tenants(sqlite_path=sqlite_path, store_dsn=store_dsn))}, route=route, api_version=api_version, identity=identity)
+    if route == "/admin/users":
+        return _respond(200, {"users": list(list_service_users(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=params.get("tenant", "")))}, route=route, api_version=api_version, identity=identity)
+    if route == "/admin/provider-secrets":
+        return _respond(200, {"provider_secrets": list(list_provider_secret_refs(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=params.get("tenant", "")))}, route=route, api_version=api_version, identity=identity)
+    if route == "/admin/producer-clients":
+        return _respond(200, {"producer_clients": list(list_producer_clients(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=params.get("tenant", "")))}, route=route, api_version=api_version, identity=identity)
+    if route == "/auth/sessions":
+        return _respond(200, {"sessions": list(list_service_sessions(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=params.get("tenant", "")))}, route=route, api_version=api_version, identity=identity)
     if route == "/policy-rollouts":
         payload = _analyze_request(
             history_paths=history_paths,
@@ -428,7 +471,7 @@ def _respond(
 ) -> tuple[int, dict[str, object]]:
     if not api_version:
         return (status, payload)
-    if route == "/dashboard" and "html" in payload:
+    if route in {"/dashboard", "/app"} and "html" in payload:
         return (status, payload)
     return (
         status,
@@ -506,6 +549,8 @@ def _authorize_request(
     scoped_tokens: dict[str, HistoryToken],
     jwt_config: JWTAuthConfig,
     trusted_header_auth: TrustedHeaderAuthConfig,
+    sqlite_path: str,
+    store_dsn: str,
     tenant_id: str,
     path: str,
     method: str,
@@ -524,6 +569,8 @@ def _authorize_request(
             return (None, None)
         scoped = resolve_bearer_identity(token=token, scoped_tokens=scoped_tokens, jwt_config=jwt_config)
         if scoped is None:
+            scoped = resolve_persistent_bearer_identity(sqlite_path=sqlite_path, store_dsn=store_dsn, token=token)
+        if scoped is None:
             return ((401, {"error": "unauthorized"}), None)
     if scoped.status and scoped.status != "active":
         return ((403, {"error": "identity_inactive"}), scoped)
@@ -537,7 +584,11 @@ def _authorize_request(
         return ((403, {"error": "insufficient_role"}), scoped)
     if path in {"/organizations", "/projects", "/services"} and not _has_role(scoped, "reader", "materializer", "admin"):
         return ((403, {"error": "insufficient_role"}), scoped)
-    if not tenant_id and scoped.tenants and path not in {"/tenants", "/materialization-schedules", "/identity"} and method == "GET":
+    if path in {"/admin/tenants", "/admin/users", "/admin/provider-secrets", "/admin/producer-clients"} and not _has_role(scoped, "admin"):
+        return ((403, {"error": "insufficient_role"}), scoped)
+    if path == "/auth/sessions" and not _has_role(scoped, "reader", "materializer", "admin"):
+        return ((403, {"error": "insufficient_role"}), scoped)
+    if not tenant_id and scoped.tenants and path not in {"/tenants", "/materialization-schedules", "/identity", "/admin/tenants"} and method == "GET":
         return ((403, {"error": "tenant_scope_required"}), scoped)
     if tenant_id and scoped.tenants and tenant_id not in scoped.tenants:
         return ((403, {"error": "forbidden"}), scoped)
@@ -616,6 +667,13 @@ def _build_overview_payload(
             "has_persistent_store": bool(sqlite_path or store_dsn),
         },
         "catalog": _catalog_payload(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id),
+        "admin": {
+            "managed_tenants": list(list_managed_tenants(sqlite_path=sqlite_path, store_dsn=store_dsn)) if (sqlite_path or store_dsn) else [],
+            "service_users": list(list_service_users(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id)) if (sqlite_path or store_dsn) and tenant_id else [],
+            "provider_secrets": list(list_provider_secret_refs(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id)) if (sqlite_path or store_dsn) and tenant_id else [],
+            "producer_clients": list(list_producer_clients(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id)) if (sqlite_path or store_dsn) and tenant_id else [],
+            "sessions": list(list_service_sessions(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id)) if (sqlite_path or store_dsn) and tenant_id else [],
+        },
     }
 
 
@@ -632,6 +690,100 @@ def _handle_post_request(
     config_path: str,
     scoped_token: HistoryToken | None,
 ) -> tuple[int, dict[str, object]]:
+    if path == "/admin/tenants":
+        payload = json.loads(body) if body.strip() else {}
+        if not isinstance(payload, dict):
+            return (400, {"error": "invalid_json"})
+        tenant_id = _body_string(payload, "tenant_id")
+        if not tenant_id:
+            return (400, {"error": "tenant_id_required"})
+        provision_managed_tenant(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=tenant_id,
+            display_name=_body_string(payload, "display_name") or tenant_id,
+            organization_name=_body_string(payload, "organization_name") or tenant_id,
+            status=_body_string(payload, "status") or "active",
+        )
+        return (201, {"status": "created", "tenant_id": tenant_id})
+    if path == "/admin/users":
+        payload = json.loads(body) if body.strip() else {}
+        if not isinstance(payload, dict):
+            return (400, {"error": "invalid_json"})
+        tenant_id = _body_string(payload, "tenant")
+        user_id = _body_string(payload, "user_id")
+        if not tenant_id or not user_id:
+            return (400, {"error": "tenant_and_user_id_required"})
+        upsert_service_user(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            principal_name=_body_string(payload, "principal_name") or user_id,
+            email=_body_string(payload, "email"),
+            roles_csv=_body_string(payload, "roles_csv") or "reader",
+            status=_body_string(payload, "status") or "active",
+        )
+        return (201, {"status": "created", "tenant": tenant_id, "user_id": user_id})
+    if path == "/admin/provider-secrets":
+        payload = json.loads(body) if body.strip() else {}
+        if not isinstance(payload, dict):
+            return (400, {"error": "invalid_json"})
+        tenant_id = _body_string(payload, "tenant")
+        secret_name = _body_string(payload, "secret_name")
+        if not tenant_id or not secret_name:
+            return (400, {"error": "tenant_and_secret_name_required"})
+        upsert_provider_secret_ref(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=tenant_id,
+            secret_name=secret_name,
+            provider=_body_string(payload, "provider"),
+            secret_ref=_body_string(payload, "secret_ref"),
+            description=_body_string(payload, "description"),
+        )
+        return (201, {"status": "created", "tenant": tenant_id, "secret_name": secret_name})
+    if path == "/admin/producer-clients":
+        payload = json.loads(body) if body.strip() else {}
+        if not isinstance(payload, dict):
+            return (400, {"error": "invalid_json"})
+        tenant_id = _body_string(payload, "tenant")
+        client_id = _body_string(payload, "client_id")
+        if not tenant_id or not client_id:
+            return (400, {"error": "tenant_and_client_id_required"})
+        result = create_producer_client(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=tenant_id,
+            client_id=client_id,
+            display_name=_body_string(payload, "display_name") or client_id,
+            roles_csv=_body_string(payload, "roles_csv") or "ingestor",
+            status=_body_string(payload, "status") or "active",
+        )
+        return (201, {"status": "created", "producer_client": result})
+    if path == "/auth/sessions":
+        payload = json.loads(body) if body.strip() else {}
+        if not isinstance(payload, dict):
+            payload = {}
+        if scoped_token is None:
+            return (401, {"error": "unauthorized"})
+        tenant_id = _body_string(payload, "tenant") or (scoped_token.tenants[0] if scoped_token.tenants else "")
+        if not tenant_id:
+            return (400, {"error": "tenant_required"})
+        session_id = _body_string(payload, "session_id") or _materialization_run_id()
+        create_service_session(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            session_id=session_id,
+            tenant_id=tenant_id,
+            user_id=scoped_token.token_id or scoped_token.principal_name or "session-user",
+            principal_name=scoped_token.principal_name or scoped_token.token_id or "session-user",
+            auth_type=scoped_token.auth_type or "bearer",
+            roles_csv=",".join(scoped_token.roles),
+            status="active",
+            expires_at=_body_string(payload, "expires_at"),
+        )
+        return (201, {"status": "created", "session_id": session_id, "tenant": tenant_id})
     if path == "/events":
         if not (sqlite_path or store_dsn):
             return (400, {"error": "persistent_store_required"})
@@ -919,6 +1071,94 @@ def render_dashboard_html(
         <pre>{_html_escape(json.dumps(policy_rollout, indent=2))}</pre>
       </div>
       <div class="footer">Versioned endpoints are available under /api/{_html_escape(api_version)}/overview, /identity, /analytics, /repositories, /organizations, /projects, /services, /policy-rollouts, /materializations, /materialization-schedules, /service/status, /events, and /tenants.</div>
+    </div>
+  </body>
+</html>"""
+
+
+def render_app_html(
+    payload: dict[str, object],
+    *,
+    api_version: str,
+    identity: HistoryToken | None,
+    service_name: str,
+) -> str:
+    tenant = payload.get("tenant", {}) if isinstance(payload, dict) else {}
+    admin = payload.get("admin", {}) if isinstance(payload, dict) else {}
+    principal = identity.principal_name or identity.token_id if identity is not None else "anonymous"
+    managed_tenants = admin.get("managed_tenants", []) if isinstance(admin, dict) else []
+    service_users = admin.get("service_users", []) if isinstance(admin, dict) else []
+    provider_secrets = admin.get("provider_secrets", []) if isinstance(admin, dict) else []
+    producer_clients = admin.get("producer_clients", []) if isinstance(admin, dict) else []
+    sessions = admin.get("sessions", []) if isinstance(admin, dict) else []
+    return f"""<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>{_html_escape(service_name)} App</title>
+    <style>
+      :root {{ --bg:#f7f9fc; --panel:#fff; --line:#dbe4ef; --ink:#0d233d; --muted:#61748a; --accent:#0d6efd; }}
+      body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(--bg); color:var(--ink); }}
+      .shell {{ max-width:1280px; margin:0 auto; padding:2rem; }}
+      .hero {{ display:flex; justify-content:space-between; align-items:flex-start; gap:2rem; margin-bottom:1.5rem; }}
+      .hero h1 {{ margin:0 0 .35rem 0; font-size:2rem; }}
+      .meta {{ color:var(--muted); }}
+      .grid {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }}
+      .card {{ background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:1rem; box-shadow:0 10px 24px rgba(13,35,61,.04); }}
+      .section-title {{ margin:0 0 .85rem 0; font-size:1rem; }}
+      ul {{ margin:0; padding-left:1rem; }}
+      li {{ margin:.3rem 0; }}
+      .pill {{ display:inline-block; padding:.3rem .6rem; border-radius:999px; background:#eef4ff; border:1px solid var(--line); margin-right:.4rem; }}
+      .footer {{ margin-top:1rem; color:var(--muted); font-size:.9rem; }}
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="hero">
+        <div>
+          <h1>{_html_escape(service_name)} App</h1>
+          <div class="meta">Tenant: {_html_escape(str(tenant.get("tenant_id", "")) or "all")} | Identity: {_html_escape(principal)} | API: {_html_escape(api_version)}</div>
+        </div>
+        <div>
+          <span class="pill">Tenants</span>
+          <span class="pill">Users</span>
+          <span class="pill">Producer Clients</span>
+          <span class="pill">Sessions</span>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <h2 class="section-title">Managed Tenants</h2>
+          <ul>
+            {"".join(f"<li>{_html_escape(str(item.get('tenant_id', '')))} - {_html_escape(str(item.get('status', '')))}</li>" for item in managed_tenants[:10]) or "<li>No tenants provisioned</li>"}
+          </ul>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Service Users</h2>
+          <ul>
+            {"".join(f"<li>{_html_escape(str(item.get('user_id', '')))} - {_html_escape(str(item.get('roles_csv', '')))}</li>" for item in service_users[:10]) or "<li>No users recorded</li>"}
+          </ul>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Provider Secret References</h2>
+          <ul>
+            {"".join(f"<li>{_html_escape(str(item.get('provider', '')))} / {_html_escape(str(item.get('secret_name', '')))} -> {_html_escape(str(item.get('secret_ref', '')))}</li>" for item in provider_secrets[:10]) or "<li>No provider secret refs</li>"}
+          </ul>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Producer Clients</h2>
+          <ul>
+            {"".join(f"<li>{_html_escape(str(item.get('client_id', '')))} - {_html_escape(str(item.get('token_prefix', '')))}...</li>" for item in producer_clients[:10]) or "<li>No producer clients</li>"}
+          </ul>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Sessions</h2>
+          <ul>
+            {"".join(f"<li>{_html_escape(str(item.get('session_id', '')))} - {_html_escape(str(item.get('principal_name', '')))}</li>" for item in sessions[:10]) or "<li>No sessions recorded</li>"}
+          </ul>
+        </div>
+      </div>
+      <div class="footer">Use /api/{_html_escape(api_version)}/admin/* and /api/{_html_escape(api_version)}/auth/sessions for the hosted control-plane admin surface.</div>
     </div>
   </body>
 </html>"""

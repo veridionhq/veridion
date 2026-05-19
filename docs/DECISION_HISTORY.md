@@ -160,12 +160,18 @@ The preferred service contract is now versioned under `/api/v1`:
 
 - `/api/v1/health`
 - `/api/v1/overview`
+- `/api/v1/app`
 - `/api/v1/identity`
 - `/api/v1/analytics`
 - `/api/v1/repositories`
 - `/api/v1/organizations`
 - `/api/v1/projects`
 - `/api/v1/services`
+- `/api/v1/admin/tenants`
+- `/api/v1/admin/users`
+- `/api/v1/admin/provider-secrets`
+- `/api/v1/admin/producer-clients`
+- `/api/v1/auth/sessions`
 - `/api/v1/policy-rollouts`
 - `/api/v1/tenants`
 - `/api/v1/materializations`
@@ -205,6 +211,14 @@ The dashboard is now a proper service surface, not just a raw JSON dump:
 - blocking-category views
 - identity and API metadata
 - store status, recent materializations, and schedule state
+
+The hosted app shell at `/api/v1/app` now surfaces:
+
+- managed tenants
+- service users
+- provider secret references
+- producer clients
+- active sessions
 
 Example:
 

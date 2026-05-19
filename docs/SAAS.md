@@ -53,6 +53,11 @@ The hosted service now persists tenant-scoped:
 - organizations
 - projects
 - services
+- managed tenants
+- provider secret references
+- service users
+- service sessions
+- producer clients
 - decision events
 - materialization runs
 
@@ -63,12 +68,18 @@ That is the minimum control-plane catalog needed for a multi-tenant product.
 Versioned management/read APIs now include:
 
 - `/api/v1/overview`
+- `/api/v1/app`
 - `/api/v1/identity`
 - `/api/v1/analytics`
 - `/api/v1/repositories`
 - `/api/v1/organizations`
 - `/api/v1/projects`
 - `/api/v1/services`
+- `/api/v1/admin/tenants`
+- `/api/v1/admin/users`
+- `/api/v1/admin/provider-secrets`
+- `/api/v1/admin/producer-clients`
+- `/api/v1/auth/sessions`
 - `/api/v1/policy-rollouts`
 - `/api/v1/materializations`
 - `/api/v1/materialization-schedules`
@@ -90,14 +101,17 @@ Current implementation supports:
 - JWT verified through OIDC discovery to a JWKS URI
 - trusted-header identities
 
+Producer-side hosted auth now also has a persistent path:
+
+- create a producer client in the control plane
+- get a generated ingestor token
+- send `veridion-decision-event.json` to `POST /api/v1/events`
+
 ## What still becomes a true SaaS concern later
 
 The repo now has the right foundations, but a full hosted product would still add:
 
-- tenant provisioning workflows
-- persistent user and org administration
 - billing / plan controls
-- per-tenant secrets management
 - managed background workers
 - external identity federation and UI sessions
 - a richer front-end application

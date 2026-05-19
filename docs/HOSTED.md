@@ -55,9 +55,11 @@ The hosted service is the shared control-plane surface.
 It provides:
 
 - tenant-scoped history APIs
+- tenant provisioning and admin APIs
 - materialization tracking
 - rollout analytics
 - a dashboard
+- an app shell for tenant, user, producer, and session state
 - approval and release-readiness context for many repos
 
 In a self-hosted deployment, that usually means:
@@ -92,6 +94,7 @@ Recommended production posture:
 
 - JWT/JWKS when the service is reached directly by clients
 - trusted headers when the service sits behind an internal auth gateway
+- producer clients with ingestor tokens for remote CI/event publishers
 
 ## Worker model
 
