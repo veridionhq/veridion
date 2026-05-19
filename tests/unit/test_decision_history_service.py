@@ -179,3 +179,79 @@ def test_decision_history_service_uses_sqlite_store_and_scoped_tokens(tmp_path) 
     assert forbidden["error"] == "forbidden"
     assert allowed_status == 200
     assert allowed["by_verdict"] == {"GO": 1}
+
+
+def test_decision_history_service_enforces_roles_and_tracks_materializations(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    materialization_root = tmp_path / "materialized"
+    history_path = tmp_path / "history.ndjson"
+    config_path = tmp_path / "config.json"
+    history_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-05-14T12:00:00Z",
+                "repository": "acme/service-a",
+                "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+                "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+                "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+            }
+        )
+        + "\n"
+    )
+    upsert_history_store(sqlite_path=sqlite_path, tenant_id="acme", history_paths=(str(history_path),))
+    config_path.write_text(
+        json.dumps(
+            {
+                "sqlite_path": str(sqlite_path),
+                "materialization_root": str(materialization_root),
+                "tenants": [{"tenant_id": "acme", "history_paths": []}],
+                "tokens": [
+                    {"token": "reader", "tenants": ["acme"], "roles": ["reader"]},
+                    {"token": "materializer", "tenants": ["acme"], "roles": ["reader", "materializer"]},
+                ],
+            }
+        )
+    )
+    tenants = {"acme": HistoryTenant(tenant_id="acme", history_paths=())}
+
+    reader_post_status, reader_post = resolve_history_request(
+        "/materializations",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "run_id": "run-3"}),
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        materialization_root=str(materialization_root),
+        config_path=str(config_path),
+        headers={"Authorization": "Bearer reader"},
+        scoped_tokens={"reader": HistoryToken(token="reader", tenants=("acme",), roles=("reader",))},
+    )
+    create_status, create_payload = resolve_history_request(
+        "/materializations",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "run_id": "run-3"}),
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        materialization_root=str(materialization_root),
+        config_path=str(config_path),
+        headers={"Authorization": "Bearer materializer"},
+        scoped_tokens={"materializer": HistoryToken(token="materializer", tenants=("acme",), roles=("reader", "materializer"))},
+    )
+    list_status, list_payload = resolve_history_request(
+        "/materializations?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        materialization_root=str(materialization_root),
+        config_path=str(config_path),
+        headers={"Authorization": "Bearer reader"},
+        scoped_tokens={"reader": HistoryToken(token="reader", tenants=("acme",), roles=("reader",))},
+    )
+
+    assert reader_post_status == 403
+    assert reader_post["error"] == "insufficient_role"
+    assert create_status == 201
+    assert create_payload["materialization"]["run_id"] == "run-3"
+    assert list_status == 200
+    assert list_payload["materializations"][0]["run_id"] == "run-3"

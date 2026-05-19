@@ -1,7 +1,7 @@
 import json
 
 from veridion.action.decision_history_materialize import materialize_decision_history
-from veridion.action.decision_history_store import upsert_history_store
+from veridion.action.decision_history_store import list_materialization_runs, upsert_history_store
 
 
 def test_materialize_decision_history_writes_run_and_latest(tmp_path) -> None:
@@ -70,7 +70,9 @@ def test_materialize_decision_history_writes_manifest_and_warehouse_queries(tmp_
 
     manifest = json.loads((run_dir / "run-manifest.json").read_text())
     warehouse = json.loads((run_dir / "warehouse" / "acme.athena.json").read_text())
+    runs = list_materialization_runs(sqlite_path=sqlite_path, tenant_id="acme")
 
     assert manifest["run_id"] == "run-2"
     assert warehouse["tenant_id"] == "acme"
     assert warehouse["athena"]["database"] == "analytics"
+    assert runs[0]["run_id"] == "run-2"

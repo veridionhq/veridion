@@ -1,6 +1,6 @@
 import json
 
-from veridion.action.decision_history_store import analyze_history_store, upsert_history_store
+from veridion.action.decision_history_store import analyze_history_store, list_materialization_runs, record_materialization_run, upsert_history_store
 
 
 def test_decision_history_store_ingests_and_analyzes_by_tenant(tmp_path) -> None:
@@ -40,3 +40,28 @@ def test_decision_history_store_ingests_and_analyzes_by_tenant(tmp_path) -> None
 
     assert acme["by_verdict"] == {"GO": 1}
     assert beta["by_verdict"] == {"NO GO": 1}
+
+
+def test_decision_history_store_tracks_materialization_runs(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    upsert_history_store(sqlite_path=sqlite_path, tenant_id="acme", history_paths=())
+
+    record_materialization_run(
+        sqlite_path=sqlite_path,
+        run_id="run-1",
+        tenant_id="acme",
+        generated_at="2026-05-18T12:00:00Z",
+        output_root=tmp_path / "materialized",
+        run_path=tmp_path / "materialized" / "runs" / "run-1",
+        since="2026-05-01T00:00:00Z",
+        until="2026-05-18T00:00:00Z",
+        athena_database="analytics",
+        athena_table="veridion_decision_events",
+        athena_s3_location="s3://bucket/path",
+    )
+
+    runs = list_materialization_runs(sqlite_path=sqlite_path, tenant_id="acme")
+
+    assert len(runs) == 1
+    assert runs[0]["run_id"] == "run-1"
+    assert runs[0]["athena_database"] == "analytics"

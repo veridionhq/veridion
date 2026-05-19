@@ -10,7 +10,7 @@ from pathlib import Path
 
 from veridion.action.decision_history_config import load_history_service_config
 from veridion.action.decision_history_export import export_configured_decision_history, export_decision_history
-from veridion.action.decision_history_store import materialize_warehouse_queries
+from veridion.action.decision_history_store import materialize_warehouse_queries, record_materialization_run
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -59,6 +59,7 @@ def materialize_decision_history(
     athena_database: str | None = None,
     athena_table: str = "veridion_decision_events",
     athena_s3_location_template: str | None = None,
+    tenant_ids: tuple[str, ...] = (),
 ) -> Path:
     root = Path(output_root)
     runs_dir = root / "runs"
@@ -73,6 +74,7 @@ def materialize_decision_history(
             output_dir=run_dir,
             since=since,
             until=until,
+            tenant_ids=tenant_ids,
         )
     else:
         export_decision_history(
@@ -97,7 +99,9 @@ def materialize_decision_history(
     if config and (config.sqlite_path or config.store_dsn) and athena_database and athena_s3_location_template:
         warehouse_dir = run_dir / "warehouse"
         warehouse_dir.mkdir(exist_ok=True)
-        for tenant in config.tenants:
+        selected_tenants = tuple(tenant for tenant in config.tenants if not tenant_ids or tenant.tenant_id in tenant_ids)
+        generated_at = _now_iso()
+        for tenant in selected_tenants:
             materialize_warehouse_queries(
                 sqlite_path=config.sqlite_path,
                 store_dsn=config.store_dsn,
@@ -108,6 +112,38 @@ def materialize_decision_history(
                 s3_location=athena_s3_location_template.format(tenant_id=tenant.tenant_id),
                 since=since,
             )
+            record_materialization_run(
+                sqlite_path=config.sqlite_path,
+                store_dsn=config.store_dsn,
+                run_id=run_id,
+                tenant_id=tenant.tenant_id,
+                generated_at=generated_at,
+                output_root=root,
+                run_path=run_dir,
+                since=since,
+                until=until,
+                athena_database=athena_database,
+                athena_table=athena_table,
+                athena_s3_location=athena_s3_location_template.format(tenant_id=tenant.tenant_id),
+            )
+    elif config and (config.sqlite_path or config.store_dsn):
+        generated_at = _now_iso()
+        selected_tenants = tuple(tenant for tenant in config.tenants if not tenant_ids or tenant.tenant_id in tenant_ids)
+        for tenant in selected_tenants:
+            record_materialization_run(
+                sqlite_path=config.sqlite_path,
+                store_dsn=config.store_dsn,
+                run_id=run_id,
+                tenant_id=tenant.tenant_id,
+                generated_at=generated_at,
+                output_root=root,
+                run_path=run_dir,
+                since=since,
+                until=until,
+                athena_database=athena_database,
+                athena_table=athena_table,
+                athena_s3_location="",
+            )
 
     if latest_dir.exists():
         shutil.rmtree(latest_dir)
@@ -117,6 +153,10 @@ def materialize_decision_history(
 
 def _default_run_id() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _write_run_manifest(

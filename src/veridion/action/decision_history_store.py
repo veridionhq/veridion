@@ -195,6 +195,31 @@ class HistoryStore:
     ) -> tuple[dict[str, object], ...]:  # pragma: no cover - interface
         raise NotImplementedError
 
+    def record_materialization_run(
+        self,
+        *,
+        run_id: str,
+        tenant_id: str,
+        generated_at: str,
+        output_root: str,
+        run_path: str,
+        since: str,
+        until: str,
+        status: str,
+        athena_database: str,
+        athena_table: str,
+        athena_s3_location: str,
+    ) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def list_materialization_runs(
+        self,
+        *,
+        tenant_id: str,
+        limit: int = 20,
+    ) -> tuple[dict[str, str], ...]:  # pragma: no cover - interface
+        raise NotImplementedError
+
     def commit(self) -> None:  # pragma: no cover - interface
         raise NotImplementedError
 
@@ -224,6 +249,30 @@ class SQLiteHistoryStore(HistoryStore):
             """
             CREATE INDEX IF NOT EXISTS idx_decision_events_lookup
             ON decision_events (tenant_id, generated_at, repository, policy_pack_id)
+            """
+        )
+        self.connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS materialization_runs (
+                tenant_id TEXT NOT NULL,
+                run_id TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                output_root TEXT NOT NULL,
+                run_path TEXT NOT NULL,
+                since_value TEXT NOT NULL,
+                until_value TEXT NOT NULL,
+                status TEXT NOT NULL,
+                athena_database TEXT NOT NULL,
+                athena_table TEXT NOT NULL,
+                athena_s3_location TEXT NOT NULL,
+                PRIMARY KEY (tenant_id, run_id)
+            )
+            """
+        )
+        self.connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_materialization_runs_lookup
+            ON materialization_runs (tenant_id, generated_at)
             """
         )
 
@@ -266,6 +315,61 @@ class SQLiteHistoryStore(HistoryStore):
         rows = self.connection.execute(query, params).fetchall()
         return tuple(json.loads(row[0]) for row in rows)
 
+    def record_materialization_run(
+        self,
+        *,
+        run_id: str,
+        tenant_id: str,
+        generated_at: str,
+        output_root: str,
+        run_path: str,
+        since: str,
+        until: str,
+        status: str,
+        athena_database: str,
+        athena_table: str,
+        athena_s3_location: str,
+    ) -> None:
+        self.connection.execute(
+            """
+            INSERT OR REPLACE INTO materialization_runs
+            (tenant_id, run_id, generated_at, output_root, run_path, since_value, until_value, status, athena_database, athena_table, athena_s3_location)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                tenant_id,
+                run_id,
+                generated_at,
+                output_root,
+                run_path,
+                since,
+                until,
+                status,
+                athena_database,
+                athena_table,
+                athena_s3_location,
+            ),
+        )
+
+    def list_materialization_runs(
+        self,
+        *,
+        tenant_id: str,
+        limit: int = 20,
+    ) -> tuple[dict[str, str], ...]:
+        query = """
+            SELECT tenant_id, run_id, generated_at, output_root, run_path, since_value, until_value, status, athena_database, athena_table, athena_s3_location
+            FROM materialization_runs
+        """
+        params: list[object] = []
+        if tenant_id:
+            query += " WHERE tenant_id = ?"
+            params.append(tenant_id)
+        query += " ORDER BY generated_at DESC, run_id DESC LIMIT ?"
+        params.append(limit)
+        rows = self.connection.execute(query, params).fetchall()
+        return tuple(_materialization_row_to_dict(row) for row in rows)
+
     def commit(self) -> None:
         self.connection.commit()
 
@@ -297,6 +401,30 @@ class PostgresHistoryStore(HistoryStore):
                 """
                 CREATE INDEX IF NOT EXISTS idx_decision_events_lookup
                 ON decision_events (tenant_id, generated_at, repository, policy_pack_id)
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS materialization_runs (
+                    tenant_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL,
+                    generated_at TEXT NOT NULL,
+                    output_root TEXT NOT NULL,
+                    run_path TEXT NOT NULL,
+                    since_value TEXT NOT NULL,
+                    until_value TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    athena_database TEXT NOT NULL,
+                    athena_table TEXT NOT NULL,
+                    athena_s3_location TEXT NOT NULL,
+                    PRIMARY KEY (tenant_id, run_id)
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_materialization_runs_lookup
+                ON materialization_runs (tenant_id, generated_at)
                 """
             )
 
@@ -347,6 +475,75 @@ class PostgresHistoryStore(HistoryStore):
             cursor.execute(query, params)
             rows = cursor.fetchall()
         return tuple(json.loads(row[0]) for row in rows)
+
+    def record_materialization_run(
+        self,
+        *,
+        run_id: str,
+        tenant_id: str,
+        generated_at: str,
+        output_root: str,
+        run_path: str,
+        since: str,
+        until: str,
+        status: str,
+        athena_database: str,
+        athena_table: str,
+        athena_s3_location: str,
+    ) -> None:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO materialization_runs
+                (tenant_id, run_id, generated_at, output_root, run_path, since_value, until_value, status, athena_database, athena_table, athena_s3_location)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (tenant_id, run_id)
+                DO UPDATE SET
+                  generated_at = EXCLUDED.generated_at,
+                  output_root = EXCLUDED.output_root,
+                  run_path = EXCLUDED.run_path,
+                  since_value = EXCLUDED.since_value,
+                  until_value = EXCLUDED.until_value,
+                  status = EXCLUDED.status,
+                  athena_database = EXCLUDED.athena_database,
+                  athena_table = EXCLUDED.athena_table,
+                  athena_s3_location = EXCLUDED.athena_s3_location
+                """,
+                (
+                    tenant_id,
+                    run_id,
+                    generated_at,
+                    output_root,
+                    run_path,
+                    since,
+                    until,
+                    status,
+                    athena_database,
+                    athena_table,
+                    athena_s3_location,
+                ),
+            )
+
+    def list_materialization_runs(
+        self,
+        *,
+        tenant_id: str,
+        limit: int = 20,
+    ) -> tuple[dict[str, str], ...]:
+        query = """
+            SELECT tenant_id, run_id, generated_at, output_root, run_path, since_value, until_value, status, athena_database, athena_table, athena_s3_location
+            FROM materialization_runs
+        """
+        params: list[object] = []
+        if tenant_id:
+            query += " WHERE tenant_id = %s"
+            params.append(tenant_id)
+        query += " ORDER BY generated_at DESC, run_id DESC LIMIT %s"
+        params.append(limit)
+        with self.connection.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+        return tuple(_materialization_row_to_dict(row) for row in rows)
 
     def commit(self) -> None:
         self.connection.commit()
@@ -414,6 +611,68 @@ def _decision_value(event: dict[str, object], key: str) -> str:
 def _policy_value(event: dict[str, object], key: str) -> str:
     policy = event.get("policy")
     return policy.get(key, "") if isinstance(policy, dict) and isinstance(policy.get(key, ""), str) else ""
+
+
+def record_materialization_run(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    run_id: str,
+    tenant_id: str,
+    generated_at: str,
+    output_root: str | Path,
+    run_path: str | Path,
+    since: str | None = None,
+    until: str | None = None,
+    status: str = "completed",
+    athena_database: str | None = None,
+    athena_table: str = "",
+    athena_s3_location: str | None = None,
+) -> None:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        store.record_materialization_run(
+            run_id=run_id,
+            tenant_id=tenant_id,
+            generated_at=generated_at,
+            output_root=str(output_root),
+            run_path=str(run_path),
+            since=since or "",
+            until=until or "",
+            status=status,
+            athena_database=athena_database or "",
+            athena_table=athena_table,
+            athena_s3_location=athena_s3_location or "",
+        )
+        store.commit()
+
+
+def list_materialization_runs(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str = "",
+    limit: int = 20,
+) -> tuple[dict[str, str], ...]:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        return store.list_materialization_runs(tenant_id=tenant_id, limit=limit)
+
+
+def _materialization_row_to_dict(row: tuple[object, ...]) -> dict[str, str]:
+    return {
+        "tenant_id": str(row[0]),
+        "run_id": str(row[1]),
+        "generated_at": str(row[2]),
+        "output_root": str(row[3]),
+        "run_path": str(row[4]),
+        "since": str(row[5]),
+        "until": str(row[6]),
+        "status": str(row[7]),
+        "athena_database": str(row[8]),
+        "athena_table": str(row[9]),
+        "athena_s3_location": str(row[10]),
+    }
 
 
 if __name__ == "__main__":

@@ -80,6 +80,7 @@ def export_configured_decision_history(
     output_dir: str | Path,
     since: str | None = None,
     until: str | None = None,
+    tenant_ids: tuple[str, ...] = (),
 ) -> None:
     config = load_history_service_config(config_path)
     root = Path(output_dir)
@@ -89,7 +90,7 @@ def export_configured_decision_history(
         export_stored_decision_history(
             sqlite_path=config.sqlite_path,
             store_dsn=config.store_dsn,
-            tenant_ids=tuple(tenant.tenant_id for tenant in config.tenants),
+            tenant_ids=tuple(tenant.tenant_id for tenant in config.tenants if not tenant_ids or tenant.tenant_id in tenant_ids),
             output_dir=root,
             since=since,
             until=until,
@@ -99,6 +100,8 @@ def export_configured_decision_history(
     tenants_dir = root / "tenants"
     tenants_dir.mkdir(exist_ok=True)
     for tenant in config.tenants:
+        if tenant_ids and tenant.tenant_id not in tenant_ids:
+            continue
         tenant_root = tenants_dir / tenant.tenant_id
         export_decision_history(
             history_paths=tenant.history_paths,
