@@ -93,6 +93,9 @@ Recommended production posture:
 2. Verify `pending_migration_count == 0` in store status.
 3. Roll out the service with a scoped reader/materializer/admin identity model.
 4. Run `veridion-history-scheduler --daemon` separately as a worker process.
+5. Put the service behind either:
+   - JWT/JWKS-backed direct client auth, or
+   - a trusted reverse proxy that injects scoped identity headers.
 
 ## Worker mode
 
@@ -106,3 +109,8 @@ veridion-history-scheduler \
 ```
 
 This continuously evaluates due schedules and records runs through the same hosted history surfaces.
+
+For a full hosted deployment bundle:
+
+- [docs/HOSTED.md](HOSTED.md)
+- [examples/hosted/docker-compose.postgres.yml](../examples/hosted/docker-compose.postgres.yml)

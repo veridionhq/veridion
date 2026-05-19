@@ -1,0 +1,30 @@
+{
+  "service_name": "Veridion Hosted Control Plane",
+  "store_dsn": "postgresql://veridion:veridion@postgres:5432/veridion_history",
+  "materialization_root": "/tmp/veridion-materialized",
+  "jwt": {
+    "issuer": "https://auth.example.com/",
+    "audience": "veridion-history",
+    "jwks_path": "examples/hosted/jwks.json",
+    "shared_secret": ""
+  },
+  "schedules": [
+    {
+      "schedule_id": "nightly-athena",
+      "cron": "0 3 * * *",
+      "tenants": [
+        "acme"
+      ],
+      "athena_database": "analytics",
+      "athena_table": "veridion_decision_events",
+      "athena_s3_location_template": "s3://veridion-prod-events/veridion/events/repo={tenant_id}/"
+    }
+  ],
+  "tenants": [
+    {
+      "tenant_id": "acme",
+      "display_name": "Acme Production",
+      "history_paths": []
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "service_name": "Veridion Hosted Control Plane",
+  "store_dsn": "postgresql://veridion:veridion@postgres:5432/veridion_history",
+  "materialization_root": "/tmp/veridion-materialized",
+  "trusted_headers": {
+    "enabled": true,
+    "shared_secret": "replace-me-with-a-real-proxy-secret",
+    "secret_header": "X-Veridion-Auth-Secret",
+    "principal_header": "X-Veridion-Principal",
+    "token_id_header": "X-Veridion-Token-Id",
+    "roles_header": "X-Veridion-Roles",
+    "tenants_header": "X-Veridion-Tenants",
+    "status_header": "X-Veridion-Status"
+  },
+  "schedules": [
+    {
+      "schedule_id": "nightly-athena",
+      "cron": "0 3 * * *",
+      "tenants": [
+        "acme"
+      ],
+      "athena_database": "analytics",
+      "athena_table": "veridion_decision_events",
+      "athena_s3_location_template": "s3://veridion-prod-events/veridion/events/repo={tenant_id}/"
+    }
+  ],
+  "tenants": [
+    {
+      "tenant_id": "acme",
+      "display_name": "Acme Production",
+      "history_paths": []
+    }
+  ]
+}

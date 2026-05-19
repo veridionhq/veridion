@@ -237,6 +237,7 @@ python3 -m veridion.action.decision_history_scheduler \
 For Postgres rollout and migration assets:
 
 - [docs/POSTGRES.md](POSTGRES.md)
+- [docs/HOSTED.md](HOSTED.md)
 
 ## Athena query examples
 

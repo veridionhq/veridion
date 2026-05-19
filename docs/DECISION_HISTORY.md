@@ -262,6 +262,7 @@ Example helper:
 For managed Postgres deployments and migration assets:
 
 - [docs/POSTGRES.md](POSTGRES.md)
+- [docs/HOSTED.md](HOSTED.md)
 
 ## Filter for rollout analysis
 

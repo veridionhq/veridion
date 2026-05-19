@@ -102,6 +102,10 @@ This currently supports live fetch paths for:
 - alerts: `statuspage`, `cloudwatch`
 - canary / rollback: `spinnaker`, `harness`
 
+Example end-to-end hosted flow:
+
+- [examples/hosted/pagerduty-end-to-end.sh](../examples/hosted/pagerduty-end-to-end.sh)
+
 ## Run Veridion without GitHub Actions
 
 Once you have:
