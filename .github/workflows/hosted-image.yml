@@ -1,19 +1,6 @@
 name: hosted-image
 
 on:
-  pull_request:
-    branches:
-      - develop
-      - main
-    paths:
-      - "Dockerfile"
-      - ".dockerignore"
-      - "pyproject.toml"
-      - "src/**"
-      - "docs/**"
-      - "examples/**"
-      - "db/**"
-      - ".github/workflows/hosted-image.yml"
   push:
     branches:
       - develop
@@ -32,27 +19,6 @@ on:
         type: string
 
 jobs:
-  pr-build:
-    if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build hosted image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          push: false
-          tags: veridion-hosted:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
   publish-develop:
     if: ${{ github.event_name == 'push' && github.ref_name == 'develop' }}
     runs-on: ubuntu-latest
