@@ -12,6 +12,12 @@ from typing import Iterator
 from veridion.action.athena_queries import build_athena_query_pack
 from veridion.action.decision_history import _load_history, analyze_history_events
 
+STORE_SCHEMA_VERSION = 2
+STORE_MIGRATIONS: tuple[tuple[str, str], ...] = (
+    ("001_decision_events", "core decision event history"),
+    ("002_materialization_runs", "managed materialization tracking"),
+)
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Manage persistent Veridion decision-history storage")
@@ -31,6 +37,10 @@ def main(argv: list[str] | None = None) -> int:
     analyze.add_argument("--until")
     analyze.add_argument("--output-path")
 
+    status = subparsers.add_parser("status", help="Inspect persistent store schema and counts")
+    _add_store_args(status)
+    status.add_argument("--tenant-id")
+
     args = parser.parse_args(argv)
     if args.command == "ingest":
         upsert_history_store(
@@ -39,6 +49,15 @@ def main(argv: list[str] | None = None) -> int:
             tenant_id=args.tenant_id,
             history_paths=tuple(args.history_path),
         )
+        return 0
+    if args.command == "status":
+        payload = get_history_store_status(
+            sqlite_path=args.sqlite_path,
+            store_dsn=args.store_dsn,
+            tenant_id=args.tenant_id or "",
+        )
+        rendered = json.dumps(payload, indent=2) + "\n"
+        print(rendered, end="")
         return 0
 
     payload = analyze_history_store(
@@ -105,6 +124,17 @@ def analyze_history_store(
             until=until,
         )
     return analyze_history_events(events)
+
+
+def get_history_store_status(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str = "",
+) -> dict[str, object]:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        return store.get_service_status(tenant_id=tenant_id)
 
 
 def build_event_key(event: dict[str, object]) -> str:
@@ -220,6 +250,13 @@ class HistoryStore:
     ) -> tuple[dict[str, str], ...]:  # pragma: no cover - interface
         raise NotImplementedError
 
+    def get_service_status(
+        self,
+        *,
+        tenant_id: str,
+    ) -> dict[str, object]:  # pragma: no cover - interface
+        raise NotImplementedError
+
     def commit(self) -> None:  # pragma: no cover - interface
         raise NotImplementedError
 
@@ -232,49 +269,10 @@ class SQLiteHistoryStore(HistoryStore):
         self.connection = sqlite3.connect(sqlite_path)
 
     def ensure_schema(self) -> None:
-        self.connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS decision_events (
-                tenant_id TEXT NOT NULL,
-                event_key TEXT NOT NULL,
-                generated_at TEXT NOT NULL,
-                repository TEXT NOT NULL,
-                policy_pack_id TEXT NOT NULL,
-                event_payload TEXT NOT NULL,
-                PRIMARY KEY (tenant_id, event_key)
-            )
-            """
-        )
-        self.connection.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_decision_events_lookup
-            ON decision_events (tenant_id, generated_at, repository, policy_pack_id)
-            """
-        )
-        self.connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS materialization_runs (
-                tenant_id TEXT NOT NULL,
-                run_id TEXT NOT NULL,
-                generated_at TEXT NOT NULL,
-                output_root TEXT NOT NULL,
-                run_path TEXT NOT NULL,
-                since_value TEXT NOT NULL,
-                until_value TEXT NOT NULL,
-                status TEXT NOT NULL,
-                athena_database TEXT NOT NULL,
-                athena_table TEXT NOT NULL,
-                athena_s3_location TEXT NOT NULL,
-                PRIMARY KEY (tenant_id, run_id)
-            )
-            """
-        )
-        self.connection.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_materialization_runs_lookup
-            ON materialization_runs (tenant_id, generated_at)
-            """
-        )
+        _ensure_migration_table(self.connection)
+        _apply_sqlite_migrations(self.connection)
+        _record_migrations_sqlite(self.connection)
+        self.connection.commit()
 
     def upsert_event(
         self,
@@ -370,6 +368,22 @@ class SQLiteHistoryStore(HistoryStore):
         rows = self.connection.execute(query, params).fetchall()
         return tuple(_materialization_row_to_dict(row) for row in rows)
 
+    def get_service_status(
+        self,
+        *,
+        tenant_id: str,
+    ) -> dict[str, object]:
+        return _build_service_status(
+            backend="sqlite",
+            schema_rows=self.connection.execute(
+                "SELECT migration_id, description, applied_at FROM schema_migrations ORDER BY migration_id ASC"
+            ).fetchall(),
+            event_count=_count_sqlite_rows(self.connection, "decision_events", tenant_id=tenant_id),
+            materialization_count=_count_sqlite_rows(self.connection, "materialization_runs", tenant_id=tenant_id),
+            tenant_count=_count_distinct_tenants_sqlite(self.connection),
+            tenant_id=tenant_id,
+        )
+
     def commit(self) -> None:
         self.connection.commit()
 
@@ -383,50 +397,10 @@ class PostgresHistoryStore(HistoryStore):
         self.module_name = module_name
 
     def ensure_schema(self) -> None:
-        with self.connection.cursor() as cursor:
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS decision_events (
-                    tenant_id TEXT NOT NULL,
-                    event_key TEXT NOT NULL,
-                    generated_at TEXT NOT NULL,
-                    repository TEXT NOT NULL,
-                    policy_pack_id TEXT NOT NULL,
-                    event_payload TEXT NOT NULL,
-                    PRIMARY KEY (tenant_id, event_key)
-                )
-                """
-            )
-            cursor.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_decision_events_lookup
-                ON decision_events (tenant_id, generated_at, repository, policy_pack_id)
-                """
-            )
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS materialization_runs (
-                    tenant_id TEXT NOT NULL,
-                    run_id TEXT NOT NULL,
-                    generated_at TEXT NOT NULL,
-                    output_root TEXT NOT NULL,
-                    run_path TEXT NOT NULL,
-                    since_value TEXT NOT NULL,
-                    until_value TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    athena_database TEXT NOT NULL,
-                    athena_table TEXT NOT NULL,
-                    athena_s3_location TEXT NOT NULL,
-                    PRIMARY KEY (tenant_id, run_id)
-                )
-                """
-            )
-            cursor.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_materialization_runs_lookup
-                ON materialization_runs (tenant_id, generated_at)
-                """
-            )
+        _ensure_migration_table(self.connection)
+        _apply_postgres_migrations(self.connection)
+        _record_migrations_postgres(self.connection)
+        self.connection.commit()
 
     def upsert_event(
         self,
@@ -545,11 +519,224 @@ class PostgresHistoryStore(HistoryStore):
             rows = cursor.fetchall()
         return tuple(_materialization_row_to_dict(row) for row in rows)
 
+    def get_service_status(
+        self,
+        *,
+        tenant_id: str,
+    ) -> dict[str, object]:
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT migration_id, description, applied_at FROM schema_migrations ORDER BY migration_id ASC")
+            schema_rows = cursor.fetchall()
+        return _build_service_status(
+            backend="postgres",
+            schema_rows=schema_rows,
+            event_count=_count_postgres_rows(self.connection, "decision_events", tenant_id=tenant_id),
+            materialization_count=_count_postgres_rows(self.connection, "materialization_runs", tenant_id=tenant_id),
+            tenant_count=_count_distinct_tenants_postgres(self.connection),
+            tenant_id=tenant_id,
+        )
+
     def commit(self) -> None:
         self.connection.commit()
 
     def close(self) -> None:
         self.connection.close()
+
+
+def _apply_sqlite_migrations(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS decision_events (
+            tenant_id TEXT NOT NULL,
+            event_key TEXT NOT NULL,
+            generated_at TEXT NOT NULL,
+            repository TEXT NOT NULL,
+            policy_pack_id TEXT NOT NULL,
+            event_payload TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, event_key)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_decision_events_lookup
+        ON decision_events (tenant_id, generated_at, repository, policy_pack_id)
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS materialization_runs (
+            tenant_id TEXT NOT NULL,
+            run_id TEXT NOT NULL,
+            generated_at TEXT NOT NULL,
+            output_root TEXT NOT NULL,
+            run_path TEXT NOT NULL,
+            since_value TEXT NOT NULL,
+            until_value TEXT NOT NULL,
+            status TEXT NOT NULL,
+            athena_database TEXT NOT NULL,
+            athena_table TEXT NOT NULL,
+            athena_s3_location TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, run_id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_materialization_runs_lookup
+        ON materialization_runs (tenant_id, generated_at)
+        """
+    )
+
+def _apply_postgres_migrations(connection) -> None:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS decision_events (
+                tenant_id TEXT NOT NULL,
+                event_key TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                repository TEXT NOT NULL,
+                policy_pack_id TEXT NOT NULL,
+                event_payload TEXT NOT NULL,
+                PRIMARY KEY (tenant_id, event_key)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_decision_events_lookup
+            ON decision_events (tenant_id, generated_at, repository, policy_pack_id)
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS materialization_runs (
+                tenant_id TEXT NOT NULL,
+                run_id TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                output_root TEXT NOT NULL,
+                run_path TEXT NOT NULL,
+                since_value TEXT NOT NULL,
+                until_value TEXT NOT NULL,
+                status TEXT NOT NULL,
+                athena_database TEXT NOT NULL,
+                athena_table TEXT NOT NULL,
+                athena_s3_location TEXT NOT NULL,
+                PRIMARY KEY (tenant_id, run_id)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_materialization_runs_lookup
+            ON materialization_runs (tenant_id, generated_at)
+            """
+        )
+
+
+def _ensure_migration_table(connection) -> None:
+    statement = """
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            migration_id TEXT NOT NULL PRIMARY KEY,
+            description TEXT NOT NULL,
+            applied_at TEXT NOT NULL
+        )
+    """
+    if isinstance(connection, sqlite3.Connection):
+        connection.execute(statement)
+        return
+    with connection.cursor() as cursor:
+        cursor.execute(statement)
+
+
+def _record_migrations_sqlite(connection: sqlite3.Connection) -> None:
+    for migration_id, description in STORE_MIGRATIONS:
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO schema_migrations (migration_id, description, applied_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            """,
+            (migration_id, description),
+        )
+
+
+def _record_migrations_postgres(connection) -> None:
+    with connection.cursor() as cursor:
+        for migration_id, description in STORE_MIGRATIONS:
+            cursor.execute(
+                """
+                INSERT INTO schema_migrations (migration_id, description, applied_at)
+                VALUES (%s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (migration_id) DO NOTHING
+                """,
+                (migration_id, description),
+            )
+
+
+def _count_sqlite_rows(connection: sqlite3.Connection, table: str, *, tenant_id: str) -> int:
+    query = f"SELECT COUNT(*) FROM {table}"
+    params: list[object] = []
+    if tenant_id:
+        query += " WHERE tenant_id = ?"
+        params.append(tenant_id)
+    return int(connection.execute(query, params).fetchone()[0])
+
+
+def _count_postgres_rows(connection, table: str, *, tenant_id: str) -> int:
+    query = f"SELECT COUNT(*) FROM {table}"
+    params: list[object] = []
+    if tenant_id:
+        query += " WHERE tenant_id = %s"
+        params.append(tenant_id)
+    with connection.cursor() as cursor:
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+    return int(row[0]) if row else 0
+
+
+def _count_distinct_tenants_sqlite(connection: sqlite3.Connection) -> int:
+    return int(connection.execute("SELECT COUNT(DISTINCT tenant_id) FROM decision_events").fetchone()[0])
+
+
+def _count_distinct_tenants_postgres(connection) -> int:
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT COUNT(DISTINCT tenant_id) FROM decision_events")
+        row = cursor.fetchone()
+    return int(row[0]) if row else 0
+
+
+def _build_service_status(
+    *,
+    backend: str,
+    schema_rows: list[tuple[object, ...]] | tuple[tuple[object, ...], ...],
+    event_count: int,
+    materialization_count: int,
+    tenant_count: int,
+    tenant_id: str,
+) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "source": "veridion.action.decision_history_store.status@1",
+        "store": {
+            "backend": backend,
+            "schema_version": STORE_SCHEMA_VERSION,
+            "tenant_scope": tenant_id,
+            "migrations": [
+                {
+                    "migration_id": str(row[0]),
+                    "description": str(row[1]),
+                    "applied_at": str(row[2]),
+                }
+                for row in schema_rows
+            ],
+        },
+        "counts": {
+            "events": event_count,
+            "materializations": materialization_count,
+            "tenants": tenant_count,
+        },
+    }
 
 
 def _open_store_dsn(store_dsn: str) -> HistoryStore:

@@ -8,11 +8,16 @@ def test_load_history_service_config_reads_tenants_and_tokens(tmp_path) -> None:
     config_path.write_text(
         json.dumps(
             {
+                "service_name": "Veridion Control Plane",
                 "auth_tokens": ["global-token"],
                 "sqlite_path": "/tmp/history.db",
                 "tokens": [
                     {
                         "token": "tenant-token",
+                        "token_id": "tok_123",
+                        "principal_name": "acme-reader",
+                        "auth_type": "bearer",
+                        "status": "active",
                         "tenants": ["acme"],
                         "roles": ["reader"],
                     }
@@ -20,6 +25,7 @@ def test_load_history_service_config_reads_tenants_and_tokens(tmp_path) -> None:
                 "tenants": [
                     {
                         "tenant_id": "acme",
+                        "display_name": "Acme Production",
                         "history_paths": ["/tmp/acme"],
                         "auth_tokens": ["acme-token"],
                     }
@@ -30,8 +36,12 @@ def test_load_history_service_config_reads_tenants_and_tokens(tmp_path) -> None:
 
     config = load_history_service_config(config_path)
 
+    assert config.service_name == "Veridion Control Plane"
     assert config.auth_tokens == ("global-token",)
     assert config.sqlite_path == "/tmp/history.db"
     assert config.tenants[0].tenant_id == "acme"
+    assert config.tenants[0].display_name == "Acme Production"
     assert tenant_map(config)["acme"].auth_tokens == ("acme-token",)
+    assert config.tokens[0].token_id == "tok_123"
+    assert config.tokens[0].principal_name == "acme-reader"
     assert config.tokens[0].tenants == ("acme",)

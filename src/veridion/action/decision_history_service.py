@@ -11,7 +11,9 @@ from urllib.parse import parse_qs, urlparse
 from veridion.action.decision_history_config import HistoryTenant, HistoryToken, load_history_service_config, tenant_map, token_map
 from veridion.action.decision_history import analyze_history
 from veridion.action.decision_history_materialize import materialize_decision_history
-from veridion.action.decision_history_store import analyze_history_store, list_materialization_runs
+from veridion.action.decision_history_store import analyze_history_store, get_history_store_status, list_materialization_runs
+
+API_VERSION = "v1"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -52,6 +54,7 @@ def serve_decision_history(
     config = load_history_service_config(config_path) if config_path else None
     handler = _build_handler(
         history_paths,
+        service_name=config.service_name if config else "Veridion History Service",
         tenants=tenant_map(config) if config else {},
         sqlite_path=config.sqlite_path if config else "",
         store_dsn=config.store_dsn if config else "",
@@ -67,6 +70,7 @@ def serve_decision_history(
 def _build_handler(
     history_paths: tuple[str, ...],
     *,
+    service_name: str,
     tenants: dict[str, HistoryTenant],
     sqlite_path: str,
     store_dsn: str,
@@ -80,6 +84,7 @@ def _build_handler(
             status, payload = resolve_history_request(
                 self.path,
                 history_paths=history_paths,
+                service_name=service_name,
                 tenants=tenants,
                 sqlite_path=sqlite_path,
                 store_dsn=store_dsn,
@@ -89,8 +94,7 @@ def _build_handler(
                 auth_tokens=auth_tokens,
                 scoped_tokens=scoped_tokens,
             )
-            parsed = urlparse(self.path)
-            if parsed.path == "/dashboard" and "html" in payload:
+            if "html" in payload:
                 self._write_html(status, str(payload["html"]))
             else:
                 self._write_json(status, payload)
@@ -103,6 +107,7 @@ def _build_handler(
                 method="POST",
                 body=raw.decode("utf-8") if raw else "",
                 history_paths=history_paths,
+                service_name=service_name,
                 tenants=tenants,
                 sqlite_path=sqlite_path,
                 store_dsn=store_dsn,
@@ -142,6 +147,7 @@ def resolve_history_request(
     method: str = "GET",
     body: str = "",
     history_paths: tuple[str, ...],
+    service_name: str = "Veridion History Service",
     tenants: dict[str, HistoryTenant] | None = None,
     sqlite_path: str = "",
     store_dsn: str = "",
@@ -152,24 +158,25 @@ def resolve_history_request(
     scoped_tokens: dict[str, HistoryToken] | None = None,
 ) -> tuple[int, dict[str, object]]:
     parsed = urlparse(path)
-    if parsed.path == "/healthz":
-        return (200, {"status": "ok"})
+    route, api_version = _normalize_route(parsed.path)
+    if route == "/healthz":
+        return _respond(200, {"status": "ok"}, route=route, api_version=api_version)
     scoped_lookup = scoped_tokens or {}
     tenant_lookup = tenants or {}
     params = _query_params(parsed.query)
-    authz, scoped_token = _authorize_request(
+    authz, identity = _authorize_request(
         headers=headers or {},
         auth_tokens=auth_tokens,
         scoped_tokens=scoped_lookup,
         tenant_id=params.get("tenant", ""),
-        path=parsed.path,
+        path=route,
         method=method,
     )
     if authz is not None:
-        return authz
+        return _respond(authz[0], authz[1], route=route, api_version=api_version, identity=identity)
     if method == "POST":
-        return _handle_post_request(
-            parsed.path,
+        status, payload = _handle_post_request(
+            route,
             body=body,
             history_paths=history_paths,
             tenants=tenant_lookup,
@@ -177,13 +184,25 @@ def resolve_history_request(
             store_dsn=store_dsn,
             materialization_root=materialization_root,
             config_path=config_path,
-            scoped_token=scoped_token,
+            scoped_token=identity,
         )
-    if parsed.path == "/tenants":
-        if scoped_token is not None and scoped_token.tenants:
-            return (200, {"tenants": sorted(scoped_token.tenants)})
-        return (200, {"tenants": sorted(tenant_lookup)})
-    if parsed.path == "/analytics":
+        return _respond(status, payload, route=route, api_version=api_version, identity=identity)
+    if route == "/tenants":
+        if identity is not None and identity.tenants:
+            payload = {"tenants": sorted(identity.tenants)} if not api_version else {
+                "tenants": [{"tenant_id": tenant_id, "display_name": tenant_id} for tenant_id in sorted(identity.tenants)]
+            }
+            return _respond(200, payload, route=route, api_version=api_version, identity=identity)
+        tenant_items = [
+            {
+                "tenant_id": tenant.tenant_id,
+                "display_name": tenant.display_name or tenant.tenant_id,
+            }
+            for tenant in sorted(tenant_lookup.values(), key=lambda item: item.tenant_id)
+        ]
+        payload = {"tenants": tenant_items if api_version else [item["tenant_id"] for item in tenant_items]}
+        return _respond(200, payload, route=route, api_version=api_version, identity=identity)
+    if route == "/analytics":
         payload = _analyze_request(
             history_paths=history_paths,
             tenants=tenant_lookup,
@@ -196,9 +215,9 @@ def resolve_history_request(
             until=params.get("until"),
         )
         if payload is None:
-            return (404, {"error": "tenant_not_found"})
-        return (200, payload)
-    if parsed.path == "/repositories":
+            return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
+        return _respond(200, payload, route=route, api_version=api_version, identity=identity)
+    if route == "/repositories":
         payload = _analyze_request(
             history_paths=history_paths,
             tenants=tenant_lookup,
@@ -207,10 +226,10 @@ def resolve_history_request(
             tenant_id=params.get("tenant", ""),
         )
         if payload is None:
-            return (404, {"error": "tenant_not_found"})
+            return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
         repositories = [item["repository"] for item in payload["policy_rollout"]["latest_by_repository"]]
-        return (200, {"repositories": repositories})
-    if parsed.path == "/policy-rollouts":
+        return _respond(200, {"repositories": repositories}, route=route, api_version=api_version, identity=identity)
+    if route == "/policy-rollouts":
         payload = _analyze_request(
             history_paths=history_paths,
             tenants=tenant_lookup,
@@ -219,9 +238,9 @@ def resolve_history_request(
             tenant_id=params.get("tenant", ""),
         )
         if payload is None:
-            return (404, {"error": "tenant_not_found"})
-        return (200, payload["policy_rollout"])
-    if parsed.path == "/dashboard":
+            return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
+        return _respond(200, payload["policy_rollout"], route=route, api_version=api_version, identity=identity)
+    if route == "/dashboard":
         payload = _analyze_request(
             history_paths=history_paths,
             tenants=tenant_lookup,
@@ -232,11 +251,25 @@ def resolve_history_request(
             until=params.get("until"),
         )
         if payload is None:
-            return (404, {"error": "tenant_not_found"})
-        return (200, {"html": render_dashboard_html(payload, tenant_id=params.get("tenant", ""))})
-    if parsed.path == "/materializations":
+            return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
+        return _respond(
+            200,
+            {
+                "html": render_dashboard_html(
+                    payload,
+                    tenant_id=params.get("tenant", ""),
+                    service_name=service_name,
+                    api_version=api_version or API_VERSION,
+                    identity=identity,
+                )
+            },
+            route=route,
+            api_version=api_version,
+            identity=identity,
+        )
+    if route == "/materializations":
         if not materialization_root and not (sqlite_path or store_dsn):
-            return (404, {"error": "materialization_not_configured"})
+            return _respond(404, {"error": "materialization_not_configured"}, route=route, api_version=api_version, identity=identity)
         tenant_id = params.get("tenant", "")
         limit = _parse_limit(params.get("limit", "20"))
         if sqlite_path or store_dsn:
@@ -248,8 +281,66 @@ def resolve_history_request(
             )
         else:
             runs = ()
-        return (200, {"materializations": list(runs)})
-    return (404, {"error": "not_found"})
+        return _respond(200, {"materializations": list(runs)}, route=route, api_version=api_version, identity=identity)
+    if route == "/service/status":
+        if sqlite_path or store_dsn:
+            payload = get_history_store_status(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=params.get("tenant", ""),
+            )
+        else:
+            payload = {
+                "schema_version": 1,
+                "source": "veridion.action.decision_history_service.status@1",
+                "store": {
+                    "backend": "file",
+                    "schema_version": 0,
+                    "tenant_scope": params.get("tenant", ""),
+                    "migrations": [],
+                },
+                "counts": {
+                    "events": 0,
+                    "materializations": 0,
+                    "tenants": len(tenant_lookup),
+                },
+            }
+        return _respond(200, payload, route=route, api_version=api_version, identity=identity)
+    return _respond(404, {"error": "not_found"}, route=route, api_version=api_version, identity=identity)
+
+
+def _normalize_route(path: str) -> tuple[str, str]:
+    if path in {f"/api/{API_VERSION}/health", f"/api/{API_VERSION}/healthz"}:
+        return ("/healthz", API_VERSION)
+    if path.startswith(f"/api/{API_VERSION}/"):
+        suffix = path[len(f"/api/{API_VERSION}") :]
+        return (suffix or "/", API_VERSION)
+    if path in {f"/api/{API_VERSION}", f"/api/{API_VERSION}/"}:
+        return ("/", API_VERSION)
+    return (path, "")
+
+
+def _respond(
+    status: int,
+    payload: dict[str, object],
+    *,
+    route: str,
+    api_version: str,
+    identity: HistoryToken | None = None,
+) -> tuple[int, dict[str, object]]:
+    if not api_version:
+        return (status, payload)
+    if route == "/dashboard" and "html" in payload:
+        return (status, payload)
+    return (
+        status,
+        {
+            "api_version": api_version,
+            "route": route,
+            "identity": _identity_payload(identity),
+            "data": payload,
+        },
+    )
 
 
 def _query_params(raw: str) -> dict[str, str]:
@@ -330,9 +421,11 @@ def _authorize_request(
     scoped = scoped_tokens.get(token)
     if scoped is None:
         return ((401, {"error": "unauthorized"}), None)
+    if scoped.status and scoped.status != "active":
+        return ((403, {"error": "identity_inactive"}), scoped)
     if method != "GET" and not _has_role(scoped, "materializer", "admin"):
         return ((403, {"error": "insufficient_role"}), scoped)
-    if path in {"/analytics", "/repositories", "/policy-rollouts", "/dashboard", "/materializations"} and not _has_role(
+    if path in {"/analytics", "/repositories", "/policy-rollouts", "/dashboard", "/materializations", "/service/status"} and not _has_role(
         scoped, "reader", "materializer", "admin"
     ):
         return ((403, {"error": "insufficient_role"}), scoped)
@@ -428,35 +521,104 @@ def _has_role(token: HistoryToken, *roles: str) -> bool:
     return any(role in token.roles for role in roles)
 
 
-def render_dashboard_html(payload: dict[str, object], *, tenant_id: str) -> str:
+def _identity_payload(identity: HistoryToken | None) -> dict[str, object]:
+    if identity is None:
+        return {}
+    return {
+        "token_id": identity.token_id or identity.token,
+        "principal_name": identity.principal_name or "",
+        "auth_type": identity.auth_type or "bearer",
+        "status": identity.status or "active",
+        "roles": list(identity.roles),
+        "tenants": list(identity.tenants),
+    }
+
+
+def render_dashboard_html(
+    payload: dict[str, object],
+    *,
+    tenant_id: str,
+    service_name: str,
+    api_version: str,
+    identity: HistoryToken | None,
+) -> str:
     summary = payload.get("summary", {})
     by_verdict = payload.get("by_verdict", {})
     policy_rollout = payload.get("policy_rollout", {})
+    blocking_categories = payload.get("top_blocking_categories", [])
+    latest_repositories = policy_rollout.get("latest_by_repository", []) if isinstance(policy_rollout, dict) else []
+    principal = identity.principal_name or identity.token_id if identity is not None else "anonymous"
     return f"""<!doctype html>
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Veridion History Dashboard</title>
+    <title>{_html_escape(service_name)}</title>
     <style>
-      body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 2rem; color: #10243e; }}
-      .grid {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }}
-      .card {{ border: 1px solid #d7e0ea; border-radius: 12px; padding: 1rem; background: #f7fbff; }}
-      h1 {{ margin-bottom: 0.25rem; }}
-      pre {{ white-space: pre-wrap; word-break: break-word; }}
+      :root {{ --bg:#f4f7fb; --panel:#ffffff; --line:#d7e0ea; --ink:#10243e; --muted:#5c6b7a; --accent:#0b6bcb; }}
+      body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: var(--bg); color: var(--ink); }}
+      .shell {{ max-width: 1200px; margin: 0 auto; padding: 2rem; }}
+      .hero {{ display:flex; justify-content:space-between; align-items:flex-start; gap:2rem; margin-bottom:1.5rem; }}
+      .hero h1 {{ margin:0 0 0.35rem 0; font-size:2rem; }}
+      .meta {{ color: var(--muted); }}
+      .pill {{ display:inline-block; padding:0.3rem 0.6rem; border-radius:999px; border:1px solid var(--line); background:#eef5ff; margin-right:0.4rem; font-size:0.9rem; }}
+      .grid {{ display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:1rem; margin-bottom:1.5rem; }}
+      .card {{ border:1px solid var(--line); border-radius:16px; padding:1rem; background:var(--panel); box-shadow:0 10px 25px rgba(16,36,62,0.04); }}
+      .card .label {{ color:var(--muted); font-size:0.9rem; margin-bottom:0.35rem; }}
+      .card .value {{ font-size:1.8rem; font-weight:700; }}
+      .panels {{ display:grid; grid-template-columns: 1.15fr 0.85fr; gap:1rem; }}
+      .section-title {{ margin:0 0 0.85rem 0; font-size:1rem; }}
+      table {{ width:100%; border-collapse:collapse; }}
+      th, td {{ text-align:left; padding:0.65rem 0.5rem; border-top:1px solid var(--line); font-size:0.95rem; }}
+      th {{ color:var(--muted); font-weight:600; border-top:none; }}
+      ul {{ margin:0; padding-left:1rem; }}
+      pre {{ white-space:pre-wrap; word-break:break-word; background:#0f1720; color:#dce7f3; padding:1rem; border-radius:12px; overflow:auto; }}
+      .footer {{ margin-top:1rem; color:var(--muted); font-size:0.9rem; }}
     </style>
   </head>
   <body>
-    <h1>Veridion Decision History</h1>
-    <p>Tenant: {_html_escape(tenant_id) or "all"}</p>
-    <div class="grid">
-      <div class="card"><strong>Events</strong><div>{summary.get("events", 0)}</div></div>
-      <div class="card"><strong>Repositories</strong><div>{summary.get("repositories", 0)}</div></div>
-      <div class="card"><strong>Policy Variants</strong><div>{summary.get("policy_pack_variants", 0)}</div></div>
+    <div class="shell">
+      <div class="hero">
+        <div>
+          <h1>{_html_escape(service_name)}</h1>
+          <div class="meta">Tenant: {_html_escape(tenant_id) or "all"} | API: {_html_escape(api_version)} | Identity: {_html_escape(principal)}</div>
+        </div>
+        <div>
+          <span class="pill">Analytics</span>
+          <span class="pill">Rollouts</span>
+          <span class="pill">Materializations</span>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card"><div class="label">Events</div><div class="value">{summary.get("events", 0)}</div></div>
+        <div class="card"><div class="label">Repositories</div><div class="value">{summary.get("repositories", 0)}</div></div>
+        <div class="card"><div class="label">Policy Variants</div><div class="value">{summary.get("policy_pack_variants", 0)}</div></div>
+        <div class="card"><div class="label">Blocked Reviews</div><div class="value">{summary.get("blocked_events", 0)}</div></div>
+      </div>
+      <div class="panels">
+        <div class="card">
+          <h2 class="section-title">Latest Repositories</h2>
+          <table>
+            <thead><tr><th>Repository</th><th>Pack</th><th>Version</th><th>Stage</th></tr></thead>
+            <tbody>
+              {"".join(f"<tr><td>{_html_escape(str(item.get('repository', '')))}</td><td>{_html_escape(str(item.get('pack_id', '')))}</td><td>{_html_escape(str(item.get('pack_version', '')))}</td><td>{_html_escape(str(item.get('rollout_stage', '')))}</td></tr>" for item in latest_repositories[:8]) or "<tr><td colspan='4'>No repository rollout data</td></tr>"}
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Top Blocking Categories</h2>
+          <ul>
+            {"".join(f"<li>{_html_escape(str(item.get('name', '')))} ({_html_escape(str(item.get('count', '0')) )})</li>" for item in blocking_categories[:8]) or "<li>No blocking categories recorded</li>"}
+          </ul>
+          <h2 class="section-title" style="margin-top:1rem;">Verdicts</h2>
+          <pre>{_html_escape(json.dumps(by_verdict, indent=2))}</pre>
+        </div>
+      </div>
+      <div class="card" style="margin-top:1rem;">
+        <h2 class="section-title">Policy Rollout JSON</h2>
+        <pre>{_html_escape(json.dumps(policy_rollout, indent=2))}</pre>
+      </div>
+      <div class="footer">Versioned endpoints are available under /api/{_html_escape(api_version)}/analytics, /repositories, /policy-rollouts, /materializations, /service/status, and /tenants.</div>
     </div>
-    <h2>Verdicts</h2>
-    <pre>{_html_escape(json.dumps(by_verdict, indent=2))}</pre>
-    <h2>Policy Rollout</h2>
-    <pre>{_html_escape(json.dumps(policy_rollout, indent=2))}</pre>
   </body>
 </html>"""
 

@@ -65,9 +65,31 @@ This writes:
 
 These snapshots are useful for scheduled report generation and static dashboards before a long-lived backend exists.
 
+## Persistent service backend
+
+The hosted history layer now supports:
+
+- SQLite for local development and small deployments
+- Postgres-style DSNs for the first service-grade persistent backend
+- explicit store schema migrations and status inspection
+
+Inspect store status:
+
+```bash
+python3 -m veridion.action.decision_history_store status \
+  --store-dsn postgres://user:pass@host/db
+```
+
+This returns:
+
+- backend type
+- schema version
+- applied migrations
+- tenant/event/materialization counts
+
 ## Persistent SQLite store
 
-If you want a simple persistent hosted backend before introducing Postgres or another service database, use the SQLite history store.
+If you want a simple persistent local backend before introducing Postgres or another service database, use the SQLite history store.
 
 Ingest centralized history into the store:
 
@@ -88,7 +110,7 @@ python3 -m veridion.action.decision_history_store analyze \
 
 This is the first persistent multi-tenant backend for the hosted-history layer.
 
-If you want to move beyond SQLite, the same CLI and service surfaces now also accept a store DSN for a Postgres-backed history store when the matching database dependency is installed.
+If you want to move beyond SQLite, the same CLI and service surfaces now accept a store DSN for a Postgres-backed history store when the matching database dependency is installed.
 
 ## Materialize timestamped runs
 
@@ -124,20 +146,39 @@ python3 -m veridion.action.decision_history_service \
   --port 8787
 ```
 
-Endpoints:
+Legacy endpoints remain available:
 
 - `/healthz`
 - `/analytics`
 - `/repositories`
 - `/policy-rollouts`
 - `/tenants`
+- `/materializations`
+- `/dashboard`
+
+The preferred service contract is now versioned under `/api/v1`:
+
+- `/api/v1/health`
+- `/api/v1/analytics`
+- `/api/v1/repositories`
+- `/api/v1/policy-rollouts`
+- `/api/v1/tenants`
+- `/api/v1/materializations`
+- `/api/v1/service/status`
+
+Versioned endpoints return:
+
+- `api_version`
+- `route`
+- `identity`
+- `data`
 
 If you configure bearer-token auth:
 
 ```bash
 curl \
   -H "Authorization: Bearer replace-me-with-a-real-shared-token" \
-  "http://127.0.0.1:8787/analytics?tenant=acme&since=2026-05-01T00:00:00Z"
+  "http://127.0.0.1:8787/api/v1/analytics?tenant=acme&since=2026-05-01T00:00:00Z"
 ```
 
 There is also a lightweight HTML view:
@@ -145,14 +186,40 @@ There is also a lightweight HTML view:
 ```bash
 curl \
   -H "Authorization: Bearer replace-me-with-a-real-shared-token" \
-  "http://127.0.0.1:8787/dashboard?tenant=acme"
+  "http://127.0.0.1:8787/api/v1/dashboard?tenant=acme"
 ```
+
+The dashboard is now a proper service surface, not just a raw JSON dump:
+
+- summary cards
+- rollout tables
+- blocking-category views
+- identity and API metadata
 
 Example:
 
 ```bash
-curl "http://127.0.0.1:8787/analytics?tenant=acme&repository=acme/service-a&since=2026-05-01T00:00:00Z"
+curl "http://127.0.0.1:8787/api/v1/analytics?tenant=acme&repository=acme/service-a&since=2026-05-01T00:00:00Z"
 ```
+
+## Identity model
+
+The history service now supports richer scoped identities in config:
+
+- `token_id`
+- `principal_name`
+- `auth_type`
+- `status`
+- `tenants`
+- `roles`
+
+Roles currently drive:
+
+- `reader`
+- `materializer`
+- `admin`
+
+Inactive identities are rejected before request execution.
 
 ## Filter for rollout analysis
 

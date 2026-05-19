@@ -11,12 +11,17 @@ from pathlib import Path
 class HistoryTenant:
     tenant_id: str
     history_paths: tuple[str, ...]
+    display_name: str = ""
     auth_tokens: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class HistoryToken:
     token: str
+    token_id: str = ""
+    principal_name: str = ""
+    auth_type: str = "bearer"
+    status: str = "active"
     tenants: tuple[str, ...] = ()
     roles: tuple[str, ...] = ()
 
@@ -24,6 +29,7 @@ class HistoryToken:
 @dataclass(frozen=True)
 class HistoryServiceConfig:
     tenants: tuple[HistoryTenant, ...]
+    service_name: str = "Veridion History Service"
     sqlite_path: str = ""
     store_dsn: str = ""
     materialization_root: str = ""
@@ -54,12 +60,14 @@ def load_history_service_config(path: str | Path) -> HistoryServiceConfig:
             HistoryTenant(
                 tenant_id=tenant_id,
                 history_paths=tuple(history_paths),
+                display_name=_optional_string(item.get("display_name")),
                 auth_tokens=tuple(_string_list(item.get("auth_tokens"))),
             )
         )
 
     return HistoryServiceConfig(
         tenants=tuple(tenants),
+        service_name=_optional_string(payload.get("service_name")) or "Veridion History Service",
         sqlite_path=sqlite_path,
         store_dsn=store_dsn,
         materialization_root=_optional_string(payload.get("materialization_root")),
@@ -103,6 +111,10 @@ def _parse_tokens(value: object) -> list[HistoryToken]:
         tokens.append(
             HistoryToken(
                 token=_required_string(item, "token"),
+                token_id=_optional_string(item.get("token_id")) or _required_string(item, "token"),
+                principal_name=_optional_string(item.get("principal_name")) or _optional_string(item.get("display_name")),
+                auth_type=_optional_string(item.get("auth_type")) or "bearer",
+                status=_optional_string(item.get("status")) or "active",
                 tenants=tuple(_string_list(item.get("tenants"))),
                 roles=tuple(_string_list(item.get("roles"))),
             )

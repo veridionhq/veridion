@@ -39,6 +39,11 @@ def test_decision_history_service_routes_health_and_analytics(tmp_path) -> None:
         "/analytics?repository=acme/service-b",
         history_paths=history_paths,
     )
+    versioned_health_status, versioned_health = resolve_history_request("/api/v1/health", history_paths=history_paths)
+    versioned_analytics_status, versioned_analytics = resolve_history_request(
+        "/api/v1/analytics?repository=acme/service-b",
+        history_paths=history_paths,
+    )
     repositories_status, repositories = resolve_history_request("/repositories", history_paths=history_paths)
 
     assert health_status == 200
@@ -46,6 +51,12 @@ def test_decision_history_service_routes_health_and_analytics(tmp_path) -> None:
     assert analytics_status == 200
     assert analytics["summary"]["events"] == 1
     assert analytics["by_verdict"] == {"NO GO": 1}
+    assert versioned_health_status == 200
+    assert versioned_health["api_version"] == "v1"
+    assert versioned_health["data"]["status"] == "ok"
+    assert versioned_analytics_status == 200
+    assert versioned_analytics["route"] == "/analytics"
+    assert versioned_analytics["data"]["summary"]["events"] == 1
     assert repositories_status == 200
     assert repositories["repositories"] == ["acme/service-a", "acme/service-b"]
 
@@ -136,8 +147,17 @@ def test_decision_history_service_supports_tenants_and_auth(tmp_path) -> None:
         headers={"Authorization": "Bearer scoped"},
         scoped_tokens={"scoped": HistoryToken(token="scoped", tenants=("acme",))},
     )
+    versioned_dashboard_status, versioned_dashboard = resolve_history_request(
+        "/api/v1/dashboard?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        headers={"Authorization": "Bearer scoped"},
+        scoped_tokens={"scoped": HistoryToken(token="scoped", tenants=("acme",))},
+    )
     assert dashboard_status == 200
     assert "<html>" in dashboard["html"]
+    assert versioned_dashboard_status == 200
+    assert "<html>" in versioned_dashboard["html"]
 
 
 def test_decision_history_service_uses_sqlite_store_and_scoped_tokens(tmp_path) -> None:
@@ -239,7 +259,7 @@ def test_decision_history_service_enforces_roles_and_tracks_materializations(tmp
         scoped_tokens={"materializer": HistoryToken(token="materializer", tenants=("acme",), roles=("reader", "materializer"))},
     )
     list_status, list_payload = resolve_history_request(
-        "/materializations?tenant=acme",
+        "/api/v1/materializations?tenant=acme",
         history_paths=(),
         tenants=tenants,
         sqlite_path=str(sqlite_path),
@@ -248,10 +268,51 @@ def test_decision_history_service_enforces_roles_and_tracks_materializations(tmp
         headers={"Authorization": "Bearer reader"},
         scoped_tokens={"reader": HistoryToken(token="reader", tenants=("acme",), roles=("reader",))},
     )
+    status_status, status_payload = resolve_history_request(
+        "/api/v1/service/status?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        materialization_root=str(materialization_root),
+        config_path=str(config_path),
+        headers={"Authorization": "Bearer reader"},
+        scoped_tokens={"reader": HistoryToken(token="reader", token_id="tok_reader", principal_name="reader-user", tenants=("acme",), roles=("reader",))},
+    )
 
     assert reader_post_status == 403
     assert reader_post["error"] == "insufficient_role"
     assert create_status == 201
     assert create_payload["materialization"]["run_id"] == "run-3"
     assert list_status == 200
-    assert list_payload["materializations"][0]["run_id"] == "run-3"
+    assert list_payload["data"]["materializations"][0]["run_id"] == "run-3"
+    assert status_status == 200
+    assert status_payload["identity"]["token_id"] == "tok_reader"
+    assert status_payload["data"]["store"]["backend"] == "sqlite"
+
+
+def test_decision_history_service_rejects_inactive_identity(tmp_path) -> None:
+    history_path = tmp_path / "history.ndjson"
+    history_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-05-14T12:00:00Z",
+                "repository": "acme/service-a",
+                "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+                "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+                "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+            }
+        )
+        + "\n"
+    )
+    tenants = {"acme": HistoryTenant(tenant_id="acme", history_paths=(str(history_path),))}
+
+    status, payload = resolve_history_request(
+        "/api/v1/analytics?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        headers={"Authorization": "Bearer disabled"},
+        scoped_tokens={"disabled": HistoryToken(token="disabled", status="disabled", tenants=("acme",), roles=("reader",))},
+    )
+
+    assert status == 403
+    assert payload["data"]["error"] == "identity_inactive"

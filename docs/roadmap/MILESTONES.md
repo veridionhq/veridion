@@ -176,8 +176,8 @@ Exit criteria:
 
 Status:
 
-- Started on `develop` with mapped GitHub reviewer requests and approval satisfaction checks for role-mapped pull requests
-- Follow-up remains for broader change-management integrations, richer team-resolution semantics, and policy enforcement based on satisfied versus pending approvals
+- Complete for GitHub-mapped reviewer requests, approval satisfaction checks, approval freshness after new commits, and approval-aware workflow outputs
+- Follow-up remains for broader change-management integrations, richer team-resolution semantics, and policy enforcement against non-GitHub approval sources
 
 ## M8: Runtime Release Gates
 
@@ -198,9 +198,9 @@ Exit criteria:
 
 Status:
 
-- Started on `develop` with first-class runtime gate fields in `operational-context.json` for deployment freezes, active incidents, alert state, canary health, and rollback viability
-- Decisioning now escalates hard runtime blockers to `NO GO` and review-only runtime degradation to `CONDITIONAL GO`
-- Follow-up remains for deeper live system integrations such as incident-management adapters, freeze-calendar ingestion, and real canary telemetry sources
+- Complete for first-class runtime gate fields in `operational-context.json` for deployment freezes, active incidents, alert state, canary health, and rollback viability
+- Complete for provider-aware normalization across PagerDuty, Opsgenie, Datadog, Statuspage, Argo Rollouts, Spinnaker, and Google Calendar shaped inputs
+- Follow-up remains for deeper live system integrations and continuously refreshed provider clients
 
 ## M9: Accepted-Risk Lifecycle
 
@@ -288,15 +288,10 @@ Exit criteria:
 
 Status:
 
-- Started on `develop` with approval enforcement outputs and a post-verification decision-event artifact
-- Decision events can now be appended to an NDJSON history log so later systems can replay or aggregate release outcomes
-- Approval freshness now invalidates stale approvals after new commits instead of treating old approvals as current control state
-- Local decision-history analytics now summarize verdict, approval-gate, blocking-category, and policy-pack trends from the NDJSON event log
-- File-backed history replay now works across NDJSON logs, single decision-event files, and exported event-object trees such as S3-synced partitions
-- File-backed service and export surfaces now exist for org-scope analytics snapshots and HTTP consumption without introducing a database-backed backend yet
-- Multi-tenant config, bearer-token auth, and timestamped materialization runs now exist as the first hosted-history control-plane layer
-- SQLite-backed multi-tenant event storage now exists as the first persistent hosted backend, and scheduled materialization can emit per-tenant warehouse query packs
-- Follow-up remains for stronger service-grade databases, deeper authz, warehouse-native scheduled execution, and long-range pack rollout analytics over larger history sets
+- Complete on `develop` for approval enforcement outputs, post-verification decision-event artifacts, append-only history, replay analytics, centralized sink delivery, and managed materialization runs
+- Complete for a hosted-history control-plane slice: multi-tenant service config, scoped identities and roles, versioned `/api/v1` endpoints, service schema migrations, and a Postgres-first persistent backend path alongside SQLite development mode
+- Complete for a first proper UI surface through the versioned dashboard over analytics, rollout, and materialization state
+- Follow-up remains for external identity providers, warehouse-native scheduled execution, and production database migration workflows beyond built-in bootstrap
 
 ## Execution Notes
 
