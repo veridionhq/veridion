@@ -68,9 +68,12 @@ Supported provider-shaped inputs today:
 - canary health: `generic`, `argo-rollouts`
 - rollback viability: `generic`, `argo-rollouts`
 - incidents: `opsgenie`
+- incidents: `incident-io`
 - freeze windows: `google-calendar`
 - alerts: `statuspage`
+- alerts: `cloudwatch`
 - canary / rollback: `spinnaker`
+- canary / rollback: `harness`
 
 The goal is still one normalized runtime contract. Provider support is just a convenience layer at ingestion time.
 

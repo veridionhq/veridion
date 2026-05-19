@@ -167,6 +167,37 @@ Helper script:
 
 The default example uses SQLite as the first persistent hosted backend. Teams that outgrow it can keep the same service/export/materialization surfaces and switch to a Postgres-style store DSN later.
 
+## Service-grade persistence and lifecycle
+
+If you are moving from local hosting to a real service deployment, the next recommended path is:
+
+- SQLite for local development
+- Postgres-style DSN for persistent hosted deployments
+- explicit schema status and migration inspection through:
+  - `python3 -m veridion.action.decision_history_store status`
+  - `python3 -m veridion.action.decision_history_store migrate`
+
+This keeps the same service/API surface while making database lifecycle state visible to operators.
+
+## Versioned history APIs and identities
+
+The preferred service contract now lives under `/api/v1`:
+
+- `/api/v1/analytics`
+- `/api/v1/repositories`
+- `/api/v1/policy-rollouts`
+- `/api/v1/tenants`
+- `/api/v1/materializations`
+- `/api/v1/materialization-schedules`
+- `/api/v1/service/status`
+
+The service now supports both:
+
+- static scoped bearer identities from config
+- JWT-backed identities verified locally with issuer/audience/shared-secret settings
+
+JWTs remain optional. They are the first bridge toward external identity-provider integration without making the deterministic core depend on a hosted auth service.
+
 ## Athena query examples
 
 If you want a generated starter pack instead of hand-writing SQL:

@@ -1,8 +1,16 @@
 {
+  "service_name": "Veridion Control Plane",
   "sqlite_path": "/tmp/veridion-history.db",
+  "jwt": {
+    "issuer": "https://issuer.example",
+    "audience": "veridion-history",
+    "shared_secret": "replace-me-with-a-real-jwt-secret"
+  },
   "tokens": [
     {
       "token": "replace-me-with-a-real-shared-token",
+      "token_id": "shared-reader",
+      "principal_name": "shared-reader",
       "tenants": [
         "acme",
         "beta"
@@ -12,13 +20,28 @@
       ]
     }
   ],
+  "schedules": [
+    {
+      "schedule_id": "nightly-athena",
+      "cron": "0 3 * * *",
+      "tenants": [
+        "acme",
+        "beta"
+      ],
+      "athena_database": "analytics",
+      "athena_table": "veridion_decision_events",
+      "athena_s3_location_template": "s3://veridion-prod-events/veridion/events/repo={tenant_id}/"
+    }
+  ],
   "tenants": [
     {
       "tenant_id": "acme",
+      "display_name": "Acme Production",
       "history_paths": []
     },
     {
       "tenant_id": "beta",
+      "display_name": "Beta Production",
       "history_paths": []
     }
   ]

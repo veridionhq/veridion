@@ -16,6 +16,27 @@ class HistoryTenant:
 
 
 @dataclass(frozen=True)
+class MaterializationSchedule:
+    schedule_id: str
+    cron: str
+    tenants: tuple[str, ...] = ()
+    enabled: bool = True
+    athena_database: str = ""
+    athena_table: str = "veridion_decision_events"
+    athena_s3_location_template: str = ""
+
+
+@dataclass(frozen=True)
+class JWTAuthConfig:
+    issuer: str = ""
+    audience: str = ""
+    shared_secret: str = ""
+    roles_claim: str = "roles"
+    tenants_claim: str = "tenants"
+    principal_claim: str = "sub"
+
+
+@dataclass(frozen=True)
 class HistoryToken:
     token: str
     token_id: str = ""
@@ -35,6 +56,8 @@ class HistoryServiceConfig:
     materialization_root: str = ""
     auth_tokens: tuple[str, ...] = ()
     tokens: tuple[HistoryToken, ...] = ()
+    jwt: JWTAuthConfig = JWTAuthConfig()
+    schedules: tuple[MaterializationSchedule, ...] = ()
 
 
 def load_history_service_config(path: str | Path) -> HistoryServiceConfig:
@@ -73,6 +96,8 @@ def load_history_service_config(path: str | Path) -> HistoryServiceConfig:
         materialization_root=_optional_string(payload.get("materialization_root")),
         auth_tokens=tuple(_string_list(payload.get("auth_tokens"))),
         tokens=tuple(_parse_tokens(payload.get("tokens"))),
+        jwt=_parse_jwt(payload.get("jwt")),
+        schedules=tuple(_parse_schedules(payload.get("schedules"))),
     )
 
 
@@ -82,6 +107,10 @@ def tenant_map(config: HistoryServiceConfig) -> dict[str, HistoryTenant]:
 
 def token_map(config: HistoryServiceConfig) -> dict[str, HistoryToken]:
     return {token.token: token for token in config.tokens}
+
+
+def schedule_map(config: HistoryServiceConfig) -> dict[str, MaterializationSchedule]:
+    return {schedule.schedule_id: schedule for schedule in config.schedules}
 
 
 def _required_string(payload: dict[str, object], key: str) -> str:
@@ -120,3 +149,47 @@ def _parse_tokens(value: object) -> list[HistoryToken]:
             )
         )
     return tokens
+
+
+def _parse_jwt(value: object) -> JWTAuthConfig:
+    if not isinstance(value, dict):
+        return JWTAuthConfig()
+    return JWTAuthConfig(
+        issuer=_optional_string(value.get("issuer")),
+        audience=_optional_string(value.get("audience")),
+        shared_secret=_optional_string(value.get("shared_secret")),
+        roles_claim=_optional_string(value.get("roles_claim")) or "roles",
+        tenants_claim=_optional_string(value.get("tenants_claim")) or "tenants",
+        principal_claim=_optional_string(value.get("principal_claim")) or "sub",
+    )
+
+
+def _parse_schedules(value: object) -> list[MaterializationSchedule]:
+    if not isinstance(value, list):
+        return []
+    schedules: list[MaterializationSchedule] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise RuntimeError("history service config schedules must be objects")
+        schedules.append(
+            MaterializationSchedule(
+                schedule_id=_required_string(item, "schedule_id"),
+                cron=_required_string(item, "cron"),
+                tenants=tuple(_string_list(item.get("tenants"))),
+                enabled=_bool_value(item.get("enabled"), default=True),
+                athena_database=_optional_string(item.get("athena_database")),
+                athena_table=_optional_string(item.get("athena_table")) or "veridion_decision_events",
+                athena_s3_location_template=_optional_string(item.get("athena_s3_location_template")),
+            )
+        )
+    return schedules
+
+
+def _bool_value(value: object, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "false"}:
+            return lowered == "true"
+    return default

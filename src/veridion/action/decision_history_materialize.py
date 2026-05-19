@@ -29,6 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--athena-database", help="Optional Athena database for generated query packs")
     parser.add_argument("--athena-table", default="veridion_decision_events", help="Athena table name")
     parser.add_argument("--athena-s3-location-template", help="Optional format string for tenant-specific S3 locations; supports {tenant_id}")
+    parser.add_argument("--schedule-id", help="Optional materialization schedule identifier")
     args = parser.parse_args(argv)
 
     if not args.history_path and not args.config_path:
@@ -44,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         athena_database=args.athena_database,
         athena_table=args.athena_table,
         athena_s3_location_template=args.athena_s3_location_template,
+        schedule_id=args.schedule_id or "",
     )
     return 0
 
@@ -60,6 +62,7 @@ def materialize_decision_history(
     athena_table: str = "veridion_decision_events",
     athena_s3_location_template: str | None = None,
     tenant_ids: tuple[str, ...] = (),
+    schedule_id: str = "",
 ) -> Path:
     root = Path(output_root)
     runs_dir = root / "runs"
@@ -94,6 +97,7 @@ def materialize_decision_history(
         athena_database=athena_database,
         athena_table=athena_table,
         athena_s3_location_template=athena_s3_location_template,
+        schedule_id=schedule_id,
     )
 
     if config and (config.sqlite_path or config.store_dsn) and athena_database and athena_s3_location_template:
@@ -170,6 +174,7 @@ def _write_run_manifest(
     athena_database: str | None,
     athena_table: str,
     athena_s3_location_template: str | None,
+    schedule_id: str,
 ) -> None:
     payload = {
         "schema_version": 1,
@@ -181,11 +186,13 @@ def _write_run_manifest(
             "config_path": config_path or "",
             "since": since or "",
             "until": until or "",
+            "schedule_id": schedule_id,
         },
         "warehouse": {
             "athena_database": athena_database or "",
             "athena_table": athena_table,
             "athena_s3_location_template": athena_s3_location_template or "",
+            "target_kind": "athena" if athena_database else "",
         },
     }
     path.write_text(json.dumps(payload, indent=2) + "\n")

@@ -134,3 +134,29 @@ def test_build_runtime_context_supports_extended_provider_shapes() -> None:
     assert runtime["alert_state"] == "firing"
     assert runtime["canary_health"] == "failing"
     assert runtime["rollback_viability"] == "ready"
+
+
+def test_build_runtime_context_supports_additional_provider_shapes() -> None:
+    runtime = build_runtime_context(
+        incident_payload={"incident": {"mode": "real", "status": "active", "severity": "high"}},
+        incident_provider="incident-io",
+        freeze_payload={"active": False},
+        freeze_provider="generic",
+        alerts_payload={"MetricAlarms": [{"StateValue": "ALARM"}]},
+        alerts_provider="cloudwatch",
+        canary_payload={"stage": {"status": "running"}},
+        canary_provider="harness",
+        rollback_payload={"rollback": {"status": "verified"}},
+        rollback_provider="harness",
+        environment="production",
+        deployment_window="after_hours",
+        public_exposure=True,
+        blast_radius="high",
+        rollout_strategy="canary",
+    )
+
+    assert runtime["active_incident"] is True
+    assert runtime["active_incident_severity"] == "high"
+    assert runtime["alert_state"] == "firing"
+    assert runtime["canary_health"] == "degraded"
+    assert runtime["rollback_viability"] == "ready"

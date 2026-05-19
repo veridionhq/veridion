@@ -41,6 +41,9 @@ def main(argv: list[str] | None = None) -> int:
     _add_store_args(status)
     status.add_argument("--tenant-id")
 
+    migrate = subparsers.add_parser("migrate", help="Apply store schema migrations")
+    _add_store_args(migrate)
+
     args = parser.parse_args(argv)
     if args.command == "ingest":
         upsert_history_store(
@@ -56,6 +59,12 @@ def main(argv: list[str] | None = None) -> int:
             store_dsn=args.store_dsn,
             tenant_id=args.tenant_id or "",
         )
+        rendered = json.dumps(payload, indent=2) + "\n"
+        print(rendered, end="")
+        return 0
+    if args.command == "migrate":
+        ensure_history_store(sqlite_path=args.sqlite_path, store_dsn=args.store_dsn)
+        payload = get_history_store_status(sqlite_path=args.sqlite_path, store_dsn=args.store_dsn)
         rendered = json.dumps(payload, indent=2) + "\n"
         print(rendered, end="")
         return 0
@@ -722,6 +731,8 @@ def _build_service_status(
             "backend": backend,
             "schema_version": STORE_SCHEMA_VERSION,
             "tenant_scope": tenant_id,
+            "current_migration_count": len(schema_rows),
+            "pending_migration_count": max(0, len(STORE_MIGRATIONS) - len(schema_rows)),
             "migrations": [
                 {
                     "migration_id": str(row[0]),

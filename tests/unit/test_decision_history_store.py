@@ -82,3 +82,4 @@ def test_decision_history_store_reports_schema_status(tmp_path) -> None:
     assert status["store"]["backend"] == "sqlite"
     assert status["store"]["schema_version"] >= 2
     assert len(status["store"]["migrations"]) >= 2
+    assert status["store"]["pending_migration_count"] == 0

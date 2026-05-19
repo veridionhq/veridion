@@ -1,6 +1,6 @@
 import json
 
-from veridion.action.decision_history_config import load_history_service_config, tenant_map
+from veridion.action.decision_history_config import load_history_service_config, schedule_map, tenant_map
 
 
 def test_load_history_service_config_reads_tenants_and_tokens(tmp_path) -> None:
@@ -20,6 +20,19 @@ def test_load_history_service_config_reads_tenants_and_tokens(tmp_path) -> None:
                         "status": "active",
                         "tenants": ["acme"],
                         "roles": ["reader"],
+                    }
+                ],
+                "jwt": {
+                    "issuer": "https://issuer.example",
+                    "audience": "veridion-history",
+                    "shared_secret": "super-secret",
+                },
+                "schedules": [
+                    {
+                        "schedule_id": "nightly",
+                        "cron": "0 3 * * *",
+                        "tenants": ["acme"],
+                        "athena_database": "analytics",
                     }
                 ],
                 "tenants": [
@@ -45,3 +58,5 @@ def test_load_history_service_config_reads_tenants_and_tokens(tmp_path) -> None:
     assert config.tokens[0].token_id == "tok_123"
     assert config.tokens[0].principal_name == "acme-reader"
     assert config.tokens[0].tenants == ("acme",)
+    assert config.jwt.issuer == "https://issuer.example"
+    assert schedule_map(config)["nightly"].athena_database == "analytics"

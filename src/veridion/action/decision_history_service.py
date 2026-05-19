@@ -8,10 +8,20 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from veridion.action.decision_history_config import HistoryTenant, HistoryToken, load_history_service_config, tenant_map, token_map
+from veridion.action.decision_history_config import (
+    HistoryTenant,
+    HistoryToken,
+    JWTAuthConfig,
+    MaterializationSchedule,
+    load_history_service_config,
+    schedule_map,
+    tenant_map,
+    token_map,
+)
 from veridion.action.decision_history import analyze_history
 from veridion.action.decision_history_materialize import materialize_decision_history
 from veridion.action.decision_history_store import analyze_history_store, get_history_store_status, list_materialization_runs
+from veridion.action.history_identity import resolve_bearer_identity
 
 API_VERSION = "v1"
 
@@ -56,6 +66,8 @@ def serve_decision_history(
         history_paths,
         service_name=config.service_name if config else "Veridion History Service",
         tenants=tenant_map(config) if config else {},
+        schedules=schedule_map(config) if config else {},
+        jwt_config=config.jwt if config else JWTAuthConfig(),
         sqlite_path=config.sqlite_path if config else "",
         store_dsn=config.store_dsn if config else "",
         materialization_root=config.materialization_root if config else "",
@@ -72,6 +84,8 @@ def _build_handler(
     *,
     service_name: str,
     tenants: dict[str, HistoryTenant],
+    schedules: dict[str, MaterializationSchedule],
+    jwt_config: JWTAuthConfig,
     sqlite_path: str,
     store_dsn: str,
     materialization_root: str,
@@ -86,6 +100,8 @@ def _build_handler(
                 history_paths=history_paths,
                 service_name=service_name,
                 tenants=tenants,
+                schedules=schedules,
+                jwt_config=jwt_config,
                 sqlite_path=sqlite_path,
                 store_dsn=store_dsn,
                 materialization_root=materialization_root,
@@ -109,6 +125,8 @@ def _build_handler(
                 history_paths=history_paths,
                 service_name=service_name,
                 tenants=tenants,
+                schedules=schedules,
+                jwt_config=jwt_config,
                 sqlite_path=sqlite_path,
                 store_dsn=store_dsn,
                 materialization_root=materialization_root,
@@ -149,6 +167,8 @@ def resolve_history_request(
     history_paths: tuple[str, ...],
     service_name: str = "Veridion History Service",
     tenants: dict[str, HistoryTenant] | None = None,
+    schedules: dict[str, MaterializationSchedule] | None = None,
+    jwt_config: JWTAuthConfig = JWTAuthConfig(),
     sqlite_path: str = "",
     store_dsn: str = "",
     materialization_root: str = "",
@@ -163,11 +183,13 @@ def resolve_history_request(
         return _respond(200, {"status": "ok"}, route=route, api_version=api_version)
     scoped_lookup = scoped_tokens or {}
     tenant_lookup = tenants or {}
+    schedule_lookup = schedules or {}
     params = _query_params(parsed.query)
     authz, identity = _authorize_request(
         headers=headers or {},
         auth_tokens=auth_tokens,
         scoped_tokens=scoped_lookup,
+        jwt_config=jwt_config,
         tenant_id=params.get("tenant", ""),
         path=route,
         method=method,
@@ -180,6 +202,7 @@ def resolve_history_request(
             body=body,
             history_paths=history_paths,
             tenants=tenant_lookup,
+            schedules=schedule_lookup,
             sqlite_path=sqlite_path,
             store_dsn=store_dsn,
             materialization_root=materialization_root,
@@ -282,6 +305,28 @@ def resolve_history_request(
         else:
             runs = ()
         return _respond(200, {"materializations": list(runs)}, route=route, api_version=api_version, identity=identity)
+    if route == "/materialization-schedules":
+        visible = _visible_schedules(schedule_lookup, identity)
+        return _respond(
+            200,
+            {
+                "schedules": [
+                    {
+                        "schedule_id": schedule.schedule_id,
+                        "cron": schedule.cron,
+                        "enabled": schedule.enabled,
+                        "tenants": list(schedule.tenants),
+                        "athena_database": schedule.athena_database,
+                        "athena_table": schedule.athena_table,
+                        "athena_s3_location_template": schedule.athena_s3_location_template,
+                    }
+                    for schedule in visible
+                ]
+            },
+            route=route,
+            api_version=api_version,
+            identity=identity,
+        )
     if route == "/service/status":
         if sqlite_path or store_dsn:
             payload = get_history_store_status(
@@ -406,30 +451,31 @@ def _authorize_request(
     headers: dict[str, str],
     auth_tokens: tuple[str, ...],
     scoped_tokens: dict[str, HistoryToken],
+    jwt_config: JWTAuthConfig,
     tenant_id: str,
     path: str,
     method: str,
 ) -> tuple[tuple[int, dict[str, object]] | None, HistoryToken | None]:
     auth_header = headers.get("Authorization", "") or headers.get("authorization", "")
-    if not auth_tokens and not scoped_tokens:
+    if not auth_tokens and not scoped_tokens and not jwt_config.shared_secret:
         return (None, None)
     if not auth_header.startswith("Bearer "):
         return ((401, {"error": "unauthorized"}), None)
     token = auth_header[len("Bearer ") :].strip()
     if token in auth_tokens:
         return (None, None)
-    scoped = scoped_tokens.get(token)
+    scoped = resolve_bearer_identity(token=token, scoped_tokens=scoped_tokens, jwt_config=jwt_config)
     if scoped is None:
         return ((401, {"error": "unauthorized"}), None)
     if scoped.status and scoped.status != "active":
         return ((403, {"error": "identity_inactive"}), scoped)
     if method != "GET" and not _has_role(scoped, "materializer", "admin"):
         return ((403, {"error": "insufficient_role"}), scoped)
-    if path in {"/analytics", "/repositories", "/policy-rollouts", "/dashboard", "/materializations", "/service/status"} and not _has_role(
+    if path in {"/analytics", "/repositories", "/policy-rollouts", "/dashboard", "/materializations", "/materialization-schedules", "/service/status"} and not _has_role(
         scoped, "reader", "materializer", "admin"
     ):
         return ((403, {"error": "insufficient_role"}), scoped)
-    if not tenant_id and scoped.tenants and path != "/tenants" and method == "GET":
+    if not tenant_id and scoped.tenants and path not in {"/tenants", "/materialization-schedules"} and method == "GET":
         return ((403, {"error": "tenant_scope_required"}), scoped)
     if tenant_id and scoped.tenants and tenant_id not in scoped.tenants:
         return ((403, {"error": "forbidden"}), scoped)
@@ -442,6 +488,7 @@ def _handle_post_request(
     body: str,
     history_paths: tuple[str, ...],
     tenants: dict[str, HistoryTenant],
+    schedules: dict[str, MaterializationSchedule],
     sqlite_path: str,
     store_dsn: str,
     materialization_root: str,
@@ -471,6 +518,16 @@ def _handle_post_request(
     athena_database = _body_string(payload, "athena_database") or None
     athena_table = _body_string(payload, "athena_table") or "veridion_decision_events"
     athena_template = _body_string(payload, "athena_s3_location_template") or None
+    schedule_id = _body_string(payload, "schedule_id")
+    if schedule_id:
+        schedule = schedules.get(schedule_id)
+        if schedule is None:
+            return (404, {"error": "schedule_not_found"})
+        if schedule.tenants and tenant_id not in schedule.tenants:
+            return (403, {"error": "schedule_forbidden"})
+        athena_database = athena_database or schedule.athena_database or None
+        athena_table = athena_table or schedule.athena_table or "veridion_decision_events"
+        athena_template = athena_template or schedule.athena_s3_location_template or None
     run_dir = materialize_decision_history(
         history_paths=history_paths,
         config_path=config_path,
@@ -491,6 +548,7 @@ def _handle_post_request(
         {
             "status": "created",
             "tenant": tenant_id,
+            "schedule_id": schedule_id,
             "run_path": str(run_dir),
             "materialization": runs[0] if runs else {"tenant_id": tenant_id, "run_path": str(run_dir)},
         },
@@ -532,6 +590,20 @@ def _identity_payload(identity: HistoryToken | None) -> dict[str, object]:
         "roles": list(identity.roles),
         "tenants": list(identity.tenants),
     }
+
+
+def _visible_schedules(
+    schedules: dict[str, MaterializationSchedule],
+    identity: HistoryToken | None,
+) -> tuple[MaterializationSchedule, ...]:
+    values = tuple(schedules.values())
+    if identity is None or not identity.tenants:
+        return tuple(schedule for schedule in values if schedule.enabled)
+    return tuple(
+        schedule
+        for schedule in values
+        if schedule.enabled and (not schedule.tenants or any(tenant in identity.tenants for tenant in schedule.tenants))
+    )
 
 
 def render_dashboard_html(
