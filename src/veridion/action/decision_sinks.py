@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 _SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*(\.[A-Za-z_][A-Za-z0-9_$]*)*$")
 _SIMPLE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
@@ -134,7 +135,7 @@ def _deliver_one(spec: SinkSpec, event: dict[str, object]) -> SinkDeliveryResult
         return SinkDeliveryResult(sink=spec.kind, status="delivered", destination=url)
 
     if spec.kind == "veridion-service":
-        url = validate_webhook_url(_require_option(spec, "url")).rstrip("/")
+        url = _validate_veridion_service_url(_require_option(spec, "url")).rstrip("/")
         tenant = _require_option(spec, "tenant")
         token = _require_option(spec, "token")
         payload = {
@@ -202,6 +203,19 @@ def build_default_s3_key(event: dict[str, object], *, prefix: str = "veridion/ev
         f"{base_prefix}/repo={repository}/year={generated_at:%Y}/month={generated_at:%m}/day={generated_at:%d}/"
         f"verdict={verdict}/ts={timestamp}-pr={pull_request_number or 0}.json"
     )
+
+
+def _validate_veridion_service_url(url: str) -> str:
+    parsed = urlsplit(url.strip())
+    if parsed.scheme not in {"https", "http"}:
+        raise ValueError("veridion-service url must use http or https")
+    if not parsed.netloc:
+        raise ValueError("veridion-service url must include a hostname")
+    if parsed.username or parsed.password:
+        raise ValueError("veridion-service url must not contain embedded credentials")
+    if parsed.fragment:
+        raise ValueError("veridion-service url must not include a fragment")
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path or "/", parsed.query, ""))
 
 
 def _parse_generated_at(value: object) -> datetime:

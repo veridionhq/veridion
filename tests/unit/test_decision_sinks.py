@@ -87,6 +87,31 @@ def test_deliver_decision_event_uses_veridion_service_sink(monkeypatch) -> None:
     assert captured["payload"]["event"]["repository"] == "acme/service-a"
 
 
+def test_deliver_decision_event_allows_http_veridion_service_sink(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_post_json(*, url: str, payload: dict[str, object], token: str):
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["token"] = token
+        return {}
+
+    monkeypatch.setattr(decision_sinks, "post_json", fake_post_json)
+
+    results = decision_sinks.deliver_decision_event(
+        {"repository": "acme/service-a", "decision": {"verdict": "GO"}},
+        sink_specs=(
+            decision_sinks.SinkSpec(
+                kind="veridion-service",
+                options={"url": "http://control-plane.example.test", "tenant": "acme", "token": "ingestor-secret"},
+            ),
+        ),
+    )
+
+    assert results[0].status == "delivered"
+    assert captured["url"] == "http://control-plane.example.test/api/v1/events"
+
+
 def test_deliver_decision_event_collects_failures_without_raising_by_default() -> None:
     results = decision_sinks.deliver_decision_event(
         {"decision": {"verdict": "GO"}},
