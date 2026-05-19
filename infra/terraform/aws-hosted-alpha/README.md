@@ -71,8 +71,11 @@ export AWS_REGION=us-west-2
 export ECR_REPOSITORY_URL="$(terraform output -raw ecr_repository_url)"
 export IMAGE_TAG=alpha
 
-./examples/aws/build-push-ecr.sh
+bash ./examples/aws/build-push-ecr.sh
 ```
+
+The hosted image is also built in CI on every push and pull request via `.github/workflows/hosted-image.yml`.
+Use the workflow-dispatch path there when you want GitHub Actions to publish the image to ECR instead of pushing it manually from a shell.
 
 4. Scale the ECS services up by setting:
 
