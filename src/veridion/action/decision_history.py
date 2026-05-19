@@ -24,8 +24,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-path", help="Optional path to write analytics JSON")
     args = parser.parse_args(argv)
 
-    since = _parse_timestamp_bound(args.since, label="since")
-    until = _parse_timestamp_bound(args.until, label="until")
     payload = analyze_history(
         history_paths=tuple(args.history_path),
         repository=args.repository,
@@ -65,30 +63,29 @@ def analyze_history(
 
 
 def analyze_history_events(events: tuple[dict[str, object], ...]) -> dict[str, object]:
-    filtered = tuple(item for item in events if item is not None)
     return {
         "schema_version": 1,
         "source": "veridion.action.decision_history@1",
-        "summary": _build_summary(filtered),
-        "by_verdict": _counter_dict(item["decision"]["verdict"] for item in filtered),
-        "by_gate_status": _counter_dict(item["decision"]["gate_status"] for item in filtered),
-        "by_approval_gate_status": _counter_dict(item["automation"].get("approval_gate_status", "") for item in filtered),
-        "by_repository": _counter_dict(item.get("repository", "") for item in filtered),
-        "by_policy_pack": _pack_breakdown(filtered),
-        "top_blocking_categories": _counter_pairs(item["decision"].get("blocking_categories", []) for item in filtered),
+        "summary": _build_summary(events),
+        "by_verdict": _counter_dict(item["decision"]["verdict"] for item in events),
+        "by_gate_status": _counter_dict(item["decision"]["gate_status"] for item in events),
+        "by_approval_gate_status": _counter_dict(item["automation"].get("approval_gate_status", "") for item in events),
+        "by_repository": _counter_dict(item.get("repository", "") for item in events),
+        "by_policy_pack": _pack_breakdown(events),
+        "top_blocking_categories": _counter_pairs(item["decision"].get("blocking_categories", []) for item in events),
         "approval_freshness": {
-            "stale_approval_events": sum(1 for item in filtered if item["automation"].get("stale_approvals")),
+            "stale_approval_events": sum(1 for item in events if item["automation"].get("stale_approvals")),
             "approval_blocked_events": sum(
-                1 for item in filtered if item["automation"].get("approval_gate_status") in {"blocked", "stale", "unmapped"}
+                1 for item in events if item["automation"].get("approval_gate_status") in {"blocked", "stale", "unmapped"}
             ),
         },
         "time_series": {
-            "by_day": _events_by_day(filtered),
+            "by_day": _events_by_day(events),
         },
         "policy_rollout": {
-            "version_adoption": _version_adoption(filtered),
-            "latest_by_repository": _latest_by_repository(filtered),
-            "transitions": _policy_transitions(filtered),
+            "version_adoption": _version_adoption(events),
+            "latest_by_repository": _latest_by_repository(events),
+            "transitions": _policy_transitions(events),
         },
     }
 
@@ -360,11 +357,14 @@ def _parse_timestamp_bound(value: str | None, *, label: str) -> datetime | None:
 
 
 def _sort_key(event: dict[str, object]) -> tuple[datetime, str]:
+    from datetime import timezone
+
     generated_at = _generated_at(event)
-    fallback = datetime.min.replace(tzinfo=None)
+    fallback = datetime.min.replace(tzinfo=timezone.utc)
     if generated_at is None:
         return (fallback, json.dumps(event, sort_keys=True))
-    return (generated_at.replace(tzinfo=None), json.dumps(event, sort_keys=True))
+    normalized = generated_at if generated_at.tzinfo is not None else generated_at.replace(tzinfo=timezone.utc)
+    return (normalized, json.dumps(event, sort_keys=True))
 
 
 if __name__ == "__main__":

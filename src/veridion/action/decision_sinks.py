@@ -5,13 +5,17 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+_SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*(\.[A-Za-z_][A-Za-z0-9_$]*)*$")
+_SIMPLE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
+
 from veridion.action.decision_event import append_decision_history
-from veridion.action.event_emitter import _post_json, _validate_webhook_url
+from veridion.action.event_emitter import post_json, validate_webhook_url
 
 
 @dataclass(frozen=True)
@@ -119,14 +123,14 @@ def _deliver_one(spec: SinkSpec, event: dict[str, object]) -> SinkDeliveryResult
         return SinkDeliveryResult(sink=spec.kind, status="delivered", destination=path)
 
     if spec.kind == "webhook":
-        url = _validate_webhook_url(_require_option(spec, "url"))
+        url = validate_webhook_url(_require_option(spec, "url"))
         token = spec.options.get("token", "")
         event_type = spec.options.get("event_type", "veridion.rdi.decision_event.v1")
         payload = {
             "event_type": event_type,
             "decision_event": event,
         }
-        _post_json(url=url, payload=payload, token=token)
+        post_json(url=url, payload=payload, token=token)
         return SinkDeliveryResult(sink=spec.kind, status="delivered", destination=url)
 
     if spec.kind == "s3":
@@ -219,7 +223,7 @@ def _nested_event_str(event: dict[str, object], section: str, key: str) -> str:
 
 def _deliver_postgres(spec: SinkSpec, event: dict[str, object]) -> SinkDeliveryResult:
     connection, close = _open_db_connection("postgres sink requires psycopg or psycopg2", spec)
-    table = _require_option(spec, "table")
+    table = _require_identifier(spec, "table", allow_qualified=True)
     try:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -242,7 +246,7 @@ def _deliver_postgres(spec: SinkSpec, event: dict[str, object]) -> SinkDeliveryR
 
 def _deliver_redshift(spec: SinkSpec, event: dict[str, object]) -> SinkDeliveryResult:
     connection, close = _open_db_connection("redshift sink requires psycopg or psycopg2", spec)
-    table = _require_option(spec, "table")
+    table = _require_identifier(spec, "table", allow_qualified=True)
     try:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -342,9 +346,9 @@ def _deliver_snowflake(spec: SinkSpec, event: dict[str, object]) -> SinkDelivery
     account = _require_option(spec, "account")
     user = _require_option(spec, "user")
     password = _require_option(spec, "password")
-    database = _require_option(spec, "database")
-    schema = _require_option(spec, "schema")
-    table = _require_option(spec, "table")
+    database = _require_identifier(spec, "database")
+    schema = _require_identifier(spec, "schema")
+    table = _require_identifier(spec, "table")
     warehouse = spec.options.get("warehouse", "")
     connection = snowflake.connector.connect(
         account=account,
@@ -392,6 +396,17 @@ def _require_option(spec: SinkSpec, key: str) -> str:
     value = spec.options.get(key, "").strip()
     if not value:
         raise DecisionSinkError(f"{spec.kind} sink requires option '{key}'")
+    return value
+
+
+def _require_identifier(spec: SinkSpec, key: str, *, allow_qualified: bool = False) -> str:
+    value = _require_option(spec, key)
+    pattern = _SAFE_IDENTIFIER_RE if allow_qualified else _SIMPLE_IDENTIFIER_RE
+    if not pattern.fullmatch(value):
+        hint = "qualified (schema.table) or simple identifier" if allow_qualified else "simple identifier (no dots)"
+        raise DecisionSinkError(
+            f"{spec.kind} sink option '{key}' must be a safe SQL {hint}: {value!r}"
+        )
     return value
 
 

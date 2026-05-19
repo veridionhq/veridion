@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -166,7 +167,6 @@ def resolve_history_request(
     )
     if authz is not None:
         return authz
-    tenant_lookup = tenants or {}
     if method == "POST":
         return _handle_post_request(
             parsed.path,
@@ -447,18 +447,22 @@ def render_dashboard_html(payload: dict[str, object], *, tenant_id: str) -> str:
   </head>
   <body>
     <h1>Veridion Decision History</h1>
-    <p>Tenant: {tenant_id or "all"}</p>
+    <p>Tenant: {_html_escape(tenant_id) or "all"}</p>
     <div class="grid">
       <div class="card"><strong>Events</strong><div>{summary.get("events", 0)}</div></div>
       <div class="card"><strong>Repositories</strong><div>{summary.get("repositories", 0)}</div></div>
       <div class="card"><strong>Policy Variants</strong><div>{summary.get("policy_pack_variants", 0)}</div></div>
     </div>
     <h2>Verdicts</h2>
-    <pre>{json.dumps(by_verdict, indent=2)}</pre>
+    <pre>{_html_escape(json.dumps(by_verdict, indent=2))}</pre>
     <h2>Policy Rollout</h2>
-    <pre>{json.dumps(policy_rollout, indent=2)}</pre>
+    <pre>{_html_escape(json.dumps(policy_rollout, indent=2))}</pre>
   </body>
 </html>"""
+
+
+def _html_escape(value: str) -> str:
+    return html.escape(value, quote=True)
 
 
 def _merge_auth_tokens(config_tokens: tuple[str, ...], cli_token: str) -> tuple[str, ...]:

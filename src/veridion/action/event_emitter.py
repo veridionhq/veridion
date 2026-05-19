@@ -36,14 +36,14 @@ def emit_decision_event(
 ) -> EventDeliveryResult:
     """POST the decision contract to an external webhook endpoint."""
 
-    validated_webhook_url = _validate_webhook_url(webhook_url)
+    validated_webhook_url = validate_webhook_url(webhook_url)
     envelope = {
         "event_type": event_type,
         "repository": repository,
         "pull_request_number": pull_request_number,
         "decision_contract": decision_contract,
     }
-    _post_json(url=validated_webhook_url, payload=envelope, token=token)
+    post_json(url=validated_webhook_url, payload=envelope, token=token)
     return EventDeliveryResult(status="delivered", event_type=event_type, destination=validated_webhook_url)
 
 
@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _post_json(*, url: str, payload: dict[str, object], token: str) -> Any:
+def post_json(*, url: str, payload: dict[str, object], token: str) -> Any:
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
@@ -81,7 +81,7 @@ def _post_json(*, url: str, payload: dict[str, object], token: str) -> Any:
         headers["Authorization"] = f"Bearer {token}"
 
     # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
-    # URL is validated by _validate_webhook_url() before reaching this sink.
+    # URL is validated by validate_webhook_url() before reaching this sink.
     req = request.Request(  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         url=url,
         data=json.dumps(payload).encode("utf-8"),
@@ -99,7 +99,7 @@ def _post_json(*, url: str, payload: dict[str, object], token: str) -> Any:
         raise EventEmitterError(f"webhook POST {url} failed: {exc.reason}") from exc
 
 
-def _validate_webhook_url(url: str) -> str:
+def validate_webhook_url(url: str) -> str:
     parsed = urlsplit(url.strip())
     if parsed.scheme != "https":
         raise ValueError("webhook-url must use https")
