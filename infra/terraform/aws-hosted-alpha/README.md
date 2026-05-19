@@ -84,6 +84,7 @@ Default CI publish behavior:
 
 - pushes to `develop` publish `:alpha`
 - pushes to `main` publish `:latest`
+- manual dispatch publishes the tag you provide
 - pull requests still build only and do not publish
 
 For the CI publish path:
