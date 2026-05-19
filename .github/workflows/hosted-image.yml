@@ -45,19 +45,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve publish mode
-        id: publish_mode
-        run: |
-          if [[ "${GITHUB_EVENT_NAME}" == "push" && ("${GITHUB_REF_NAME}" == "develop" || "${GITHUB_REF_NAME}" == "main") ]]; then
-            echo "should_publish=true" >> "$GITHUB_OUTPUT"
-          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${{ inputs.push_to_ecr }}" == "true" ]]; then
-            echo "should_publish=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_publish=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Validate ECR publish configuration
-        if: ${{ steps.publish_mode.outputs.should_publish == 'true' }}
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_to_ecr) }}
         run: |
           [[ -n "${ECR_REPOSITORY_URL}" ]] || { echo "ECR_REPOSITORY_URL repo variable is required for publish"; exit 1; }
           [[ -n "${AWS_GITHUB_ACTIONS_ROLE_ARN}" ]] || { echo "AWS_GITHUB_ACTIONS_ROLE_ARN repo variable or secret is required for publish"; exit 1; }
@@ -76,18 +65,18 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Configure AWS credentials
-        if: ${{ steps.publish_mode.outputs.should_publish == 'true' }}
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_to_ecr) }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_GITHUB_ACTIONS_ROLE_ARN }}
 
       - name: Log in to ECR
-        if: ${{ steps.publish_mode.outputs.should_publish == 'true' }}
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_to_ecr) }}
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Push hosted image to ECR
-        if: ${{ steps.publish_mode.outputs.should_publish == 'true' }}
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_to_ecr) }}
         uses: docker/build-push-action@v6
         with:
           context: .
