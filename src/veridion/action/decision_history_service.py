@@ -234,7 +234,18 @@ def resolve_history_request(
         method=method,
     )
     if authz is not None:
-        if authz[0] == 401 and method == "GET" and route in {"/app", "/app/repository", "/app/service"}:
+        if (
+            authz[0] == 403
+            and isinstance(authz[1], dict)
+            and authz[1].get("error") == "tenant_scope_required"
+            and method == "GET"
+            and route in {"/app", "/app/repository", "/app/service"}
+            and identity is not None
+            and identity.tenants
+        ):
+            params["tenant"] = identity.tenants[0]
+            authz = None
+        if authz is not None and authz[0] == 401 and method == "GET" and route in {"/app", "/app/repository", "/app/service"}:
             return (
                 200,
                 {
@@ -246,7 +257,8 @@ def resolve_history_request(
                     )
                 },
             )
-        return _respond(authz[0], authz[1], route=route, api_version=api_version, identity=identity)
+        if authz is not None:
+            return _respond(authz[0], authz[1], route=route, api_version=api_version, identity=identity)
     if method == "POST":
         status, payload = _handle_post_request(
             route,
@@ -600,6 +612,18 @@ def _respond(
 def _query_params(raw: str) -> dict[str, str]:
     parsed = parse_qs(raw)
     return {key: values[0] for key, values in parsed.items() if values}
+
+
+def _app_path_with_tenant(*, route: str, api_version: str, tenant_id: str, repository: str = "", service: str = "") -> str:
+    base_route = route if route in {"/app", "/app/repository", "/app/service"} else "/app"
+    version = api_version or API_VERSION
+    query = [f"tenant={quote(tenant_id)}"] if tenant_id else []
+    if repository:
+        query.append(f"repository={quote(repository)}")
+    if service:
+        query.append(f"service={quote(service)}")
+    suffix = "&".join(query)
+    return f"/api/{version}{base_route}" + (f"?{suffix}" if suffix else "")
 
 
 def _cookie_value(headers: dict[str, str], name: str) -> str:
@@ -1343,7 +1367,17 @@ def _handle_app_login_post_request(
     payload = _parse_form_payload(body, headers)
     token = _body_string(payload, "token")
     tenant_id = _body_string(payload, "tenant_id")
-    next_path = _body_string(payload, "next") or f"/api/{api_version}/app?tenant={tenant_id}"
+    next_path = _body_string(payload, "next") or _app_path_with_tenant(route="/app", api_version=api_version, tenant_id=tenant_id)
+    parsed_next = urlparse(next_path)
+    next_params = _query_params(parsed_next.query)
+    if tenant_id and parsed_next.path in {f"/api/{api_version}/app", f"/api/{api_version}/app/repository", f"/api/{api_version}/app/service"} and not next_params.get("tenant"):
+        next_path = _app_path_with_tenant(
+            route=parsed_next.path[len(f"/api/{api_version}") :] or "/app",
+            api_version=api_version,
+            tenant_id=tenant_id,
+            repository=next_params.get("repository", ""),
+            service=next_params.get("service", ""),
+        )
     if not token:
         return (
             200,
