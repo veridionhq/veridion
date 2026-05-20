@@ -647,6 +647,49 @@ def test_decision_history_service_admin_and_session_surfaces(tmp_path) -> None:
     assert session["data"]["session_id"] == "sess-1"
     assert app_status == 200
     assert "Managed Tenants" in app["html"]
+    assert "Repository Drilldown" in app["html"]
+
+
+def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    admin = {"Authorization": "Bearer admin", "Content-Type": "application/x-www-form-urlencoded"}
+    scoped = {"admin": HistoryToken(token="admin", tenants=("acme",), roles=("admin",), principal_name="Admin One", token_id="admin-1")}
+
+    create_tenant_status, tenant_app = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=create_tenant&tenant_id=acme&display_name=Acme+Production&organization_name=Acme&status=active",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    producer_status, producer_app = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=create_producer_client&tenant_id=acme&client_id=github-actions&display_name=GitHub+Actions&roles_csv=ingestor&status=active",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    secret_status, secret_app = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=create_provider_secret&tenant_id=acme&provider=pagerduty&secret_name=pagerduty-token&secret_ref=aws-secretsmanager%3A%2F%2Fveridion%2Facme%2Fpagerduty&description=PagerDuty+API+token",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+
+    assert create_tenant_status == 200
+    assert "Tenant acme provisioned." in tenant_app["html"]
+    assert producer_status == 200
+    assert "Producer client github-actions created." in producer_app["html"]
+    assert secret_status == 200
+    assert "Provider secret reference pagerduty-token stored." in secret_app["html"]
+    assert "Add Producer Client" in secret_app["html"]
 
 
 def _build_test_jwt(*, secret: str, payload: dict[str, object]) -> str:
