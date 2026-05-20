@@ -1107,81 +1107,267 @@ def render_app_html(
     service_name: str,
 ) -> str:
     tenant = payload.get("tenant", {}) if isinstance(payload, dict) else {}
+    analytics = payload.get("analytics", {}) if isinstance(payload, dict) else {}
+    summary = analytics.get("summary", {}) if isinstance(analytics, dict) else {}
+    status = payload.get("status", {}) if isinstance(payload, dict) else {}
+    status_store = status.get("store", {}) if isinstance(status, dict) else {}
+    catalog = payload.get("catalog", {}) if isinstance(payload, dict) else {}
     admin = payload.get("admin", {}) if isinstance(payload, dict) else {}
+    materializations = payload.get("materializations", []) if isinstance(payload, dict) else []
+    schedules = payload.get("schedules", []) if isinstance(payload, dict) else []
+    service = payload.get("service", {}) if isinstance(payload, dict) else {}
     principal = identity.principal_name or identity.token_id if identity is not None else "anonymous"
     managed_tenants = admin.get("managed_tenants", []) if isinstance(admin, dict) else []
     service_users = admin.get("service_users", []) if isinstance(admin, dict) else []
     provider_secrets = admin.get("provider_secrets", []) if isinstance(admin, dict) else []
     producer_clients = admin.get("producer_clients", []) if isinstance(admin, dict) else []
     sessions = admin.get("sessions", []) if isinstance(admin, dict) else []
+    organizations = catalog.get("organizations", []) if isinstance(catalog, dict) else []
+    projects = catalog.get("projects", []) if isinstance(catalog, dict) else []
+    services = catalog.get("services", []) if isinstance(catalog, dict) else []
+    latest_by_repository = ((analytics.get("policy_rollout") or {}).get("latest_by_repository", [])) if isinstance(analytics, dict) else []
+    blocking_categories = analytics.get("top_blocking_categories", []) if isinstance(analytics, dict) else []
+    schedule_runs = [
+        item for item in materializations if isinstance(item, dict) and str(item.get("run_id", "")).startswith("nightly-")
+    ]
+    checklist = (
+        ("Tenant provisioned", bool(managed_tenants), "Create a tenant record so the control plane has an org boundary."),
+        ("Producer connected", bool(producer_clients), "Create a producer client so CI can POST decision events."),
+        ("Events arriving", int(summary.get("events", 0) or 0) > 0, "Verify at least one decision event has landed."),
+        ("Scheduler active", bool(schedule_runs), "Confirm the worker is creating scheduled materialization runs."),
+        ("Provider refs stored", bool(provider_secrets), "Store at least one provider secret reference for live integrations."),
+        ("Human access modeled", bool(service_users) or bool(sessions), "Add service users or confirm authenticated sessions are flowing."),
+    )
+    completed_steps = sum(1 for _, ready, _ in checklist if ready)
+    next_step = next((detail for _, ready, detail in checklist if not ready), "Core onboarding is complete. Next focus: expand repos, providers, and user roles.")
+    tenant_label = _html_escape(str(tenant.get("tenant_id", "")) or "all")
+    display_name = _html_escape(str(tenant.get("display_name", "")) or str(tenant.get("tenant_id", "")) or "Hosted Tenant")
+    events = int(summary.get("events", 0) or 0)
+    repositories = int(summary.get("repositories", 0) or 0)
+    blocked_events = int(summary.get("blocked_events", 0) or 0)
+    producer_count = len(producer_clients)
+    session_count = len(sessions)
+    schedule_count = len(schedules)
+    materialization_count = len(materializations)
+    store_backend = _html_escape(str(status_store.get("backend", "file")))
+    schema_version = _html_escape(str(status_store.get("schema_version", "0")))
+    has_persistent_store = "Yes" if bool(service.get("has_persistent_store")) else "No"
+    history_paths = service.get("history_paths", []) if isinstance(service, dict) else []
+    onboarding_items = "".join(
+        f"<li><strong>{_html_escape(label)}</strong> <span class='status {'ready' if ready else 'todo'}'>{'ready' if ready else 'next'}</span><div class='hint'>{_html_escape(detail)}</div></li>"
+        for label, ready, detail in checklist
+    )
+    producer_items = "".join(
+        f"<li><strong>{_html_escape(str(item.get('client_id', '')))}</strong> <span class='mono'>{_html_escape(str(item.get('token_prefix', '')))}...</span><div class='hint'>{_html_escape(str(item.get('status', 'active')))} / {_html_escape(str(item.get('roles_csv', '')) or 'ingestor')}</div></li>"
+        for item in producer_clients[:6]
+    ) or "<li>No producer clients yet</li>"
+    schedule_items = "".join(
+        f"<li><strong>{_html_escape(str(item.get('schedule_id', '')))}</strong> <span class='mono'>{_html_escape(str(item.get('cron', '')))}</span><div class='hint'>{_html_escape(str(', '.join(item.get('tenants', [])) if isinstance(item.get('tenants'), list) else 'all tenants'))}</div></li>"
+        for item in schedules[:6]
+    ) or "<li>No schedules configured</li>"
+    materialization_items = "".join(
+        f"<li><strong>{_html_escape(str(item.get('run_id', '')))}</strong><div class='hint'>{_html_escape(str(item.get('generated_at', '')))} / {_html_escape(str(item.get('status', 'unknown')))}</div></li>"
+        for item in materializations[:6]
+    ) or "<li>No materializations recorded</li>"
+    repository_rows = "".join(
+        f"<tr><td>{_html_escape(str(item.get('repository', '')))}</td><td>{_html_escape(str(item.get('verdict', '')))}</td><td>{_html_escape(str(item.get('gate_status', '')))}</td><td>{_html_escape(str(item.get('generated_at', '')))}</td></tr>"
+        for item in latest_by_repository[:8]
+    ) or "<tr><td colspan='4'>No repository activity yet</td></tr>"
+    blocking_items = "".join(
+        f"<li>{_html_escape(str(item.get('name', '')))} <span class='count'>{_html_escape(str(item.get('count', '0')))}</span></li>"
+        for item in blocking_categories[:6]
+    ) or "<li>No blocking categories recorded</li>"
+    secret_items = "".join(
+        f"<li><strong>{_html_escape(str(item.get('provider', '')))}</strong> / {_html_escape(str(item.get('secret_name', '')))}<div class='hint mono'>{_html_escape(str(item.get('secret_ref', '')))}</div></li>"
+        for item in provider_secrets[:6]
+    ) or "<li>No provider secret refs</li>"
+    user_items = "".join(
+        f"<li><strong>{_html_escape(str(item.get('user_id', '')))}</strong><div class='hint'>{_html_escape(str(item.get('roles_csv', '')) or 'reader')} / {_html_escape(str(item.get('status', 'active')))}</div></li>"
+        for item in service_users[:6]
+    ) or "<li>No service users recorded</li>"
+    session_items = "".join(
+        f"<li><strong>{_html_escape(str(item.get('session_id', '')))}</strong><div class='hint'>{_html_escape(str(item.get('principal_name', '')))}</div></li>"
+        for item in sessions[:6]
+    ) or "<li>No sessions recorded</li>"
     return f"""<!doctype html>
 <html>
   <head>
     <meta charset="utf-8">
     <title>{_html_escape(service_name)} App</title>
     <style>
-      :root {{ --bg:#f7f9fc; --panel:#fff; --line:#dbe4ef; --ink:#0d233d; --muted:#61748a; --accent:#0d6efd; }}
-      body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,sans-serif; background:var(--bg); color:var(--ink); }}
-      .shell {{ max-width:1280px; margin:0 auto; padding:2rem; }}
-      .hero {{ display:flex; justify-content:space-between; align-items:flex-start; gap:2rem; margin-bottom:1.5rem; }}
-      .hero h1 {{ margin:0 0 .35rem 0; font-size:2rem; }}
-      .meta {{ color:var(--muted); }}
-      .grid {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }}
-      .card {{ background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:1rem; box-shadow:0 10px 24px rgba(13,35,61,.04); }}
-      .section-title {{ margin:0 0 .85rem 0; font-size:1rem; }}
+      :root {{ --bg:#f3f6f4; --panel:#fffdf8; --line:#d7ddd4; --ink:#12231d; --muted:#5d6e65; --accent:#176b52; --accent-soft:#e8f5ef; --warn:#9b5a00; --warn-soft:#fff3df; --danger:#9a2f1f; --danger-soft:#fff0eb; }}
+      * {{ box-sizing:border-box; }}
+      body {{ margin:0; font-family:Georgia, "Iowan Old Style", "Palatino Linotype", serif; background:radial-gradient(circle at top, #fcfffb 0%, var(--bg) 48%, #edf2ee 100%); color:var(--ink); }}
+      .shell {{ max-width:1320px; margin:0 auto; padding:2rem 1.25rem 3rem; }}
+      .hero {{ display:grid; grid-template-columns:1.1fr 0.9fr; gap:1rem; margin-bottom:1rem; }}
+      .hero-card {{ background:linear-gradient(135deg, #153b2d 0%, #245843 55%, #dff0e7 180%); color:#f6fbf8; border-radius:28px; padding:1.5rem; min-height:220px; box-shadow:0 22px 48px rgba(18,35,29,.15); }}
+      .hero h1 {{ margin:0 0 .4rem 0; font-size:2.3rem; letter-spacing:-0.04em; }}
+      .hero p {{ margin:.45rem 0 0 0; max-width:42rem; color:rgba(246,251,248,.84); line-height:1.45; }}
+      .meta {{ color:rgba(246,251,248,.74); font-size:.95rem; }}
+      .hero-side {{ display:grid; gap:1rem; }}
+      .card {{ background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:1rem; box-shadow:0 12px 32px rgba(18,35,29,.06); }}
+      .summary-grid {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1rem; margin:1rem 0; }}
+      .mini-card {{ background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:1rem; }}
+      .label {{ color:var(--muted); font-size:.84rem; text-transform:uppercase; letter-spacing:.08em; }}
+      .value {{ font-size:2rem; margin-top:.35rem; font-weight:700; }}
+      .value.small {{ font-size:1.2rem; }}
+      .section-grid {{ display:grid; grid-template-columns:1.15fr .85fr; gap:1rem; margin-top:1rem; }}
+      .stack {{ display:grid; gap:1rem; }}
+      .triple {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; margin-top:1rem; }}
+      .section-title {{ margin:0 0 .85rem 0; font-size:1rem; letter-spacing:-0.01em; }}
+      .section-kicker {{ color:var(--muted); font-size:.9rem; margin:-.35rem 0 .9rem 0; }}
+      .pill {{ display:inline-block; padding:.35rem .7rem; border-radius:999px; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.18); margin-right:.45rem; margin-bottom:.45rem; font-size:.88rem; }}
+      .status {{ display:inline-block; margin-left:.4rem; padding:.18rem .45rem; border-radius:999px; font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; }}
+      .status.ready {{ background:var(--accent-soft); color:var(--accent); }}
+      .status.todo {{ background:var(--warn-soft); color:var(--warn); }}
+      .mono {{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.85rem; }}
       ul {{ margin:0; padding-left:1rem; }}
-      li {{ margin:.3rem 0; }}
-      .pill {{ display:inline-block; padding:.3rem .6rem; border-radius:999px; background:#eef4ff; border:1px solid var(--line); margin-right:.4rem; }}
-      .footer {{ margin-top:1rem; color:var(--muted); font-size:.9rem; }}
+      li {{ margin:.45rem 0; }}
+      .hint {{ color:var(--muted); font-size:.9rem; margin-top:.2rem; }}
+      .callout {{ background:linear-gradient(180deg, #fff9ef 0%, #fffdf9 100%); border:1px solid #f0d7aa; }}
+      .callout strong {{ color:#7a4d00; }}
+      table {{ width:100%; border-collapse:collapse; }}
+      th, td {{ text-align:left; padding:.7rem .55rem; border-top:1px solid var(--line); font-size:.94rem; vertical-align:top; }}
+      th {{ color:var(--muted); font-weight:600; border-top:none; }}
+      .count {{ float:right; color:var(--muted); font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }}
+      .footer {{ margin-top:1rem; color:var(--muted); font-size:.92rem; }}
+      .two-col {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }}
+      @media (max-width: 1080px) {{
+        .hero, .section-grid, .triple, .summary-grid, .two-col {{ grid-template-columns:1fr; }}
+      }}
     </style>
   </head>
   <body>
     <div class="shell">
       <div class="hero">
-        <div>
-          <h1>{_html_escape(service_name)} App</h1>
-          <div class="meta">Tenant: {_html_escape(str(tenant.get("tenant_id", "")) or "all")} | Identity: {_html_escape(principal)} | API: {_html_escape(api_version)}</div>
+        <div class="hero-card">
+          <div class="meta">Tenant {tenant_label} / Identity {_html_escape(principal)} / API {_html_escape(api_version)}</div>
+          <h1>{display_name}</h1>
+          <p>Hosted control plane for release decisions, CI event intake, scheduled materializations, and operator state. This screen should answer whether the tenant is onboarded, whether decisions are arriving, and whether the worker is alive.</p>
+          <div style="margin-top:1rem;">
+            <span class="pill">{events} decision events</span>
+            <span class="pill">{repositories} repositories</span>
+            <span class="pill">{schedule_count} schedules</span>
+            <span class="pill">{materialization_count} materializations</span>
+          </div>
         </div>
-        <div>
-          <span class="pill">Tenants</span>
-          <span class="pill">Users</span>
-          <span class="pill">Producer Clients</span>
-          <span class="pill">Sessions</span>
+        <div class="hero-side">
+          <div class="card callout">
+            <div class="label">Onboarding Progress</div>
+            <div class="value small">{completed_steps} / {len(checklist)} complete</div>
+            <p class="hint"><strong>Next step:</strong> {_html_escape(next_step)}</p>
+          </div>
+          <div class="card">
+            <div class="label">Service Shape</div>
+            <div class="hint">Backend {store_backend} / schema {schema_version} / persistent store {has_persistent_store}</div>
+            <div class="hint">History paths: {_html_escape(str(len(history_paths)))}</div>
+          </div>
         </div>
       </div>
-      <div class="grid">
+
+      <div class="summary-grid">
+        <div class="mini-card"><div class="label">Events</div><div class="value">{events}</div></div>
+        <div class="mini-card"><div class="label">Repositories</div><div class="value">{repositories}</div></div>
+        <div class="mini-card"><div class="label">Blocked Decisions</div><div class="value">{blocked_events}</div></div>
+        <div class="mini-card"><div class="label">Producer Clients</div><div class="value">{producer_count}</div></div>
+      </div>
+
+      <div class="section-grid">
         <div class="card">
-          <h2 class="section-title">Managed Tenants</h2>
+          <h2 class="section-title">Onboarding Checklist</h2>
+          <div class="section-kicker">Track the minimum viable tenant setup for a live hosted rollout.</div>
           <ul>
-            {"".join(f"<li>{_html_escape(str(item.get('tenant_id', '')))} - {_html_escape(str(item.get('status', '')))}</li>" for item in managed_tenants[:10]) or "<li>No tenants provisioned</li>"}
+            {onboarding_items}
           </ul>
         </div>
         <div class="card">
-          <h2 class="section-title">Service Users</h2>
+          <h2 class="section-title">Live Signals</h2>
+          <div class="section-kicker">What is flowing through the control plane right now.</div>
           <ul>
-            {"".join(f"<li>{_html_escape(str(item.get('user_id', '')))} - {_html_escape(str(item.get('roles_csv', '')))}</li>" for item in service_users[:10]) or "<li>No users recorded</li>"}
+            <li><strong>Recent sessions</strong><span class="count">{session_count}</span><div class="hint">Authenticated app or API sessions recorded for this tenant.</div></li>
+            <li><strong>Scheduled runs</strong><span class="count">{len(schedule_runs)}</span><div class="hint">Materializations created by the worker daemon.</div></li>
+            <li><strong>Catalog objects</strong><span class="count">{len(organizations) + len(projects) + len(services)}</span><div class="hint">Organizations, projects, and services linked to this tenant.</div></li>
+            <li><strong>Provider secret refs</strong><span class="count">{len(provider_secrets)}</span><div class="hint">References ready for incident, alert, or rollout integrations.</div></li>
           </ul>
+        </div>
+      </div>
+
+      <div class="section-grid">
+        <div class="card">
+          <h2 class="section-title">Recent Repository Decisions</h2>
+          <div class="section-kicker">Latest release-control state seen per repository.</div>
+          <table>
+            <thead><tr><th>Repository</th><th>Verdict</th><th>Gate</th><th>Generated At</th></tr></thead>
+            <tbody>{repository_rows}</tbody>
+          </table>
+        </div>
+        <div class="stack">
+          <div class="card">
+            <h2 class="section-title">Top Blocking Categories</h2>
+            <ul>{blocking_items}</ul>
+          </div>
+          <div class="card">
+            <h2 class="section-title">Producer Clients</h2>
+            <ul>{producer_items}</ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="triple">
+        <div class="card">
+          <h2 class="section-title">Schedules</h2>
+          <ul>{schedule_items}</ul>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Recent Materializations</h2>
+          <ul>{materialization_items}</ul>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Catalog Inventory</h2>
+          <ul>
+            <li><strong>Managed tenants</strong><span class="count">{len(managed_tenants)}</span></li>
+            <li><strong>Organizations</strong><span class="count">{len(organizations)}</span></li>
+            <li><strong>Projects</strong><span class="count">{len(projects)}</span></li>
+            <li><strong>Services</strong><span class="count">{len(services)}</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <h2 class="section-title">People And Access</h2>
+          <div class="section-kicker">Persistent identities and observed operator sessions.</div>
+          <div class="two-col">
+            <div>
+              <h3 class="section-title" style="margin-top:0;">Service Users</h3>
+              <ul>{user_items}</ul>
+            </div>
+            <div>
+              <h3 class="section-title" style="margin-top:0;">Sessions</h3>
+              <ul>{session_items}</ul>
+            </div>
+          </div>
         </div>
         <div class="card">
           <h2 class="section-title">Provider Secret References</h2>
-          <ul>
-            {"".join(f"<li>{_html_escape(str(item.get('provider', '')))} / {_html_escape(str(item.get('secret_name', '')))} -> {_html_escape(str(item.get('secret_ref', '')))}</li>" for item in provider_secrets[:10]) or "<li>No provider secret refs</li>"}
-          </ul>
-        </div>
-        <div class="card">
-          <h2 class="section-title">Producer Clients</h2>
-          <ul>
-            {"".join(f"<li>{_html_escape(str(item.get('client_id', '')))} - {_html_escape(str(item.get('token_prefix', '')))}...</li>" for item in producer_clients[:10]) or "<li>No producer clients</li>"}
-          </ul>
-        </div>
-        <div class="card">
-          <h2 class="section-title">Sessions</h2>
-          <ul>
-            {"".join(f"<li>{_html_escape(str(item.get('session_id', '')))} - {_html_escape(str(item.get('principal_name', '')))}</li>" for item in sessions[:10]) or "<li>No sessions recorded</li>"}
-          </ul>
+          <div class="section-kicker">Control-plane references only. Secret values stay outside the service.</div>
+          <ul>{secret_items}</ul>
         </div>
       </div>
-      <div class="footer">Use /api/{_html_escape(api_version)}/admin/* and /api/{_html_escape(api_version)}/auth/sessions for the hosted control-plane admin surface.</div>
+
+      <div class="card" style="margin-top:1rem;">
+        <h2 class="section-title">Operator Actions</h2>
+        <div class="section-kicker">Use the versioned API surface to provision, ingest, and monitor.</div>
+        <ul>
+          <li><span class="mono">/api/{_html_escape(api_version)}/admin/tenants</span> to provision new tenant boundaries.</li>
+          <li><span class="mono">/api/{_html_escape(api_version)}/admin/producer-clients</span> to onboard another CI producer.</li>
+          <li><span class="mono">/api/{_html_escape(api_version)}/events</span> to ingest canonical decision events.</li>
+          <li><span class="mono">/api/{_html_escape(api_version)}/materializations</span> and <span class="mono">/api/{_html_escape(api_version)}/materialization-schedules</span> to inspect scheduled analytics.</li>
+          <li><span class="mono">/api/{_html_escape(api_version)}/overview</span> and <span class="mono">/api/{_html_escape(api_version)}/analytics</span> for automation-friendly reads.</li>
+        </ul>
+      </div>
+
+      <div class="footer">Hosted alpha UX is now centered on onboarding, live intake, and worker health. The next layer should turn these static operator cues into writable forms and deeper repo/service drilldowns.</div>
     </div>
   </body>
 </html>"""
