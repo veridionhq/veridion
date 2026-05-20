@@ -135,14 +135,28 @@ jobs:
             local service_name="$1"
             local container_name="$2"
             local service_json
+            local desired_count
             local current_task_def
+            local current_image
             local task_json
             local rendered_td
             local new_task_def_arn
 
             service_json="$(aws ecs describe-services --region "${AWS_REGION}" --cluster "${HOSTED_ECS_CLUSTER}" --services "${service_name}")"
+            desired_count="$(printf '%s' "${service_json}" | jq -r '.services[0].desiredCount')"
             current_task_def="$(printf '%s' "${service_json}" | jq -r '.services[0].taskDefinition')"
             task_json="$(aws ecs describe-task-definition --region "${AWS_REGION}" --task-definition "${current_task_def}")"
+            current_image="$(printf '%s' "${task_json}" | jq -r --arg container "${container_name}" '.taskDefinition.containerDefinitions[] | select(.name == $container) | .image')"
+
+            if [[ "${current_image}" == "${IMAGE_URI}" ]]; then
+              echo "${service_name} already serves ${IMAGE_URI}; skipping task definition registration"
+              return 0
+            fi
+
+            if [[ "${service_name}" == "${HOSTED_ECS_WORKER_SERVICE}" && "${desired_count}" == "0" ]]; then
+              echo "${service_name} is scaled to zero; skipping deploy update"
+              return 0
+            fi
 
             rendered_td="$(printf '%s' "${task_json}" | jq --arg image "${IMAGE_URI}" --arg container "${container_name}" '
               .taskDefinition
