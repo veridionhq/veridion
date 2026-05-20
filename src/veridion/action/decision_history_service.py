@@ -688,6 +688,7 @@ def _build_overview_payload(
     jwt_config: JWTAuthConfig,
     analytics: dict[str, object] | None = None,
 ) -> dict[str, object] | None:
+    jwt_config = jwt_config or JWTAuthConfig()
     analytics_payload = analytics or _analyze_request(
         history_paths=history_paths,
         tenants=tenants,
