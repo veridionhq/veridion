@@ -15,13 +15,14 @@ from veridion.action.athena_queries import build_athena_query_pack
 from veridion.action.decision_history_config import HistoryToken
 from veridion.action.decision_history import _load_history, analyze_history_events
 
-STORE_SCHEMA_VERSION = 5
+STORE_SCHEMA_VERSION = 6
 STORE_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("001_decision_events", "core decision event history"),
     ("002_materialization_runs", "managed materialization tracking"),
     ("003_catalog_models", "tenant org/project/service catalog"),
     ("004_control_plane_state", "tenant admin, secret, session, and producer state"),
     ("005_producer_client_audit", "producer token lifecycle metadata and audit trail"),
+    ("006_control_plane_audit", "operator auth and admin action audit trail"),
 )
 
 
@@ -332,6 +333,26 @@ class HistoryStore:
         raise NotImplementedError
 
     def resolve_producer_token(self, *, token: str) -> HistoryToken | None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def record_control_plane_audit(
+        self,
+        *,
+        tenant_id: str,
+        actor: str,
+        action: str,
+        target_kind: str,
+        target_id: str,
+        detail: str,
+    ) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def list_control_plane_audit(
+        self,
+        *,
+        tenant_id: str,
+        limit: int = 20,
+    ) -> tuple[dict[str, str], ...]:  # pragma: no cover - interface
         raise NotImplementedError
 
     def load_events(
@@ -712,6 +733,23 @@ class SQLiteHistoryStore(HistoryStore):
             (tenant_id, client_id, limit),
         ).fetchall()
         return tuple(_producer_client_audit_row(row) for row in rows)
+
+    def record_control_plane_audit(self, *, tenant_id: str, actor: str, action: str, target_kind: str, target_id: str, detail: str) -> None:
+        self.connection.execute(
+            """
+            INSERT INTO control_plane_audit
+            (tenant_id, actor, action, target_kind, target_id, detail, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (tenant_id, actor, action, target_kind, target_id, detail),
+        )
+
+    def list_control_plane_audit(self, *, tenant_id: str, limit: int = 20) -> tuple[dict[str, str], ...]:
+        rows = self.connection.execute(
+            "SELECT tenant_id, actor, action, target_kind, target_id, detail, created_at FROM control_plane_audit WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?",
+            (tenant_id, limit),
+        ).fetchall()
+        return tuple(_control_plane_audit_row(row) for row in rows)
 
     def resolve_producer_token(self, *, token: str) -> HistoryToken | None:
         row = self.connection.execute(
@@ -1161,6 +1199,26 @@ class PostgresHistoryStore(HistoryStore):
             rows = cursor.fetchall()
         return tuple(_producer_client_audit_row(row) for row in rows)
 
+    def record_control_plane_audit(self, *, tenant_id: str, actor: str, action: str, target_kind: str, target_id: str, detail: str) -> None:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO control_plane_audit
+                (tenant_id, actor, action, target_kind, target_id, detail, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                """,
+                (tenant_id, actor, action, target_kind, target_id, detail),
+            )
+
+    def list_control_plane_audit(self, *, tenant_id: str, limit: int = 20) -> tuple[dict[str, str], ...]:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT tenant_id, actor, action, target_kind, target_id, detail, created_at FROM control_plane_audit WHERE tenant_id = %s ORDER BY created_at DESC LIMIT %s",
+                (tenant_id, limit),
+            )
+            rows = cursor.fetchall()
+        return tuple(_control_plane_audit_row(row) for row in rows)
+
     def resolve_producer_token(self, *, token: str) -> HistoryToken | None:
         with self.connection.cursor() as cursor:
             cursor.execute(
@@ -1372,6 +1430,19 @@ def _apply_sqlite_migrations(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS control_plane_audit (
+            tenant_id TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            action TEXT NOT NULL,
+            target_kind TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            detail TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
 
 def _apply_postgres_migrations(connection) -> None:
     with connection.cursor() as cursor:
@@ -1539,6 +1610,19 @@ def _apply_postgres_migrations(connection) -> None:
                 client_id TEXT NOT NULL,
                 action TEXT NOT NULL,
                 actor TEXT NOT NULL,
+                detail TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS control_plane_audit (
+                tenant_id TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                action TEXT NOT NULL,
+                target_kind TEXT NOT NULL,
+                target_id TEXT NOT NULL,
                 detail TEXT NOT NULL,
                 created_at TEXT NOT NULL
             )
@@ -1866,6 +1950,42 @@ def list_producer_client_audit(
         return store.list_producer_client_audit(tenant_id=tenant_id, client_id=client_id, limit=limit)
 
 
+def record_control_plane_audit(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str,
+    actor: str,
+    action: str,
+    target_kind: str,
+    target_id: str,
+    detail: str,
+) -> None:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        store.record_control_plane_audit(
+            tenant_id=tenant_id,
+            actor=actor,
+            action=action,
+            target_kind=target_kind,
+            target_id=target_id,
+            detail=detail,
+        )
+        store.commit()
+
+
+def list_control_plane_audit(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str,
+    limit: int = 20,
+) -> tuple[dict[str, str], ...]:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        return store.list_control_plane_audit(tenant_id=tenant_id, limit=limit)
+
+
 def list_producer_clients(
     *,
     sqlite_path: str | Path = "",
@@ -2097,6 +2217,18 @@ def _producer_client_audit_row(row: tuple[object, ...]) -> dict[str, str]:
         "actor": str(row[3]),
         "detail": str(row[4]),
         "created_at": str(row[5]),
+    }
+
+
+def _control_plane_audit_row(row: tuple[object, ...]) -> dict[str, str]:
+    return {
+        "tenant_id": str(row[0]),
+        "actor": str(row[1]),
+        "action": str(row[2]),
+        "target_kind": str(row[3]),
+        "target_id": str(row[4]),
+        "detail": str(row[5]),
+        "created_at": str(row[6]),
     }
 
 

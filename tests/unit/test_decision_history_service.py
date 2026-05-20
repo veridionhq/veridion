@@ -211,6 +211,7 @@ def test_decision_history_service_app_login_uses_session_cookie(tmp_path) -> Non
     assert "veridion_app_bearer=" in cookie_header
     assert app_status == 200
     assert "Onboarding Checklist" in app_payload["html"]
+    assert "Control Plane Audit" in app_payload["html"]
 
 
 def test_decision_history_service_uses_sqlite_store_and_scoped_tokens(tmp_path) -> None:
@@ -713,6 +714,9 @@ def test_decision_history_service_admin_and_session_surfaces(tmp_path) -> None:
     assert "Auth Hardening" in app["html"]
     assert "Operator Observability" in app["html"]
     assert "Provision Second Tenant" in app["html"]
+    assert "Role Model" in app["html"]
+    assert "Recovery Playbooks" in app["html"]
+    assert "Control Plane Audit" in app["html"]
     assert "First hosted decision received." in connected["html"]
     assert "Recover With Fresh Token" in connected["html"]
     assert "Open repository page" in connected["html"]
@@ -835,6 +839,8 @@ def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path)
     assert "Provision Second Tenant" in connect_app["html"]
     assert "Troubleshoot Missing Events" in connect_app["html"]
     assert "Rotate the producer to reveal a fresh token" in connect_app["html"]
+    assert "Auth Recovery" in connect_app["html"]
+    assert "Role Model" in connect_app["html"]
     assert clients_status == 200
     assert clients["data"]["producer_clients"][0]["status"] == "revoked"
     assert clients["data"]["producer_clients"][0]["last_issued_at"]

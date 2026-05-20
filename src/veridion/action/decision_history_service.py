@@ -28,11 +28,13 @@ from veridion.action.decision_history_store import (
     create_service_session,
     get_history_store_status,
     list_catalog_models,
+    list_control_plane_audit,
     list_managed_tenants,
     list_materialization_runs,
     list_producer_client_audit,
     list_producer_clients,
     list_provider_secret_refs,
+    record_control_plane_audit,
     list_service_sessions,
     list_service_users,
     open_history_store,
@@ -47,6 +49,7 @@ from veridion.action.history_identity import jwt_auth_enabled, resolve_bearer_id
 
 API_VERSION = "v1"
 APP_SESSION_COOKIE = "veridion_app_bearer"
+APP_SESSION_ID_COOKIE = "veridion_app_session_id"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -640,27 +643,43 @@ def _cookie_value(headers: dict[str, str], name: str) -> str:
     return morsel.value.strip() if morsel is not None and morsel.value else ""
 
 
-def _session_cookie_header(*, token: str, secure: bool) -> str:
+def _named_cookie_header(*, name: str, value: str, secure: bool) -> str:
     cookie = SimpleCookie()
-    cookie[APP_SESSION_COOKIE] = token
-    cookie[APP_SESSION_COOKIE]["path"] = "/"
-    cookie[APP_SESSION_COOKIE]["httponly"] = True
-    cookie[APP_SESSION_COOKIE]["samesite"] = "Lax"
+    cookie[name] = value
+    cookie[name]["path"] = "/"
+    cookie[name]["httponly"] = True
+    cookie[name]["samesite"] = "Lax"
     if secure:
-        cookie[APP_SESSION_COOKIE]["secure"] = True
+        cookie[name]["secure"] = True
+    return cookie.output(header="").strip()
+
+
+def _session_cookie_header(*, token: str, secure: bool) -> str:
+    return _named_cookie_header(name=APP_SESSION_COOKIE, value=token, secure=secure)
+
+
+def _session_id_cookie_header(*, session_id: str, secure: bool) -> str:
+    return _named_cookie_header(name=APP_SESSION_ID_COOKIE, value=session_id, secure=secure)
+
+
+def _clear_named_cookie_header(*, name: str, secure: bool) -> str:
+    cookie = SimpleCookie()
+    cookie[name] = ""
+    cookie[name]["path"] = "/"
+    cookie[name]["httponly"] = True
+    cookie[name]["samesite"] = "Lax"
+    cookie[name]["max-age"] = 0
+    if secure:
+        cookie[name]["secure"] = True
     return cookie.output(header="").strip()
 
 
 def _clear_session_cookie_header(*, secure: bool) -> str:
-    cookie = SimpleCookie()
-    cookie[APP_SESSION_COOKIE] = ""
-    cookie[APP_SESSION_COOKIE]["path"] = "/"
-    cookie[APP_SESSION_COOKIE]["httponly"] = True
-    cookie[APP_SESSION_COOKIE]["samesite"] = "Lax"
-    cookie[APP_SESSION_COOKIE]["max-age"] = 0
-    if secure:
-        cookie[APP_SESSION_COOKIE]["secure"] = True
-    return cookie.output(header="").strip()
+    return _clear_named_cookie_header(name=APP_SESSION_COOKIE, secure=secure)
+
+
+def _clear_session_id_cookie_header(*, secure: bool) -> str:
+    return _clear_named_cookie_header(name=APP_SESSION_ID_COOKIE, secure=secure)
 
 
 def _analyze_request(
@@ -775,6 +794,37 @@ def _authorize_request(
     return (None, scoped)
 
 
+def _resolve_browser_session_identity(
+    *,
+    headers: dict[str, str],
+    auth_tokens: tuple[str, ...],
+    scoped_tokens: dict[str, HistoryToken],
+    jwt_config: JWTAuthConfig,
+    trusted_header_auth: TrustedHeaderAuthConfig,
+    sqlite_path: str,
+    store_dsn: str,
+) -> HistoryToken | None:
+    authz, identity = _authorize_request(
+        headers=headers,
+        auth_tokens=auth_tokens,
+        scoped_tokens=scoped_tokens,
+        jwt_config=jwt_config,
+        trusted_header_auth=trusted_header_auth,
+        sqlite_path=sqlite_path,
+        store_dsn=store_dsn,
+        tenant_id="",
+        path="/app",
+        method="GET",
+    )
+    if identity is not None:
+        return identity
+    if authz is None:
+        return None
+    if authz[0] == 403 and isinstance(authz[1], dict) and authz[1].get("error") == "tenant_scope_required":
+        return identity
+    return None
+
+
 def _build_overview_payload(
     *,
     history_paths: tuple[str, ...],
@@ -860,6 +910,7 @@ def _build_overview_payload(
             "provider_secrets": list(list_provider_secret_refs(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id)) if (sqlite_path or store_dsn) and tenant_id else [],
             "producer_clients": list(list_producer_clients(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id)) if (sqlite_path or store_dsn) and tenant_id else [],
             "sessions": list(list_service_sessions(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id)) if (sqlite_path or store_dsn) and tenant_id else [],
+            "control_audit": list(list_control_plane_audit(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id, limit=20)) if (sqlite_path or store_dsn) and tenant_id else [],
         },
     }
     admin_payload = overview.get("admin", {}) if isinstance(overview.get("admin"), dict) else {}
@@ -908,6 +959,26 @@ def _handle_post_request(
         )
     if path == "/app/logout":
         secure_cookie = (headers.get("X-Forwarded-Proto", "") or headers.get("x-forwarded-proto", "")).strip().lower() == "https"
+        browser_identity = _resolve_browser_session_identity(
+            headers=headers,
+            auth_tokens=auth_tokens,
+            scoped_tokens=scoped_tokens,
+            jwt_config=jwt_config,
+            trusted_header_auth=trusted_header_auth,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+        )
+        logout_tenant = browser_identity.tenants[0] if browser_identity and browser_identity.tenants else ""
+        _record_control_audit(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=logout_tenant,
+            actor=_audit_actor(browser_identity),
+            action="browser_logout",
+            target_kind="browser_session",
+            target_id=_cookie_value(headers, APP_SESSION_ID_COOKIE) or "session",
+            detail="browser session cleared",
+        )
         return (
             200,
             {
@@ -956,6 +1027,16 @@ def _handle_post_request(
             organization_name=_body_string(payload, "organization_name") or tenant_id,
             status=_body_string(payload, "status") or "active",
         )
+        _record_control_audit(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=tenant_id,
+            actor=_audit_actor(scoped_token),
+            action="tenant_provisioned",
+            target_kind="tenant",
+            target_id=tenant_id,
+            detail=f"status={_body_string(payload, 'status') or 'active'}",
+        )
         return (201, {"status": "created", "tenant_id": tenant_id})
     if path == "/admin/users":
         try:
@@ -978,6 +1059,16 @@ def _handle_post_request(
             roles_csv=_body_string(payload, "roles_csv") or "reader",
             status=_body_string(payload, "status") or "active",
         )
+        _record_control_audit(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=tenant_id,
+            actor=_audit_actor(scoped_token),
+            action="service_user_upserted",
+            target_kind="service_user",
+            target_id=user_id,
+            detail=f"roles={_body_string(payload, 'roles_csv') or 'reader'};status={_body_string(payload, 'status') or 'active'}",
+        )
         return (201, {"status": "created", "tenant": tenant_id, "user_id": user_id})
     if path == "/admin/provider-secrets":
         try:
@@ -999,6 +1090,16 @@ def _handle_post_request(
             secret_ref=_body_string(payload, "secret_ref"),
             description=_body_string(payload, "description"),
         )
+        _record_control_audit(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=tenant_id,
+            actor=_audit_actor(scoped_token),
+            action="provider_secret_upserted",
+            target_kind="provider_secret",
+            target_id=secret_name,
+            detail=f"provider={_body_string(payload, 'provider')}",
+        )
         return (201, {"status": "created", "tenant": tenant_id, "secret_name": secret_name})
     if path == "/admin/producer-clients":
         try:
@@ -1019,6 +1120,16 @@ def _handle_post_request(
             display_name=_body_string(payload, "display_name") or client_id,
             roles_csv=_body_string(payload, "roles_csv") or "ingestor",
             status=_body_string(payload, "status") or "active",
+        )
+        _record_control_audit(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=tenant_id,
+            actor=_audit_actor(scoped_token),
+            action="producer_created",
+            target_kind="producer_client",
+            target_id=client_id,
+            detail=f"roles={_body_string(payload, 'roles_csv') or 'ingestor'};status={_body_string(payload, 'status') or 'active'}",
         )
         return (201, {"status": "created", "producer_client": result})
     if path == "/auth/sessions":
@@ -1045,6 +1156,16 @@ def _handle_post_request(
             roles_csv=",".join(scoped_token.roles),
             status="active",
             expires_at=_body_string(payload, "expires_at"),
+        )
+        _record_control_audit(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=tenant_id,
+            actor=_audit_actor(scoped_token),
+            action="session_created",
+            target_kind="service_session",
+            target_id=session_id,
+            detail=f"auth_type={scoped_token.auth_type or 'bearer'};roles={','.join(scoped_token.roles)}",
         )
         return (201, {"status": "created", "session_id": session_id, "tenant": tenant_id})
     if path == "/events":
@@ -1074,6 +1195,16 @@ def _handle_post_request(
             store_dsn=store_dsn,
             tenant_id=tenant_id,
             event=event,
+        )
+        _record_control_audit(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=tenant_id,
+            actor=_audit_actor(scoped_token),
+            action="event_ingested",
+            target_kind="repository",
+            target_id=repository.strip(),
+            detail=f"auth_type={scoped_token.auth_type if scoped_token is not None else 'anonymous'}",
         )
         return (202, {"status": "accepted", "tenant": tenant_id, "repository": repository})
     if path != "/materializations":
@@ -1124,6 +1255,16 @@ def _handle_post_request(
     runs = ()
     if sqlite_path or store_dsn:
         runs = list_materialization_runs(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id, limit=1)
+    _record_control_audit(
+        sqlite_path=sqlite_path,
+        store_dsn=store_dsn,
+        tenant_id=tenant_id,
+        actor=_audit_actor(scoped_token),
+        action="materialization_created",
+        target_kind="materialization_run",
+        target_id=str(runs[0].get("run_id", "")) if runs else str(run_dir),
+        detail=f"schedule_id={schedule_id or 'manual'}",
+    )
     return (
         201,
         {
@@ -1154,6 +1295,7 @@ def _handle_app_post_request(
 ) -> tuple[int, dict[str, object]]:
     payload = _parse_form_payload(body, headers)
     action = _body_string(payload, "action")
+    actor = _audit_actor(scoped_token)
     tenant_id = _body_string(payload, "tenant_id") or _body_string(payload, "tenant") or (
         scoped_token.tenants[0] if scoped_token and scoped_token.tenants else ""
     )
@@ -1179,6 +1321,16 @@ def _handle_app_post_request(
             tenant_id = target_tenant
             message = f"Tenant {target_tenant} provisioned."
             level = "success"
+            _record_control_audit(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=target_tenant,
+                actor=actor,
+                action="tenant_provisioned",
+                target_kind="tenant",
+                target_id=target_tenant,
+                detail=f"status={_body_string(payload, 'status') or 'active'}",
+            )
     elif action == "create_producer_client":
         client_id = _body_string(payload, "client_id")
         if not tenant_id or not client_id:
@@ -1198,6 +1350,16 @@ def _handle_app_post_request(
             level = "success"
             payload["revealed_token"] = created.get("token", "")
             payload["revealed_token_prefix"] = created.get("token_prefix", "")
+            _record_control_audit(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="producer_created",
+                target_kind="producer_client",
+                target_id=client_id,
+                detail=f"roles={_body_string(payload, 'roles_csv') or 'ingestor'};status={_body_string(payload, 'status') or 'active'}",
+            )
     elif action == "rotate_producer_client":
         client_id = _body_string(payload, "client_id")
         existing = _producer_client_record(
@@ -1224,6 +1386,16 @@ def _handle_app_post_request(
             level = "success"
             payload["revealed_token"] = created.get("token", "")
             payload["revealed_token_prefix"] = created.get("token_prefix", "")
+            _record_control_audit(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="producer_rotated",
+                target_kind="producer_client",
+                target_id=client_id,
+                detail="fresh token issued",
+            )
     elif action == "revoke_producer_client":
         client_id = _body_string(payload, "client_id")
         if not tenant_id or not client_id:
@@ -1239,6 +1411,16 @@ def _handle_app_post_request(
             )
             message = f"Producer client {client_id} revoked."
             level = "success"
+            _record_control_audit(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="producer_revoked",
+                target_kind="producer_client",
+                target_id=client_id,
+                detail="status=revoked",
+            )
     elif action == "create_service_user":
         user_id = _body_string(payload, "user_id")
         if not tenant_id or not user_id:
@@ -1257,6 +1439,16 @@ def _handle_app_post_request(
             )
             message = f"Service user {user_id} created."
             level = "success"
+            _record_control_audit(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="service_user_upserted",
+                target_kind="service_user",
+                target_id=user_id,
+                detail=f"roles={_body_string(payload, 'roles_csv') or 'reader'};status={_body_string(payload, 'status') or 'active'}",
+            )
     elif action == "create_provider_secret":
         secret_name = _body_string(payload, "secret_name")
         if not tenant_id or not secret_name:
@@ -1274,6 +1466,16 @@ def _handle_app_post_request(
             )
             message = f"Provider secret reference {secret_name} stored."
             level = "success"
+            _record_control_audit(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="provider_secret_upserted",
+                target_kind="provider_secret",
+                target_id=secret_name,
+                detail=f"provider={_body_string(payload, 'provider')}",
+            )
     elif action == "connect_repository":
         repository = _body_string(payload, "repository")
         service_id = _body_string(payload, "service")
@@ -1289,6 +1491,16 @@ def _handle_app_post_request(
             payload["producer_client"] = selected_client
             message = f"Repository onboarding plan prepared for {repository}."
             level = "success"
+            _record_control_audit(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                actor=actor,
+                action="repository_onboarding_prepared",
+                target_kind="repository",
+                target_id=repository,
+                detail=f"service={service_id};producer={selected_client}",
+            )
     else:
         message = f"Unsupported app action: {action}"
         level = "error"
@@ -1429,6 +1641,16 @@ def _handle_app_login_post_request(
         next_path = _app_path_with_tenant(route="/app", api_version=api_version, tenant_id=tenant_id)
         authz = None
     if authz is not None or identity is None:
+        _record_control_audit(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=tenant_id,
+            actor="anonymous",
+            action="browser_login_failed",
+            target_kind="browser_session",
+            target_id=tenant_id or "session",
+            detail="token or tenant scope rejected",
+        )
         return (
             200,
             {
@@ -1443,6 +1665,31 @@ def _handle_app_login_post_request(
             },
         )
     secure_cookie = (headers.get("X-Forwarded-Proto", "") or headers.get("x-forwarded-proto", "")).strip().lower() == "https"
+    session_id = f"app-{_materialization_run_id()}"
+    session_tenant = tenant_id or (identity.tenants[0] if identity.tenants else "")
+    if session_tenant:
+        create_service_session(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            session_id=session_id,
+            tenant_id=session_tenant,
+            user_id=identity.token_id or identity.principal_name or "browser-user",
+            principal_name=identity.principal_name or identity.token_id or "browser-user",
+            auth_type=identity.auth_type or "bearer",
+            roles_csv=",".join(identity.roles),
+            status="active",
+            expires_at="",
+        )
+        _record_control_audit(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=session_tenant,
+            actor=_audit_actor(identity),
+            action="browser_login_succeeded",
+            target_kind="browser_session",
+            target_id=session_id,
+            detail=f"auth_type={identity.auth_type or 'bearer'};roles={','.join(identity.roles)}",
+        )
     redirect_html = render_app_login_html(
         api_version=api_version,
         tenant_id=tenant_id,
@@ -1480,6 +1727,37 @@ def _body_string(payload: dict[str, object], key: str) -> str:
 
 def _producer_client_record(producer_clients: list[dict[str, object]], client_id: str) -> dict[str, object] | None:
     return next((item for item in producer_clients if str(item.get("client_id", "")) == client_id), None)
+
+
+def _audit_actor(identity: HistoryToken | None) -> str:
+    if identity is None:
+        return "anonymous"
+    return identity.principal_name or identity.token_id or identity.token or "anonymous"
+
+
+def _record_control_audit(
+    *,
+    sqlite_path: str,
+    store_dsn: str,
+    tenant_id: str,
+    actor: str,
+    action: str,
+    target_kind: str,
+    target_id: str,
+    detail: str,
+) -> None:
+    if not (sqlite_path or store_dsn) or not tenant_id:
+        return
+    record_control_plane_audit(
+        sqlite_path=sqlite_path,
+        store_dsn=store_dsn,
+        tenant_id=tenant_id,
+        actor=actor,
+        action=action,
+        target_kind=target_kind,
+        target_id=target_id,
+        detail=detail,
+    )
 
 
 def _repository_event_state(
@@ -2337,6 +2615,7 @@ def render_app_html(
     provider_secrets = admin.get("provider_secrets", []) if isinstance(admin, dict) else []
     producer_clients = admin.get("producer_clients", []) if isinstance(admin, dict) else []
     sessions = admin.get("sessions", []) if isinstance(admin, dict) else []
+    control_audit = admin.get("control_audit", []) if isinstance(admin, dict) else []
     organizations = catalog.get("organizations", []) if isinstance(catalog, dict) else []
     projects = catalog.get("projects", []) if isinstance(catalog, dict) else []
     services = catalog.get("services", []) if isinstance(catalog, dict) else []
@@ -2511,6 +2790,22 @@ def render_app_html(
         f"<li><strong>{_html_escape(str(item.get('action', '')))}</strong><div class='hint'>{_html_escape(str(item.get('created_at', '')))} / {_html_escape(str(item.get('detail', '')))}</div></li>"
         for item in producer_audit[:6]
     ) or "<li>No producer audit events recorded</li>"
+    control_audit_items = "".join(
+        f"<li><strong>{_html_escape(str(item.get('action', '')))}</strong><div class='hint'>{_html_escape(str(item.get('created_at', '')))} / {_html_escape(str(item.get('actor', '')))} / {_html_escape(str(item.get('target_kind', '')))}:{_html_escape(str(item.get('target_id', '')))}</div><div class='hint'>{_html_escape(str(item.get('detail', '')))}</div></li>"
+        for item in control_audit[:8]
+    ) or "<li>No control-plane audit events recorded yet.</li>"
+    service_user_roles = sorted({role.strip() for item in service_users for role in str(item.get("roles_csv", "")).split(",") if role.strip()})
+    producer_roles = sorted({role.strip() for item in producer_clients for role in str(item.get("roles_csv", "")).split(",") if role.strip()})
+    role_coverage_items = (
+        "<ul>"
+        f"<li><strong>Service user roles</strong><div class='hint'>{_html_escape(', '.join(service_user_roles) or 'none')}</div></li>"
+        f"<li><strong>Producer roles</strong><div class='hint'>{_html_escape(', '.join(producer_roles) or 'none')}</div></li>"
+        "<li><strong>Reader</strong><div class='hint'>Can inspect analytics, repo pages, materializations, and sessions.</div></li>"
+        "<li><strong>Materializer</strong><div class='hint'>Can create materializations and operate scheduled warehouse exports.</div></li>"
+        "<li><strong>Admin</strong><div class='hint'>Can provision tenants, users, providers, and producers.</div></li>"
+        "<li><strong>Ingestor</strong><div class='hint'>Can POST decision events from CI producers.</div></li>"
+        "</ul>"
+    )
     selected_producer_html = "<p class='hint'>Select a producer client to inspect last-used and rotation history.</p>"
     if isinstance(selected_producer, dict):
         selected_producer_html = (
@@ -2533,6 +2828,24 @@ def render_app_html(
         f"<li><strong>JWKS URL</strong><div class='hint mono'>{jwks_url}</div></li>"
         f"<li><strong>OIDC discovery</strong><div class='hint mono'>{oidc_discovery_url}</div></li>"
         f"<li><strong>Next auth move</strong><div class='hint'>{_html_escape(str(observability.get('auth_recommendation', 'Use the browser sign-in flow and move operators onto JWT when ready.')) if isinstance(observability, dict) else 'Use the browser sign-in flow and move operators onto JWT when ready.')}</div></li>"
+        "</ul>"
+    )
+    ingest_recovery = (
+        "<ul>"
+        f"<li><strong>Current ingest health</strong><div class='hint'>{_html_escape(str(observability.get('ingest_status', 'unknown')) if isinstance(observability, dict) else 'unknown')}</div></li>"
+        "<li><strong>Recovery</strong><div class='hint'>If no event lands, verify repo vars/secrets, rerun CI once, then rotate the producer if the repo still shows no decision.</div></li>"
+        "</ul>"
+    )
+    auth_recovery = (
+        "<ul>"
+        f"<li><strong>Current auth mode</strong><div class='hint'>{_html_escape(str(observability.get('auth_mode', 'unknown')) if isinstance(observability, dict) else 'unknown')}</div></li>"
+        "<li><strong>Recovery</strong><div class='hint'>If browser sign-in fails, retry with the raw token value, confirm tenant scope, then switch operators to JWT or OIDC-backed sign-in when available.</div></li>"
+        "</ul>"
+    )
+    scheduler_recovery = (
+        "<ul>"
+        f"<li><strong>Current scheduler health</strong><div class='hint'>{_html_escape(str(observability.get('scheduler_status', 'unknown')) if isinstance(observability, dict) else 'unknown')}</div></li>"
+        "<li><strong>Recovery</strong><div class='hint'>If materializations stop appearing, check the latest run in this app first, then inspect worker logs and schedule config.</div></li>"
         "</ul>"
     )
     ui = payload.get("ui", {}) if isinstance(payload, dict) else {}
@@ -3021,6 +3334,27 @@ def render_app_html(
         </div>
       </div>
 
+      <div class="triple">
+        <div class="card">
+          <h2 class="section-title">Role Model</h2>
+          <div class="section-kicker">Make it obvious which identities should hold which permissions.</div>
+          {role_coverage_items}
+        </div>
+        <div class="card">
+          <h2 class="section-title">Auth Recovery</h2>
+          <div class="section-kicker">Use this when operators cannot get into the hosted app cleanly.</div>
+          {auth_recovery}
+        </div>
+        <div class="card">
+          <h2 class="section-title">Recovery Playbooks</h2>
+          <div class="section-kicker">Fast remediation paths for the most common hosted failures.</div>
+          <div class="two-col">
+            <div>{ingest_recovery}</div>
+            <div>{scheduler_recovery}</div>
+          </div>
+        </div>
+      </div>
+
       <div class="section-grid">
         <div class="card">
           <h2 class="section-title">Recent Repository Decisions</h2>
@@ -3136,6 +3470,24 @@ def render_app_html(
           <h2 class="section-title">Provider Secret References</h2>
           <div class="section-kicker">Control-plane references only. Secret values stay outside the service.</div>
           <ul>{secret_items}</ul>
+        </div>
+      </div>
+
+      <div class="two-col" style="margin-top:1rem;">
+        <div class="card">
+          <h2 class="section-title">Control Plane Audit</h2>
+          <div class="section-kicker">Operator, auth, and admin actions that changed hosted state.</div>
+          <ul>{control_audit_items}</ul>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Operator Trust Notes</h2>
+          <div class="section-kicker">What to trust, and what to verify next, before broadening usage.</div>
+          <ul>
+            <li><strong>Auth</strong><div class="hint">Prefer JWT or OIDC-backed sign-in for named operators. Keep bootstrap bearer for break-glass only.</div></li>
+            <li><strong>Ingestion</strong><div class="hint">Trust the app once a decision lands for the expected repository and the producer audit shows recent use.</div></li>
+            <li><strong>Scheduler</strong><div class="hint">Trust scheduled exports once recent materializations keep advancing without manual POSTs.</div></li>
+            <li><strong>Recovery</strong><div class="hint">Use rotate, revoke, and the audit surfaces here before leaving for AWS tooling.</div></li>
+          </ul>
         </div>
       </div>
 
