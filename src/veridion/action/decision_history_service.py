@@ -1177,6 +1177,10 @@ def render_app_html(
         f"<li>{_html_escape(str(item.get('name', '')))} <span class='count'>{_html_escape(str(item.get('count', '0')))}</span></li>"
         for item in blocking_categories[:6]
     ) or "<li>No blocking categories recorded</li>"
+    managed_tenant_items = "".join(
+        f"<li><strong>{_html_escape(str(item.get('tenant_id', '')))}</strong><div class='hint'>{_html_escape(str(item.get('status', 'active')))}</div></li>"
+        for item in managed_tenants[:6]
+    ) or "<li>No tenants provisioned</li>"
     secret_items = "".join(
         f"<li><strong>{_html_escape(str(item.get('provider', '')))}</strong> / {_html_escape(str(item.get('secret_name', '')))}<div class='hint mono'>{_html_escape(str(item.get('secret_ref', '')))}</div></li>"
         for item in provider_secrets[:6]
@@ -1323,13 +1327,10 @@ def render_app_html(
           <ul>{materialization_items}</ul>
         </div>
         <div class="card">
-          <h2 class="section-title">Catalog Inventory</h2>
-          <ul>
-            <li><strong>Managed tenants</strong><span class="count">{len(managed_tenants)}</span></li>
-            <li><strong>Organizations</strong><span class="count">{len(organizations)}</span></li>
-            <li><strong>Projects</strong><span class="count">{len(projects)}</span></li>
-            <li><strong>Services</strong><span class="count">{len(services)}</span></li>
-          </ul>
+          <h2 class="section-title">Managed Tenants</h2>
+          <div class="section-kicker">Tenant boundaries provisioned inside the hosted control plane.</div>
+          <ul>{managed_tenant_items}</ul>
+          <div class="section-kicker" style="margin-top:1rem;">Catalog inventory: {len(organizations)} orgs / {len(projects)} projects / {len(services)} services.</div>
         </div>
       </div>
 
