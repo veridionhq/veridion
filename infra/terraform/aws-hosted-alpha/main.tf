@@ -132,6 +132,41 @@ resource "aws_ecr_repository" "app" {
   name  = local.ecr_repo_name
 }
 
+resource "aws_ecr_lifecycle_policy" "app" {
+  count      = var.create_ecr_repository ? 1 : 0
+  repository = aws_ecr_repository.app[0].name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Expire untagged images after the configured retention window"
+        selection = {
+          tagStatus   = "untagged"
+          countType   = "sinceImagePushed"
+          countUnit   = "days"
+          countNumber = var.ecr_expire_untagged_after_days
+        }
+        action = {
+          type = "expire"
+        }
+      },
+      {
+        rulePriority = 2
+        description  = "Keep only the newest tagged images"
+        selection = {
+          tagStatus   = "tagged"
+          countType   = "imageCountMoreThan"
+          countNumber = var.ecr_keep_tagged_image_count
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
+}
+
 resource "aws_iam_openid_connect_provider" "github_actions" {
   count = var.create_github_actions_oidc_role && var.create_github_oidc_provider ? 1 : 0
 

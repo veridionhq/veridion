@@ -72,6 +72,16 @@ variable "ecr_repository_name" {
   default = ""
 }
 
+variable "ecr_expire_untagged_after_days" {
+  type    = number
+  default = 1
+}
+
+variable "ecr_keep_tagged_image_count" {
+  type    = number
+  default = 40
+}
+
 variable "create_network" {
   type    = bool
   default = true
