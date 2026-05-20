@@ -188,7 +188,7 @@ def test_decision_history_service_app_login_uses_session_cookie(tmp_path) -> Non
     login_status, login_payload = resolve_history_request(
         "/api/v1/app/login",
         method="POST",
-        body="tenant_id=acme&token=admin&next=%2Fapi%2Fv1%2Fapp%3Ftenant%3Dacme",
+        body="tenant_id=&token=Bearer%20admin&next=%2Fapi%2Fv1%2Fapp",
         history_paths=(),
         sqlite_path=str(sqlite_path),
         headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -205,6 +205,7 @@ def test_decision_history_service_app_login_uses_session_cookie(tmp_path) -> Non
 
     assert login_page_status == 200
     assert "Sign In To The Control Plane" in login_page["html"]
+    assert "Operator Token Or JWT" in login_page["html"]
     assert login_status == 200
     assert "Signed in. Redirecting to the hosted app." in login_payload["html"]
     assert "veridion_app_bearer=" in cookie_header
@@ -832,16 +833,19 @@ def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path)
     assert "VERIDION_HOSTED_INGESTOR_TOKEN" in connect_app["html"]
     assert "Operator Observability" in connect_app["html"]
     assert "Provision Second Tenant" in connect_app["html"]
+    assert "Troubleshoot Missing Events" in connect_app["html"]
     assert clients_status == 200
     assert clients["data"]["producer_clients"][0]["status"] == "revoked"
     assert clients["data"]["producer_clients"][0]["last_issued_at"]
     assert repo_page_status == 200
     assert "Dedicated repository page" in repo_page["data"]["html"]
     assert "History Summary" in repo_page["data"]["html"]
+    assert "Decision Guidance" in repo_page["data"]["html"]
     assert "Recent Decisions" in repo_page["data"]["html"]
     assert "Next action" in repo_page["data"]["html"]
     assert service_page_status == 200
     assert "Dedicated service page" in service_page["data"]["html"]
+    assert "Decision Guidance" in service_page["data"]["html"]
     assert "Recent Decisions" in service_page["data"]["html"]
 
 

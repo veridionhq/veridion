@@ -1346,6 +1346,7 @@ def _handle_app_post_request(
                 _body_string(payload, "producer_client"),
             ),
             repository_analytics=(overview.get("detail") or {}).get("repository_analytics") if isinstance(overview.get("detail"), dict) else None,
+            tenant_analytics=overview.get("analytics") if isinstance(overview.get("analytics"), dict) else None,
         ),
     }
     return (
@@ -1377,6 +1378,8 @@ def _handle_app_login_post_request(
     payload = _parse_form_payload(body, headers)
     token = _body_string(payload, "token")
     tenant_id = _body_string(payload, "tenant_id")
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
     next_path = _body_string(payload, "next") or _app_path_with_tenant(route="/app", api_version=api_version, tenant_id=tenant_id)
     parsed_next = urlparse(next_path)
     next_params = _query_params(parsed_next.query)
@@ -1414,6 +1417,17 @@ def _handle_app_login_post_request(
         path="/app",
         method="GET",
     )
+    if (
+        authz is not None
+        and authz[0] == 403
+        and isinstance(authz[1], dict)
+        and authz[1].get("error") == "tenant_scope_required"
+        and identity is not None
+        and identity.tenants
+    ):
+        tenant_id = identity.tenants[0]
+        next_path = _app_path_with_tenant(route="/app", api_version=api_version, tenant_id=tenant_id)
+        authz = None
     if authz is not None or identity is None:
         return (
             200,
@@ -1423,7 +1437,7 @@ def _handle_app_login_post_request(
                     tenant_id=tenant_id,
                     next_path=next_path,
                     service_name=service_name,
-                    message="Sign-in failed. Check the bearer token and tenant scope.",
+                    message="Sign-in failed. Use the raw operator token or JWT. If the token is tenant-scoped, make sure the tenant is selected.",
                     level="error",
                 )
             },
@@ -1472,6 +1486,8 @@ def _repository_event_state(
     analytics_payload: object,
     *,
     repository: str,
+    producer_record: dict[str, object] | None = None,
+    tenant_analytics: dict[str, object] | None = None,
 ) -> dict[str, object]:
     repository_value = repository.strip()
     if not repository_value or not isinstance(analytics_payload, dict):
@@ -1480,12 +1496,58 @@ def _repository_event_state(
             "events": 0,
             "state": "idle",
             "message": "Select a repository to generate onboarding instructions and wait for the first hosted decision.",
+            "next_step": "Pick the repository and service you want to wire first.",
+            "troubleshooting": (
+                "Choose a repository, service, and producer client before generating onboarding instructions.",
+            ),
         }
+    producer_status = str((producer_record or {}).get("status", "")).strip().lower()
+    producer_client = str((producer_record or {}).get("client_id", "")).strip()
+    token_prefix = str((producer_record or {}).get("token_prefix", "")).strip()
     summary = analytics_payload.get("summary", {}) if isinstance(analytics_payload.get("summary"), dict) else {}
     latest_rollout = (analytics_payload.get("policy_rollout") or {}) if isinstance(analytics_payload.get("policy_rollout"), dict) else {}
     latest_items = latest_rollout.get("latest_by_repository", []) if isinstance(latest_rollout.get("latest_by_repository"), list) else []
     latest_item = next((item for item in latest_items if str(item.get("repository", "")) == repository_value), None)
+    tenant_latest_rollout = (tenant_analytics.get("policy_rollout") or {}) if isinstance(tenant_analytics, dict) else {}
+    tenant_latest_items = tenant_latest_rollout.get("latest_by_repository", []) if isinstance(tenant_latest_rollout.get("latest_by_repository"), list) else []
+    tenant_latest_item = tenant_latest_items[0] if tenant_latest_items and isinstance(tenant_latest_items[0], dict) else {}
     events = int(summary.get("events", 0) or 0)
+    if not producer_client:
+        return {
+            "repository": repository_value,
+            "events": events,
+            "state": "blocked",
+            "message": "No producer client is selected for this repository yet.",
+            "next_step": "Create or choose an active producer before copying the repo secrets and variables.",
+            "troubleshooting": (
+                "Create a producer client in the dashboard first.",
+                "Use a dedicated producer per repo or team so rotation stays isolated.",
+            ),
+        }
+    if producer_status == "revoked":
+        return {
+            "repository": repository_value,
+            "events": events,
+            "state": "blocked",
+            "message": f"Producer {producer_client} is revoked, so CI cannot authenticate to ingest events.",
+            "next_step": "Rotate the producer to reveal a fresh token and replace the repository secret.",
+            "troubleshooting": (
+                "Use Recover With Fresh Token to issue a new ingestor token.",
+                "Update VERIDION_HOSTED_INGESTOR_TOKEN in the repository secrets before rerunning CI.",
+            ),
+        }
+    if not token_prefix:
+        return {
+            "repository": repository_value,
+            "events": events,
+            "state": "blocked",
+            "message": f"Producer {producer_client} exists, but no token prefix is stored for it yet.",
+            "next_step": "Rotate the producer or create a new one so you can reveal a token once and store it in CI.",
+            "troubleshooting": (
+                "Reveal a fresh token from the control plane.",
+                "Set VERIDION_HOSTED_INGESTOR_TOKEN before running the workflow again.",
+            ),
+        }
     if events > 0 and isinstance(latest_item, dict):
         verdict = str(latest_item.get("verdict", "")).strip() or "decision received"
         gate_status = str(latest_item.get("gate_status", "")).strip() or "unknown"
@@ -1495,12 +1557,37 @@ def _repository_event_state(
             "state": "success",
             "message": f"First hosted decision received. Latest verdict: {verdict} / gate: {gate_status}.",
             "latest": latest_item,
+            "next_step": "Open the repository page to review the latest decision and operator guidance.",
+            "troubleshooting": (
+                "Confirm the service metadata and ownership fields are accurate.",
+                "Use the focused repository page to decide whether rollout can continue.",
+            ),
+        }
+    tenant_latest_repository = str(tenant_latest_item.get("repository", "")).strip()
+    if tenant_latest_repository and tenant_latest_repository != repository_value:
+        return {
+            "repository": repository_value,
+            "events": events,
+            "state": "warning",
+            "message": f"This tenant is ingesting events, but the latest one landed for {tenant_latest_repository}, not {repository_value}.",
+            "next_step": "Check the workflow variables and the repository field inside the event payload before rerunning CI.",
+            "troubleshooting": (
+                "Verify VERIDION_HOSTED_TENANT_ID points at this tenant.",
+                "Verify the emitted event uses the expected repository slug.",
+                "Compare the generated workflow snippet against the repo currently sending events.",
+            ),
         }
     return {
         "repository": repository_value,
         "events": events,
         "state": "waiting",
         "message": "Listening for the first hosted decision event from CI. Run the workflow once after setting the variables and secret.",
+        "next_step": "Run the onboarding workflow once after setting the repository variables and secret.",
+        "troubleshooting": (
+            "Confirm VERIDION_HOSTED_SERVICE_URL and VERIDION_HOSTED_TENANT_ID are set as repo variables.",
+            "Confirm VERIDION_HOSTED_INGESTOR_TOKEN is set as a repo secret.",
+            "If CI runs but no event lands, rotate the producer and replace the secret.",
+        ),
     }
 
 
@@ -1520,6 +1607,7 @@ def _build_repo_connect_payload(
     revealed_token: str,
     producer_record: dict[str, object] | None,
     repository_analytics: dict[str, object] | None,
+    tenant_analytics: dict[str, object] | None,
 ) -> dict[str, object]:
     repo_value = repository.strip()
     service_value = service_id.strip()
@@ -1592,7 +1680,12 @@ def _build_repo_connect_payload(
         "producer_status": producer_status,
         "token_prefix": token_prefix,
         "needs_rotation": producer_status == "revoked" or (not revealed_token and not token_prefix),
-        "event_state": _repository_event_state(repository_analytics, repository=repo_value),
+        "event_state": _repository_event_state(
+            repository_analytics,
+            repository=repo_value,
+            producer_record=producer_record,
+            tenant_analytics=tenant_analytics,
+        ),
         "vars": {
             "VERIDION_HOSTED_SERVICE_URL": service_url_value,
             "VERIDION_HOSTED_TENANT_ID": tenant_id,
@@ -1659,6 +1752,50 @@ def _event_next_action(event: dict[str, object]) -> str:
     return "Ready to continue rollout and monitor follow-on automation."
 
 
+def _event_blocking_categories(event: dict[str, object]) -> tuple[str, ...]:
+    decision = event.get("decision")
+    if isinstance(decision, dict) and isinstance(decision.get("blocking_categories"), list):
+        return tuple(str(item).strip() for item in decision.get("blocking_categories", []) if str(item).strip())
+    return ()
+
+
+def _event_approval_summary(event: dict[str, object]) -> str:
+    automation = event.get("automation")
+    if not isinstance(automation, dict):
+        return "Approval state unknown."
+    approval_status = str(automation.get("approval_gate_status", "")).strip() or "unknown"
+    unsatisfied = automation.get("unsatisfied_approvals")
+    if isinstance(unsatisfied, list) and unsatisfied:
+        return f"{approval_status} / pending: {', '.join(str(item) for item in unsatisfied[:3])}"
+    return approval_status
+
+
+def _event_pack_summary(event: dict[str, object]) -> str:
+    policy = event.get("policy")
+    if not isinstance(policy, dict):
+        return "unknown"
+    pack_id = str(policy.get("pack_id", "")).strip() or "unknown"
+    pack_version = str(policy.get("pack_version", "")).strip() or "unversioned"
+    rollout_stage = str(policy.get("rollout_stage", "")).strip() or "unspecified"
+    return f"{pack_id} / {pack_version} / {rollout_stage}"
+
+
+def _event_detail_html(event: dict[str, object] | None, *, empty_message: str) -> str:
+    if not isinstance(event, dict) or not event:
+        return f"<p class='hint'>{_html_escape(empty_message)}</p>"
+    blocking_categories = _event_blocking_categories(event)
+    blocking_text = ", ".join(blocking_categories[:4]) if blocking_categories else "none"
+    return (
+        "<ul>"
+        f"<li><strong>Current Decision</strong><div class='hint'>{_html_escape(_event_verdict(event) or 'unknown')} / {_html_escape(_event_gate_status(event) or 'unknown')}</div></li>"
+        f"<li><strong>Approval State</strong><div class='hint'>{_html_escape(_event_approval_summary(event))}</div></li>"
+        f"<li><strong>Policy Pack</strong><div class='hint'>{_html_escape(_event_pack_summary(event))}</div></li>"
+        f"<li><strong>Blocking Categories</strong><div class='hint'>{_html_escape(blocking_text)}</div></li>"
+        f"<li><strong>Next Action</strong><div class='hint'>{_html_escape(_event_next_action(event))}</div></li>"
+        "</ul>"
+    )
+
+
 def _observability_payload(
     *,
     analytics: dict[str, object],
@@ -1684,6 +1821,10 @@ def _observability_payload(
         else {}
     )
     auth_mode = "jwt-browser-session" if bool(service.get("jwt_enabled")) else "bearer-browser-session"
+    oidc_ready = bool(str(service.get("oidc_discovery_url", "")).strip())
+    ingest_status = "healthy" if str(latest_event.get("generated_at", "")).strip() else "missing"
+    scheduler_status = "healthy" if str(latest_materialization.get("generated_at", "")).strip() else "missing"
+    producer_status = "healthy" if str(latest_producer_use.get("last_used_at", "")).strip() else "idle"
     return {
         "last_event_at": str(latest_event.get("generated_at", "")),
         "last_event_repo": str(latest_event.get("repository", "")),
@@ -1694,6 +1835,10 @@ def _observability_payload(
         "last_producer_use_at": str(latest_producer_use.get("last_used_at", "")),
         "last_producer_client": str(latest_producer_use.get("client_id", "")),
         "auth_mode": auth_mode,
+        "ingest_status": ingest_status,
+        "scheduler_status": scheduler_status,
+        "producer_status": producer_status,
+        "auth_recommendation": "OIDC or JWT-backed operator sign-in is ready." if oidc_ready or bool(service.get("jwt_enabled")) else "Use the bearer session bridge for now, then move operators onto JWT or OIDC.",
     }
 
 
@@ -2019,6 +2164,11 @@ def render_app_login_html(
         if auto_redirect
         else ""
     )
+    tenant_hint = (
+        "Use the tenant slug tied to your operator access. Tenant-scoped identities are redirected into that tenant automatically after sign-in."
+        if tenant_id
+        else "If your operator token only belongs to one tenant, the app will route you there after sign-in."
+    )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -2136,18 +2286,20 @@ def render_app_login_html(
     <div class="card">
       <div class="eyebrow">Control Plane</div>
       <h1>Sign In To The Control Plane</h1>
-      <div class="sub">Enter your tenant and bearer token to open a browser session.</div>
+      <div class="sub">Use your operator token or JWT to open a browser session for the hosted control plane.</div>
       {flash}
       <form method="post" action="/api/{_html_escape(api_version)}/app/login">
         <label>Tenant
           <input name="tenant_id" value="{_html_escape(tenant_id)}" placeholder="acme" autocomplete="username">
         </label>
-        <label>Bearer Token
+        <label>Operator Token Or JWT
           <input name="token" type="password" placeholder="veridion-&hellip;" autocomplete="current-password">
         </label>
         <input type="hidden" name="next" value="{_html_escape(next_path)}">
         <button class="btn-primary" type="submit">Sign In</button>
       </form>
+      <p class="hint">{_html_escape(tenant_hint)}</p>
+      <p class="hint">This form accepts the raw token value. If you paste a value that starts with <span class="mono">Bearer </span>, the app strips the prefix for you.</p>
       <hr class="divider">
       <div class="actions">
         <a href="/api/{_html_escape(api_version)}/app?tenant={_html_escape(tenant_id)}">Back to app</a>
@@ -2287,6 +2439,8 @@ def render_app_html(
     service_recent_events = detail.get("service_recent_events", []) if isinstance(detail, dict) else []
     producer_audit = detail.get("producer_audit", []) if isinstance(detail, dict) else []
     observability = payload.get("observability", {}) if isinstance(payload, dict) else {}
+    latest_repository_event = repository_recent_events[0] if repository_recent_events and isinstance(repository_recent_events[0], dict) else None
+    latest_service_event = service_recent_events[0] if service_recent_events and isinstance(service_recent_events[0], dict) else None
     selected_producer = next((item for item in producer_clients if str(item.get("client_id", "")) == selected_producer_client), None)
     if selected_producer is None and producer_clients:
         selected_producer = producer_clients[0]
@@ -2378,6 +2532,7 @@ def render_app_html(
         f"<li><strong>Audience</strong><div class='hint mono'>{jwt_audience}</div></li>"
         f"<li><strong>JWKS URL</strong><div class='hint mono'>{jwks_url}</div></li>"
         f"<li><strong>OIDC discovery</strong><div class='hint mono'>{oidc_discovery_url}</div></li>"
+        f"<li><strong>Next auth move</strong><div class='hint'>{_html_escape(str(observability.get('auth_recommendation', 'Use the browser sign-in flow and move operators onto JWT when ready.')) if isinstance(observability, dict) else 'Use the browser sign-in flow and move operators onto JWT when ready.')}</div></li>"
         "</ul>"
     )
     ui = payload.get("ui", {}) if isinstance(payload, dict) else {}
@@ -2398,6 +2553,8 @@ def render_app_html(
     repo_event_state = repo_connect.get("event_state", {}) if isinstance(repo_connect, dict) and isinstance(repo_connect.get("event_state"), dict) else {}
     repo_event_status = str(repo_event_state.get("state", "idle")) if isinstance(repo_event_state, dict) else "idle"
     repo_event_message = _html_escape(str(repo_event_state.get("message", ""))) if isinstance(repo_event_state, dict) else ""
+    repo_event_next_step = _html_escape(str(repo_event_state.get("next_step", ""))) if isinstance(repo_event_state, dict) else ""
+    repo_event_troubleshooting = repo_event_state.get("troubleshooting", ()) if isinstance(repo_event_state, dict) else ()
     repo_workflow_yaml = _html_escape(str(repo_connect.get("workflow_yaml", ""))) if isinstance(repo_connect, dict) else ""
     repo_secret_value = str(repo_connect.get("secret_value", "")).strip() if isinstance(repo_connect, dict) else ""
     repo_secret_state = (
@@ -2443,19 +2600,26 @@ def render_app_html(
                 f"<a href='/api/{_html_escape(api_version)}/app/service?tenant={tenant_query}&service={quote(str(repo_connect.get('service_id', '')))}'>Open service page</a></div>"
                 f"</div>"
             )
+        troubleshooting_items = "".join(
+            f"<li>{_html_escape(str(item))}</li>"
+            for item in repo_event_troubleshooting
+        ) or "<li>Run the workflow once and return here to check for the first hosted decision.</li>"
+        state_label = "success" if repo_event_status == "success" else "warning" if repo_event_status in {"waiting", "warning"} else "error" if repo_event_status == "blocked" else "info"
         repo_connect_steps = (
-            f"<div class='flash {'success' if repo_event_status == 'success' else 'warning' if repo_event_status == 'waiting' else 'info'}'>"
+            f"<div class='flash {state_label}'>"
             f"<strong>{_html_escape(repo_connect_repository)}</strong><div class='hint'>{repo_event_message}</div></div>"
             "<ul>"
             f"<li><strong>Repository</strong><div class='hint mono'>{_html_escape(repo_connect_repository)}</div></li>"
             f"<li><strong>Service</strong><div class='hint mono'>{_html_escape(str(repo_connect.get('service_id', '')))}</div></li>"
             f"<li><strong>Owner / team</strong><div class='hint'>{_html_escape(str(repo_connect.get('service_owner', '')))} / {_html_escape(str(repo_connect.get('owning_team', '')))}</div></li>"
             f"<li><strong>Criticality</strong><div class='hint'>{_html_escape(str(repo_connect.get('service_criticality', '')))}</div></li>"
+            f"<li><strong>Next step</strong><div class='hint'>{repo_event_next_step}</div></li>"
             f"<li><strong>Vars</strong><div class='hint mono'>VERIDION_HOSTED_SERVICE_URL={_html_escape(str(((repo_connect.get('vars') or {}).get('VERIDION_HOSTED_SERVICE_URL', '')) if isinstance(repo_connect.get('vars'), dict) else ''))}</div><div class='hint mono'>VERIDION_HOSTED_TENANT_ID={_html_escape(str(((repo_connect.get('vars') or {}).get('VERIDION_HOSTED_TENANT_ID', '')) if isinstance(repo_connect.get('vars'), dict) else ''))}</div></li>"
             f"<li><strong>Secret</strong><div class='hint mono'>{_html_escape(str(repo_connect.get('secret_name', 'VERIDION_HOSTED_INGESTOR_TOKEN')))}</div></li>"
             "</ul>"
             f"{success_actions}"
             f"{repo_secret_state}"
+            f"<div class='card' style='margin-top:1rem; background:var(--panel-alt,#f7faf8);'><h3 class='section-title'>Troubleshoot Missing Events</h3><ul>{troubleshooting_items}</ul></div>"
             f"<pre>{repo_workflow_yaml}</pre>"
         )
     repository_event_count = sum(1 for item in latest_by_repository if str(item.get("repository", "")) == str(repository_detail.get("repository", ""))) if isinstance(repository_detail, dict) else 0
@@ -2483,9 +2647,9 @@ def render_app_html(
         onboarding_empty = "<div class='flash warning'>No decision events have landed for this tenant yet. Create or copy a producer token below, wire it into CI, and then return here to verify the first event.</div>"
     observability_items = "".join(
         (
-            f"<li><strong>Last ingest</strong><div class='hint'>{_html_escape(str(observability.get('last_event_at', '') or 'n/a'))} / {_html_escape(str(observability.get('last_event_repo', '') or 'none'))}</div></li>"
-            f"<li><strong>Last scheduler run</strong><div class='hint'>{_html_escape(str(observability.get('last_materialization_at', '') or 'n/a'))} / {_html_escape(str(observability.get('last_materialization_run', '') or 'none'))}</div></li>"
-            f"<li><strong>Last producer use</strong><div class='hint'>{_html_escape(str(observability.get('last_producer_use_at', '') or 'never'))} / {_html_escape(str(observability.get('last_producer_client', '') or 'none'))}</div></li>"
+            f"<li><strong>Ingest health</strong><div class='hint'>{_html_escape(str(observability.get('ingest_status', 'unknown')))} / {_html_escape(str(observability.get('last_event_at', '') or 'n/a'))} / {_html_escape(str(observability.get('last_event_repo', '') or 'none'))}</div></li>"
+            f"<li><strong>Scheduler health</strong><div class='hint'>{_html_escape(str(observability.get('scheduler_status', 'unknown')))} / {_html_escape(str(observability.get('last_materialization_at', '') or 'n/a'))} / {_html_escape(str(observability.get('last_materialization_run', '') or 'none'))}</div></li>"
+            f"<li><strong>Producer health</strong><div class='hint'>{_html_escape(str(observability.get('producer_status', 'unknown')))} / {_html_escape(str(observability.get('last_producer_use_at', '') or 'never'))} / {_html_escape(str(observability.get('last_producer_client', '') or 'none'))}</div></li>"
             f"<li><strong>Last operator session</strong><div class='hint'>{_html_escape(str(observability.get('last_session_at', '') or 'n/a'))} / {_html_escape(str(observability.get('last_session_principal', '') or 'none'))}</div></li>"
         )
         if isinstance(observability, dict)
@@ -2501,6 +2665,14 @@ def render_app_html(
         for item in service_recent_events[:4]
         if isinstance(item, dict)
     ) or "<li>No recent decisions for this service yet.</li>"
+    repository_decision_guidance = _event_detail_html(
+        latest_repository_event,
+        empty_message="No decision has landed for this repository yet. Run the onboarding workflow to generate the first event.",
+    )
+    service_decision_guidance = _event_detail_html(
+        latest_service_event,
+        empty_message="No repository-linked decision has landed for this service yet. Send the next CI event to unlock service guidance.",
+    )
     return f"""<!doctype html>
 <html lang="en">
   <head>
@@ -2835,7 +3007,7 @@ def render_app_html(
           <h2 class="section-title">Auth Hardening</h2>
           <div class="section-kicker">Move operators off bootstrap tokens and onto JWT/JWKS-backed identities.</div>
           {auth_hardening_items}
-          <div class="hint" style="margin-top:.75rem;">Keep the bootstrap bearer only for break-glass admin access. Day-to-day operators should arrive through JWT or OIDC-backed sessions.</div>
+          <div class="hint" style="margin-top:.75rem;">Browser sign-in accepts the raw token or JWT value. The form also strips a pasted <span class="mono">Bearer </span> prefix automatically.</div>
         </div>
         <div class="card">
           <h2 class="section-title">Current Control Signals</h2>
@@ -2920,6 +3092,7 @@ def render_app_html(
             <div>
               <h3 class="section-title" style="margin-top:0;">Selected Repository</h3>
               {repository_detail_html}
+              <div class='card' style='margin-top:1rem; background:var(--panel-alt,#f7faf8);'><h3 class='section-title'>Decision Guidance</h3>{repository_decision_guidance}</div>
               {_detail_analytics_html(repository_analytics, empty_message="No repository history slice yet. Send more decisions for this repository to unlock trends.")}
               <div class='card' style='margin-top:1rem; background:var(--panel-alt,#f7faf8);'><h3 class='section-title'>Recent Decisions</h3><ul>{repo_recent_event_items}</ul></div>
             </div>
@@ -2936,6 +3109,7 @@ def render_app_html(
             <div>
               <h3 class="section-title" style="margin-top:0;">Selected Service</h3>
               {service_detail_html}
+              <div class='card' style='margin-top:1rem; background:var(--panel-alt,#f7faf8);'><h3 class='section-title'>Decision Guidance</h3>{service_decision_guidance}</div>
               {_detail_analytics_html(service_analytics, empty_message="No service-linked history slice yet. The selected service needs repository-backed decision events.")}
               <div class='card' style='margin-top:1rem; background:var(--panel-alt,#f7faf8);'><h3 class='section-title'>Recent Service Decisions</h3><ul>{service_recent_event_items}</ul></div>
             </div>
@@ -3066,11 +3240,20 @@ def render_focus_page_html(
         focus_meta = "<p class='hint'>No focused selection found.</p>"
 
     focus_recent_events = repository_recent_events if kind == "repository" else service_recent_events
+    focus_latest_event = focus_recent_events[0] if focus_recent_events and isinstance(focus_recent_events[0], dict) else None
     recent_event_items = "".join(
         f"<li><strong>{_html_escape(str(item.get('generated_at', '')))}</strong><div class='hint'>{_html_escape(_event_verdict(item) or 'unknown')} / {_html_escape(_event_gate_status(item) or 'unknown')}<br>{_html_escape(_event_next_action(item))}</div></li>"
         for item in focus_recent_events[:5]
         if isinstance(item, dict)
     ) or "<li>No recent decisions recorded.</li>"
+    focus_decision_guidance = _event_detail_html(
+        focus_latest_event,
+        empty_message=(
+            "No repository decision has landed yet. Finish onboarding and run the workflow once."
+            if kind == "repository"
+            else "No service-linked decision has landed yet. Send the next repository event to unlock guidance."
+        ),
+    )
 
     return f"""<!doctype html>
 <html lang="en">
@@ -3200,6 +3383,10 @@ def render_focus_page_html(
 
       <div class="analytics-grid">
         {_focus_analytics(repository_analytics if kind == 'repository' else service_analytics)}
+        <div class="card">
+          <h2 class="section-title">Decision Guidance</h2>
+          {focus_decision_guidance}
+        </div>
         <div class="card">
           <h2 class="section-title">Recent Decisions</h2>
           <ul>{recent_event_items}</ul>
