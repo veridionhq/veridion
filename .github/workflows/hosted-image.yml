@@ -86,6 +86,51 @@ jobs:
 
           IMAGE_URI="${ECR_REPOSITORY_URL}:${SHA_TAG}"
 
+          wait_for_service_image() {
+            local service_name="$1"
+            local container_name="$2"
+            local expected_image="$3"
+            local deadline
+            local service_json
+            local desired_count
+            local rollout_state
+            local deployed_task_def
+            local deployed_image
+
+            deadline=$((SECONDS + 240))
+            while (( SECONDS < deadline )); do
+              service_json="$(aws ecs describe-services --region "${AWS_REGION}" --cluster "${HOSTED_ECS_CLUSTER}" --services "${service_name}")"
+              desired_count="$(printf '%s' "${service_json}" | jq -r '.services[0].desiredCount')"
+              rollout_state="$(printf '%s' "${service_json}" | jq -r '.services[0].deployments[0].rolloutState')"
+              deployed_task_def="$(printf '%s' "${service_json}" | jq -r '.services[0].taskDefinition')"
+              deployed_image="$(
+                aws ecs describe-task-definition \
+                  --region "${AWS_REGION}" \
+                  --task-definition "${deployed_task_def}" \
+                  | jq -r --arg container "${container_name}" '.taskDefinition.containerDefinitions[] | select(.name == $container) | .image'
+              )"
+
+              if [[ "${deployed_image}" == "${expected_image}" ]]; then
+                if [[ "${desired_count}" == "0" ]]; then
+                  return 0
+                fi
+                if [[ "${rollout_state}" == "COMPLETED" ]]; then
+                  return 0
+                fi
+              fi
+
+              sleep 10
+            done
+
+            echo "deploy verification timed out for ${service_name}"
+            echo "expected image: ${expected_image}"
+            echo "last task definition: ${deployed_task_def}"
+            echo "last deployed image: ${deployed_image}"
+            echo "last rollout state: ${rollout_state}"
+            echo "last desired count: ${desired_count}"
+            exit 1
+          }
+
           deploy_service() {
             local service_name="$1"
             local container_name="$2"
@@ -135,32 +180,7 @@ jobs:
               --cluster "${HOSTED_ECS_CLUSTER}" \
               --service "${service_name}" \
               --task-definition "${new_task_def_arn}"
-
-            aws ecs wait services-stable \
-              --region "${AWS_REGION}" \
-              --cluster "${HOSTED_ECS_CLUSTER}" \
-              --services "${service_name}"
-
-            local deployed_task_def
-            local deployed_image
-            deployed_task_def="$(
-              aws ecs describe-services \
-                --region "${AWS_REGION}" \
-                --cluster "${HOSTED_ECS_CLUSTER}" \
-                --services "${service_name}" \
-                | jq -r '.services[0].taskDefinition'
-            )"
-            deployed_image="$(
-              aws ecs describe-task-definition \
-                --region "${AWS_REGION}" \
-                --task-definition "${deployed_task_def}" \
-                | jq -r --arg container "${container_name}" '.taskDefinition.containerDefinitions[] | select(.name == $container) | .image'
-            )"
-
-            [[ "${deployed_image}" == "${IMAGE_URI}" ]] || {
-              echo "deployed image mismatch for ${service_name}: expected ${IMAGE_URI}, got ${deployed_image}"
-              exit 1
-            }
+            wait_for_service_image "${service_name}" "${container_name}" "${IMAGE_URI}"
           }
 
           deploy_service "${HOSTED_ECS_SERVICE}" "history-service"
