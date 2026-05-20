@@ -150,18 +150,6 @@ resource "aws_ecr_lifecycle_policy" "app" {
         action = {
           type = "expire"
         }
-      },
-      {
-        rulePriority = 2
-        description  = "Keep only the newest tagged images"
-        selection = {
-          tagStatus   = "tagged"
-          countType   = "imageCountMoreThan"
-          countNumber = var.ecr_keep_tagged_image_count
-        }
-        action = {
-          type = "expire"
-        }
       }
     ]
   })

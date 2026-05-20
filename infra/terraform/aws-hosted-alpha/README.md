@@ -122,12 +122,10 @@ ECR cleanup behavior:
 
 - old untagged digests are expected when a mutable alias such as `:alpha` or `:latest` moves to a newer manifest
 - Terraform now applies an ECR lifecycle policy to expire untagged images after `ecr_expire_untagged_after_days`
-- Terraform also keeps only the newest `ecr_keep_tagged_image_count` tagged images
 
 Default lifecycle values:
 
 - `ecr_expire_untagged_after_days = 1`
-- `ecr_keep_tagged_image_count = 40`
 
 4. Scale the ECS services up by setting:
 
