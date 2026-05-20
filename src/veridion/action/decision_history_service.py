@@ -1865,120 +1865,129 @@ def render_app_login_html(
     )
     return f"""<!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{_html_escape(service_name)} · Sign In</title>
-    {redirect_meta}
-    <style>
-      :root {{
-        --panel: #fefdf9;
-        --line: #d5dbd2;
-        --ink: #12231d;
-        --muted: #5d6e65;
-        --accent: #176b52;
-        --accent-dark: #0f4f3b;
-        --danger: #8b2d1f;
-        --danger-soft: #fff1ed;
-      }}
-      * {{ box-sizing: border-box; margin: 0; }}
-      body {{
-        font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
-        background: linear-gradient(160deg, #f5f9f6 0%, #eaf2ec 55%, #e2ede4 100%);
-        color: var(--ink);
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 2rem 1rem;
-      }}
-      .wordmark {{
-        font-size: .9rem;
-        letter-spacing: .18em;
-        text-transform: uppercase;
-        color: var(--accent);
-        margin-bottom: 1.75rem;
-        font-style: italic;
-        opacity: .85;
-      }}
-      .card {{
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 24px;
-        padding: 2.5rem 2.25rem;
-        width: 100%;
-        max-width: 420px;
-        box-shadow: 0 24px 64px rgba(18,35,29,.10), 0 4px 16px rgba(18,35,29,.05);
-      }}
-      h1 {{ font-size: 1.7rem; letter-spacing: -0.03em; margin-bottom: .45rem; line-height: 1.2; }}
-      .subtitle {{ color: var(--muted); font-size: .93rem; line-height: 1.55; margin-bottom: 1.75rem; }}
-      .flash {{ border-radius: 14px; padding: .85rem 1rem; margin-bottom: 1.25rem; border: 1px solid var(--line); font-size: .92rem; line-height: 1.5; }}
-      .flash.success {{ background: #edf8f2; border-color: #b9dccb; color: #15553f; }}
-      .flash.error {{ background: var(--danger-soft); border-color: #f1beb5; color: var(--danger); }}
-      .flash.info {{ background: #eef5ff; border-color: #c7d8ef; color: #214b72; }}
-      form {{ display: grid; gap: 1rem; }}
-      label {{ display: grid; gap: .35rem; font-size: .86rem; color: var(--muted); letter-spacing: .025em; }}
-      input {{
-        width: 100%;
-        border: 1.5px solid var(--line);
-        border-radius: 10px;
-        padding: .8rem .9rem;
-        background: #fff;
-        color: var(--ink);
-        font: inherit;
-        font-size: .97rem;
-        transition: border-color .15s;
-      }}
-      input:focus {{ outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(23,107,82,.10); }}
-      .btn-primary {{
-        border: none;
-        border-radius: 11px;
-        padding: .85rem 1rem;
-        background: var(--accent);
-        color: #fff;
-        font: inherit;
-        font-size: .97rem;
-        font-weight: 700;
-        letter-spacing: .01em;
-        cursor: pointer;
-        margin-top: .25rem;
-        transition: background .15s;
-        width: 100%;
-      }}
-      .btn-primary:hover {{ background: var(--accent-dark); }}
-      .divider {{ border: none; border-top: 1px solid var(--line); margin: 1.5rem 0; }}
-      .actions {{ display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; font-size: .9rem; }}
-      .btn-ghost {{
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: .45rem .9rem;
-        background: transparent;
-        color: var(--muted);
-        font: inherit;
-        font-size: .9rem;
-        cursor: pointer;
-        transition: border-color .15s;
-      }}
-      .btn-ghost:hover {{ border-color: var(--ink); color: var(--ink); }}
-      a {{ color: var(--accent); text-decoration: none; }}
-      a:hover {{ text-decoration: underline; }}
-      .hint {{ color: var(--muted); font-size: .88rem; margin-top: .85rem; line-height: 1.5; }}
-      .mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }}
-    </style>
-  </head>
-  <body>
-    <div class="wordmark">{_html_escape(service_name)}</div>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{_html_escape(service_name)} &middot; Sign In</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  {redirect_meta}
+  <style>
+    *, *::before, *::after {{ box-sizing: border-box; margin: 0; }}
+    body {{
+      font-family: 'Space Grotesk', system-ui, sans-serif;
+      background: #0b0d0a;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+      position: relative;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }}
+    .bg-glow {{
+      position: fixed; top: -200px; left: 50%;
+      transform: translateX(-50%);
+      width: 700px; height: 600px;
+      background: radial-gradient(circle at center, rgba(179,75,24,.22) 0%, transparent 65%);
+      pointer-events: none;
+    }}
+    .bg-grid {{
+      position: fixed; inset: 0;
+      background-image: linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+      background-size: 60px 60px;
+      mask-image: radial-gradient(ellipse 80% 55% at 50% 0%, black 30%, transparent 100%);
+      -webkit-mask-image: radial-gradient(ellipse 80% 55% at 50% 0%, black 30%, transparent 100%);
+      pointer-events: none;
+    }}
+    .wrap {{
+      position: relative; z-index: 1;
+      width: 100%; max-width: 400px;
+      display: flex; flex-direction: column; align-items: center; gap: 1.5rem;
+    }}
+    .brand {{ display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: .92rem; letter-spacing: -.02em; color: rgba(255,255,255,.92); }}
+    .brand-logo {{
+      width: 24px; height: 24px; background: #b34b18; color: #fff;
+      font-size: .7rem; font-weight: 700; border-radius: 5px;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }}
+    .card {{
+      width: 100%; background: #faf7f2;
+      border: 1px solid rgba(24,22,16,.16); border-radius: 16px;
+      padding: 2.25rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,.28), 0 32px 80px rgba(0,0,0,.20);
+      color: #161710;
+    }}
+    .eyebrow {{
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: .65rem; letter-spacing: .13em; text-transform: uppercase;
+      color: #b34b18; margin-bottom: .7rem;
+    }}
+    h1 {{ font-size: 1.55rem; font-weight: 700; letter-spacing: -.028em; line-height: 1.15; color: #161710; margin-bottom: .4rem; }}
+    .sub {{ font-size: .88rem; color: #4b4d45; line-height: 1.6; margin-bottom: 1.5rem; }}
+    .flash {{ border-radius: 8px; padding: .75rem .9rem; margin-bottom: 1rem; font-size: .87rem; line-height: 1.5; border: 1px solid; }}
+    .flash.success {{ background: rgba(22,163,74,.09); border-color: rgba(22,163,74,.25); color: #166534; }}
+    .flash.error {{ background: rgba(220,38,38,.09); border-color: rgba(220,38,38,.25); color: #991b1b; }}
+    .flash.info {{ background: rgba(59,130,246,.09); border-color: rgba(59,130,246,.25); color: #1e3a8a; }}
+    form {{ display: grid; gap: .85rem; }}
+    label {{
+      display: grid; gap: .35rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: .7rem; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: #8b8c84;
+    }}
+    input {{
+      width: 100%; border: 1px solid rgba(24,22,16,.16); border-radius: 8px;
+      padding: .72rem .85rem; background: #fff; color: #161710;
+      font-family: 'Space Grotesk', system-ui, sans-serif; font-size: .93rem;
+      transition: border-color .15s, box-shadow .15s;
+    }}
+    input:focus {{ outline: none; border-color: #b34b18; box-shadow: 0 0 0 3px rgba(179,75,24,.12); }}
+    .btn-primary {{
+      width: 100%; border: none; border-radius: 8px; padding: .78rem 1rem;
+      background: #b34b18; color: #fff;
+      font-family: 'Space Grotesk', system-ui, sans-serif; font-size: .93rem; font-weight: 600;
+      cursor: pointer; margin-top: .4rem; letter-spacing: -.01em;
+      box-shadow: 0 4px 14px rgba(179,75,24,.38);
+      transition: background .15s, transform .12s, box-shadow .12s;
+    }}
+    .btn-primary:hover {{ background: #c05520; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(179,75,24,.50); }}
+    .btn-primary:active {{ transform: translateY(0); }}
+    .divider {{ border: none; border-top: 1px solid rgba(24,22,16,.09); margin: 1.25rem 0; }}
+    .actions {{ display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; font-size: .87rem; }}
+    a {{ color: #b34b18; text-decoration: none; }}
+    a:hover {{ text-decoration: underline; }}
+    .btn-ghost {{
+      border: 1px solid rgba(24,22,16,.16); border-radius: 6px; padding: .38rem .8rem;
+      background: transparent; color: #4b4d45;
+      font-family: 'Space Grotesk', system-ui, sans-serif; font-size: .87rem;
+      cursor: pointer; transition: border-color .15s, color .15s;
+    }}
+    .btn-ghost:hover {{ border-color: #161710; color: #161710; }}
+    .hint {{ font-size: .84rem; color: #8b8c84; margin-top: .75rem; line-height: 1.55; }}
+    .mono {{ font-family: 'IBM Plex Mono', monospace; }}
+  </style>
+</head>
+<body>
+  <div class="bg-glow" aria-hidden="true"></div>
+  <div class="bg-grid" aria-hidden="true"></div>
+  <div class="wrap">
+    <div class="brand">
+      <span class="brand-logo" aria-hidden="true">V</span>
+      {_html_escape(service_name)}
+    </div>
     <div class="card">
+      <div class="eyebrow">Control Plane</div>
       <h1>Sign In To The Control Plane</h1>
-      <div class="subtitle">Enter your tenant and bearer token to open a browser session for the hosted app.</div>
+      <div class="sub">Enter your tenant and bearer token to open a browser session.</div>
       {flash}
       <form method="post" action="/api/{_html_escape(api_version)}/app/login">
         <label>Tenant
           <input name="tenant_id" value="{_html_escape(tenant_id)}" placeholder="acme" autocomplete="username">
         </label>
         <label>Bearer Token
-          <input name="token" type="password" placeholder="veridion-…" autocomplete="current-password">
+          <input name="token" type="password" placeholder="veridion-&hellip;" autocomplete="current-password">
         </label>
         <input type="hidden" name="next" value="{_html_escape(next_path)}">
         <button class="btn-primary" type="submit">Sign In</button>
@@ -1992,7 +2001,8 @@ def render_app_login_html(
       </div>
       {redirect_copy}
     </div>
-  </body>
+  </div>
+</body>
 </html>"""
 
 
@@ -2302,63 +2312,99 @@ def render_app_html(
     if not events:
         onboarding_empty = "<div class='flash warning'>No decision events have landed for this tenant yet. Create or copy a producer token below, wire it into CI, and then return here to verify the first event.</div>"
     return f"""<!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{_html_escape(service_name)} App</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
       :root {{
-        --panel: #fefdf9;
-        --panel-alt: #f7faf8;
-        --line: #d5dbd2;
-        --ink: #12231d;
-        --muted: #5d6e65;
-        --accent: #176b52;
-        --accent-dark: #0f4f3b;
-        --accent-soft: #e4f3ec;
+        --bg: #f0ebe1;
+        --surface: #faf7f2;
+        --surface-alt: #f5f0e8;
+        --line: #ddd6cc;
+        --ink: #161710;
+        --muted: #6b6c64;
+        --accent: #b34b18;
+        --accent-dark: #923c12;
+        --accent-soft: #fdf0ea;
         --warn: #8a5000;
         --warn-soft: #fff8ec;
         --danger: #8b2d1f;
         --danger-soft: #fff1ed;
+        /* legacy aliases for inline styles */
+        --panel: var(--surface);
+        --panel-alt: var(--surface-alt);
       }}
-      * {{ box-sizing: border-box; }}
+      *, *::before, *::after {{ box-sizing: border-box; }}
       body {{
         margin: 0;
-        font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
-        background: linear-gradient(180deg, #f2f6f3 0%, #eaefeb 100%);
+        font-family: 'Space Grotesk', system-ui, sans-serif;
+        background: var(--bg);
         color: var(--ink);
         font-size: 15px;
         line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
       }}
       .shell {{ max-width: 1360px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }}
+
+      /* Top nav */
+      .topnav {{
+        background: #0b0d0a;
+        border-bottom: 1px solid rgba(255,255,255,.06);
+        position: sticky; top: 0; z-index: 100;
+      }}
+      .topnav-inner {{
+        max-width: 1360px; margin: 0 auto;
+        padding: .65rem 1.5rem;
+        display: flex; align-items: center; gap: .75rem;
+      }}
+      .brand-logo {{
+        width: 22px; height: 22px; background: #b34b18; color: #fff;
+        font-size: .65rem; font-weight: 700; border-radius: 4px;
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      }}
+      .brand-name {{ color: rgba(255,255,255,.9); font-weight: 700; font-size: .88rem; letter-spacing: -.02em; }}
+      .topnav-right {{ margin-left: auto; font-size: .72rem; color: rgba(255,255,255,.4); font-family: 'IBM Plex Mono', monospace; }}
 
       /* Hero */
       .hero {{ display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 1.25rem; margin-bottom: 1.25rem; }}
       .hero-card {{
-        background: linear-gradient(140deg, #112b20 0%, #1c4d3a 50%, #275e48 100%);
+        background: #0b0d0a;
         color: #f4f9f6;
         border-radius: 28px;
         padding: 2rem 2rem 1.75rem;
         min-height: 210px;
-        box-shadow: 0 28px 60px rgba(18,35,29,.20);
+        box-shadow: 0 28px 60px rgba(0,0,0,.22);
         display: flex;
         flex-direction: column;
         justify-content: space-between;
+        position: relative; overflow: hidden;
       }}
-      .hero h1 {{ margin: 0 0 .4rem; font-size: 2.1rem; letter-spacing: -0.04em; line-height: 1.15; }}
-      .hero p {{ margin: .4rem 0 0; color: rgba(244,249,246,.72); line-height: 1.55; font-size: .94rem; max-width: 40rem; }}
-      .meta {{ color: rgba(244,249,246,.55); font-size: .82rem; letter-spacing: .015em; margin-bottom: .5rem; }}
+      .hero-card::before {{
+        content: ''; position: absolute; top: -80px; left: 50%;
+        transform: translateX(-50%);
+        width: 500px; height: 320px;
+        background: radial-gradient(circle at center, rgba(179,75,24,.38) 0%, transparent 65%);
+        pointer-events: none;
+      }}
+      .hero h1 {{ margin: 0 0 .4rem; font-size: 2.1rem; letter-spacing: -0.04em; line-height: 1.15; position: relative; }}
+      .hero p {{ margin: .4rem 0 0; color: rgba(244,249,246,.72); line-height: 1.55; font-size: .94rem; max-width: 40rem; position: relative; }}
+      .meta {{ color: rgba(244,249,246,.5); font-size: .75rem; letter-spacing: .02em; margin-bottom: .5rem; font-family: 'IBM Plex Mono', monospace; position: relative; }}
       .hero-side {{ display: grid; gap: 1.25rem; }}
 
       /* Cards */
-      .card {{ background: var(--panel); border: 1px solid var(--line); border-radius: 22px; padding: 1.25rem; box-shadow: 0 6px 20px rgba(18,35,29,.05); }}
-      .callout {{ background: linear-gradient(180deg, #fffcf0 0%, #fefdf8 100%); border-color: #e4d090; }}
+      .card {{ background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 1.25rem; box-shadow: 0 6px 20px rgba(22,23,16,.04); }}
+      .callout {{ background: #fffcf0; border-color: #e4d090; }}
       .callout strong {{ color: var(--warn); }}
 
       /* Metric grid */
       .summary-grid {{ display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 1rem; margin: 1.25rem 0; }}
-      .mini-card {{ background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 1.25rem 1.1rem; box-shadow: 0 4px 12px rgba(18,35,29,.04); }}
-      .label {{ color: var(--muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .1em; font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 600; }}
+      .mini-card {{ background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 1.25rem 1.1rem; box-shadow: 0 4px 12px rgba(22,23,16,.04); }}
+      .label {{ color: var(--muted); font-size: .68rem; text-transform: uppercase; letter-spacing: .1em; font-family: 'IBM Plex Mono', monospace; font-weight: 500; }}
       .value {{ font-size: 2.25rem; font-weight: 700; margin-top: .3rem; line-height: 1; letter-spacing: -0.02em; }}
       .value.small {{ font-size: 1.3rem; line-height: 1.2; }}
 
@@ -2374,38 +2420,38 @@ def render_app_html(
       h3.section-title {{ font-size: .92rem; margin-bottom: .5rem; }}
 
       /* Chips & badges */
-      .pill {{ display: inline-block; padding: .28rem .75rem; border-radius: 999px; background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.22); margin-right: .4rem; margin-bottom: .4rem; font-size: .83rem; }}
-      .status {{ display: inline-flex; align-items: center; margin-left: .45rem; padding: .17rem .5rem; border-radius: 999px; font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 700; }}
+      .pill {{ display: inline-block; padding: .28rem .75rem; border-radius: 999px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18); margin-right: .4rem; margin-bottom: .4rem; font-size: .83rem; position: relative; }}
+      .status {{ display: inline-flex; align-items: center; margin-left: .45rem; padding: .17rem .5rem; border-radius: 999px; font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; font-family: 'IBM Plex Mono', monospace; font-weight: 600; }}
       .status.ready {{ background: var(--accent-soft); color: var(--accent); }}
       .status.todo {{ background: var(--warn-soft); color: var(--warn); }}
 
       /* Utility */
-      .mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; }}
+      .mono {{ font-family: 'IBM Plex Mono', monospace; font-size: .85rem; }}
       ul {{ margin: 0; padding-left: 1.1rem; }}
       li {{ margin: .5rem 0; line-height: 1.45; }}
       .hint {{ color: var(--muted); font-size: .9rem; margin-top: .2rem; line-height: 1.45; }}
-      .count {{ float: right; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88rem; }}
+      .count {{ float: right; color: var(--muted); font-family: 'IBM Plex Mono', monospace; font-size: .88rem; }}
 
       /* Flash */
       .flash {{ border-radius: 16px; padding: 1rem 1.1rem; margin: 1rem 0; border: 1px solid var(--line); font-size: .92rem; line-height: 1.5; }}
-      .flash.success {{ background: #edf8f2; border-color: #b9dccb; color: #15553f; }}
+      .flash.success {{ background: rgba(22,163,74,.07); border-color: rgba(22,163,74,.22); color: #166534; }}
       .flash.warning {{ background: var(--warn-soft); border-color: #e8c97a; color: var(--warn); }}
       .flash.error {{ background: var(--danger-soft); border-color: #f1beb5; color: var(--danger); }}
-      .token-box {{ margin-top: .75rem; padding: .9rem 1rem; background: #fffdf8; border: 1px dashed #d2b276; border-radius: 12px; word-break: break-all; color: #6b4300; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .87rem; }}
+      .token-box {{ margin-top: .75rem; padding: .9rem 1rem; background: #fffdf8; border: 1px dashed #d2b276; border-radius: 12px; word-break: break-all; color: #6b4300; font-family: 'IBM Plex Mono', monospace; font-size: .87rem; }}
 
       /* Table */
       table {{ width: 100%; border-collapse: collapse; }}
       th, td {{ text-align: left; padding: .7rem .6rem; border-top: 1px solid var(--line); font-size: .92rem; vertical-align: top; }}
-      th {{ color: var(--muted); font-weight: 600; border-top: none; font-size: .78rem; text-transform: uppercase; letter-spacing: .07em; font-family: ui-sans-serif, system-ui, sans-serif; }}
+      th {{ color: var(--muted); font-weight: 500; border-top: none; font-size: .68rem; text-transform: uppercase; letter-spacing: .07em; font-family: 'IBM Plex Mono', monospace; }}
 
       /* Forms */
       form {{ display: grid; gap: .75rem; }}
-      label {{ display: grid; gap: .3rem; font-size: .87rem; color: var(--muted); }}
-      input {{ width: 100%; border: 1.5px solid var(--line); border-radius: 10px; padding: .7rem .85rem; background: #fff; color: var(--ink); font: inherit; font-size: .94rem; transition: border-color .15s; }}
-      input:focus {{ outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(23,107,82,.09); }}
+      label {{ display: grid; gap: .3rem; font-size: .68rem; color: var(--muted); font-family: 'IBM Plex Mono', monospace; letter-spacing: .07em; text-transform: uppercase; font-weight: 500; }}
+      input {{ width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: .7rem .85rem; background: #fff; color: var(--ink); font-family: 'Space Grotesk', system-ui, sans-serif; font-size: .94rem; transition: border-color .15s; }}
+      input:focus {{ outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(179,75,24,.1); }}
 
       /* Buttons */
-      button {{ border: none; border-radius: 10px; padding: .65rem 1.1rem; background: var(--accent); color: #fff; font: inherit; font-size: .9rem; font-weight: 700; cursor: pointer; transition: background .15s; }}
+      button {{ border: none; border-radius: 10px; padding: .65rem 1.1rem; background: var(--accent); color: #fff; font-family: 'Space Grotesk', system-ui, sans-serif; font-size: .9rem; font-weight: 600; cursor: pointer; transition: background .15s; }}
       button:hover {{ background: var(--accent-dark); }}
       button[style*="8b2d1f"], button[style*="danger"] {{ background: var(--danger); }}
 
@@ -2414,7 +2460,7 @@ def render_app_html(
       a:hover {{ text-decoration: underline; }}
 
       /* Footer */
-      .footer {{ margin-top: 2rem; color: var(--muted); font-size: .87rem; text-align: center; line-height: 1.6; }}
+      .footer {{ margin-top: 2rem; color: var(--muted); font-size: .82rem; text-align: center; line-height: 1.6; font-family: 'IBM Plex Mono', monospace; }}
 
       @media (max-width: 1080px) {{
         .hero, .section-grid, .triple, .summary-grid, .two-col {{ grid-template-columns: 1fr; }}
@@ -2422,11 +2468,18 @@ def render_app_html(
     </style>
   </head>
   <body>
+    <nav class="topnav" aria-label="Site navigation">
+      <div class="topnav-inner">
+        <span class="brand-logo" aria-hidden="true">V</span>
+        <span class="brand-name">{_html_escape(service_name)}</span>
+        <span class="topnav-right">Tenant&nbsp;{tenant_label}&nbsp;&middot;&nbsp;{_html_escape(principal)}</span>
+      </div>
+    </nav>
     <div class="shell">
       <div class="hero">
         <div class="hero-card">
           <div>
-            <div class="meta">{_html_escape(service_name)} &middot; Tenant {tenant_label} &middot; {_html_escape(principal)}</div>
+            <div class="meta">Tenant {tenant_label}</div>
             <h1>{display_name}</h1>
             <p>Release-control overview for this tenant. Track whether events are arriving, producers are live, and the scheduler is running.</p>
           </div>
@@ -2796,44 +2849,71 @@ def render_focus_page_html(
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{_html_escape(service_name)} &middot; {_html_escape(focus_title)}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
       :root {{
-        --panel: #fefdf9;
-        --line: #d5dbd2;
-        --ink: #12231d;
-        --muted: #5d6e65;
-        --accent: #176b52;
-        --accent-dark: #0f4f3b;
-        --accent-soft: #e4f3ec;
+        --bg: #f0ebe1;
+        --surface: #faf7f2;
+        --line: #ddd6cc;
+        --ink: #161710;
+        --muted: #6b6c64;
+        --accent: #b34b18;
+        --accent-dark: #923c12;
+        --accent-soft: #fdf0ea;
+        /* legacy alias */
+        --panel: var(--surface);
       }}
-      * {{ box-sizing: border-box; margin: 0; }}
+      *, *::before, *::after {{ box-sizing: border-box; margin: 0; }}
       body {{
-        font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
-        background: linear-gradient(180deg, #f2f6f3 0%, #eaefeb 100%);
+        font-family: 'Space Grotesk', system-ui, sans-serif;
+        background: var(--bg);
         color: var(--ink);
         font-size: 15px;
         line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
       }}
+
+      /* Top nav */
+      .topnav {{
+        background: #0b0d0a;
+        border-bottom: 1px solid rgba(255,255,255,.06);
+        position: sticky; top: 0; z-index: 100;
+      }}
+      .topnav-inner {{
+        max-width: 1200px; margin: 0 auto;
+        padding: .65rem 1.5rem;
+        display: flex; align-items: center; gap: .75rem;
+      }}
+      .brand-logo {{
+        width: 22px; height: 22px; background: #b34b18; color: #fff;
+        font-size: .65rem; font-weight: 700; border-radius: 4px;
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      }}
+      .brand-name {{ color: rgba(255,255,255,.9); font-weight: 700; font-size: .88rem; letter-spacing: -.02em; }}
+      .topnav-right {{ margin-left: auto; font-size: .72rem; color: rgba(255,255,255,.4); font-family: 'IBM Plex Mono', monospace; }}
+
       .shell {{ max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }}
 
       /* Breadcrumb */
       .breadcrumb {{ display: flex; align-items: center; gap: .5rem; margin-bottom: 1.5rem; font-size: .86rem; color: var(--muted); }}
       .breadcrumb a {{ color: var(--accent); text-decoration: none; }}
       .breadcrumb a:hover {{ text-decoration: underline; }}
-      .breadcrumb .sep {{ opacity: .5; }}
+      .breadcrumb .sep {{ opacity: .45; }}
 
       /* Header */
       .page-header {{ margin-bottom: 1.5rem; }}
-      .page-kicker {{ font-size: .82rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 600; margin-bottom: .45rem; }}
-      .page-title {{ font-size: 2rem; letter-spacing: -0.035em; line-height: 1.15; }}
-      .page-sub {{ color: var(--muted); font-size: .93rem; margin-top: .35rem; }}
+      .page-kicker {{ font-size: .68rem; text-transform: uppercase; letter-spacing: .12em; color: #b34b18; font-family: 'IBM Plex Mono', monospace; font-weight: 500; margin-bottom: .45rem; }}
+      .page-title {{ font-size: 2rem; letter-spacing: -0.035em; line-height: 1.15; font-weight: 700; }}
+      .page-sub {{ color: var(--muted); font-size: .9rem; margin-top: .35rem; font-family: 'IBM Plex Mono', monospace; }}
 
       /* Cards */
-      .card {{ background: var(--panel); border: 1px solid var(--line); border-radius: 22px; padding: 1.25rem; box-shadow: 0 6px 20px rgba(18,35,29,.05); }}
+      .card {{ background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 1.25rem; box-shadow: 0 6px 20px rgba(22,23,16,.04); }}
       .section-title {{ margin: 0 0 .65rem; font-size: 1rem; font-weight: 700; letter-spacing: -0.015em; }}
       .hint {{ color: var(--muted); font-size: .9rem; margin-top: .2rem; line-height: 1.45; }}
-      .count {{ float: right; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88rem; }}
-      .mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; }}
+      .count {{ float: right; color: var(--muted); font-family: 'IBM Plex Mono', monospace; font-size: .88rem; }}
+      .mono {{ font-family: 'IBM Plex Mono', monospace; font-size: .85rem; }}
 
       /* Lists */
       ul {{ margin: 0; padding-left: 1.1rem; }}
@@ -2852,6 +2932,13 @@ def render_focus_page_html(
     </style>
   </head>
   <body>
+    <nav class="topnav" aria-label="Site navigation">
+      <div class="topnav-inner">
+        <span class="brand-logo" aria-hidden="true">V</span>
+        <span class="brand-name">{_html_escape(service_name)}</span>
+        <span class="topnav-right">Tenant&nbsp;{_html_escape(str(tenant.get('tenant_id', '')) or 'all')}&nbsp;&middot;&nbsp;{_html_escape(principal)}</span>
+      </div>
+    </nav>
     <div class="shell">
       <nav class="breadcrumb">
         <a href="/api/{_html_escape(api_version)}/app?tenant={tenant_value}">{_html_escape(service_name)}</a>
