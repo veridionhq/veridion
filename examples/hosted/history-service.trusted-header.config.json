@@ -1,16 +1,9 @@
 {
-  "service_name": "Veridion Control Plane",
-  "sqlite_path": "/tmp/veridion-history.db",
-  "store_dsn": "",
-  "jwt": {
-    "issuer": "https://issuer.example",
-    "audience": "veridion-history",
-    "shared_secret": "replace-me-with-a-real-jwt-secret",
-    "jwks_path": "",
-    "jwks_url": ""
-  },
+  "service_name": "Veridion Hosted Control Plane",
+  "store_dsn": "postgresql://veridion:veridion@postgres:5432/veridion_history",
+  "materialization_root": "/tmp/veridion-materialized",
   "trusted_headers": {
-    "enabled": false,
+    "enabled": true,
     "shared_secret": "replace-me-with-a-real-proxy-secret",
     "secret_header": "X-Veridion-Auth-Secret",
     "principal_header": "X-Veridion-Principal",
@@ -19,27 +12,12 @@
     "tenants_header": "X-Veridion-Tenants",
     "status_header": "X-Veridion-Status"
   },
-  "tokens": [
-    {
-      "token": "replace-me-with-a-real-shared-token",
-      "token_id": "shared-reader",
-      "principal_name": "shared-reader",
-      "tenants": [
-        "acme",
-        "beta"
-      ],
-      "roles": [
-        "reader"
-      ]
-    }
-  ],
   "schedules": [
     {
       "schedule_id": "nightly-athena",
       "cron": "0 3 * * *",
       "tenants": [
-        "acme",
-        "beta"
+        "acme"
       ],
       "athena_database": "analytics",
       "athena_table": "veridion_decision_events",
@@ -50,11 +28,6 @@
     {
       "tenant_id": "acme",
       "display_name": "Acme Production",
-      "history_paths": []
-    },
-    {
-      "tenant_id": "beta",
-      "display_name": "Beta Production",
       "history_paths": []
     }
   ]

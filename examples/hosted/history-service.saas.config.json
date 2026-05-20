@@ -1,0 +1,38 @@
+{
+  "service_name": "Veridion SaaS Control Plane",
+  "store_dsn": "postgresql://veridion:veridion@postgres:5432/veridion_history",
+  "materialization_root": "/tmp/veridion-materialized",
+  "jwt": {
+    "issuer": "https://auth.example.com/",
+    "audience": "veridion-history",
+    "oidc_discovery_url": "https://auth.example.com/.well-known/openid-configuration"
+  },
+  "tenants": [
+    {
+      "tenant_id": "acme",
+      "display_name": "Acme Production",
+      "history_paths": []
+    },
+    {
+      "tenant_id": "beta",
+      "display_name": "Beta Regulated",
+      "history_paths": []
+    }
+  ],
+  "schedules": [
+    {
+      "schedule_id": "nightly-acme",
+      "cron": "0 3 * * *",
+      "tenants": ["acme"],
+      "athena_database": "analytics",
+      "athena_table": "veridion_decision_events"
+    },
+    {
+      "schedule_id": "nightly-beta",
+      "cron": "30 3 * * *",
+      "tenants": ["beta"],
+      "athena_database": "analytics",
+      "athena_table": "veridion_decision_events"
+    }
+  ]
+}

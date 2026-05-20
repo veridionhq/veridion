@@ -13,15 +13,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build normalized Veridion runtime context from live source payloads")
     parser.add_argument("--output-path", required=True, help="Where to write the normalized runtime JSON")
     parser.add_argument("--incident-path", help="Path to incident source JSON")
-    parser.add_argument("--incident-provider", default="generic", help="Incident source provider: generic, pagerduty, or opsgenie")
+    parser.add_argument("--incident-provider", default="generic", help="Incident source provider: generic, pagerduty, opsgenie, or incident-io")
     parser.add_argument("--freeze-path", help="Path to deployment-freeze source JSON")
     parser.add_argument("--freeze-provider", default="generic", help="Freeze source provider: generic or google-calendar")
     parser.add_argument("--alerts-path", help="Path to alerts source JSON")
-    parser.add_argument("--alerts-provider", default="generic", help="Alerts source provider: generic, datadog, or statuspage")
+    parser.add_argument("--alerts-provider", default="generic", help="Alerts source provider: generic, datadog, statuspage, or cloudwatch")
     parser.add_argument("--canary-path", help="Path to canary-health source JSON")
-    parser.add_argument("--canary-provider", default="generic", help="Canary source provider: generic, argo-rollouts, or spinnaker")
+    parser.add_argument("--canary-provider", default="generic", help="Canary source provider: generic, argo-rollouts, spinnaker, or harness")
     parser.add_argument("--rollback-path", help="Path to rollback-readiness source JSON")
-    parser.add_argument("--rollback-provider", default="generic", help="Rollback source provider: generic, argo-rollouts, or spinnaker")
+    parser.add_argument("--rollback-provider", default="generic", help="Rollback source provider: generic, argo-rollouts, spinnaker, or harness")
     parser.add_argument("--environment", help="Optional normalized environment value")
     parser.add_argument("--deployment-window", help="Optional normalized deployment window")
     parser.add_argument("--public-exposure", help="Optional boolean public exposure override")
@@ -124,6 +124,12 @@ def _incident_state(payload: dict[str, object], *, provider: str) -> dict[str, o
         priority = _normalize_value(data.get("priority"), {"p1", "p2", "p3", "p4", "p5"})
         severity = {"p1": "critical", "p2": "high", "p3": "medium", "p4": "low", "p5": "low"}.get(priority, "")
         return {"active": status == "open", "severity": severity}
+    if provider == "incident-io":
+        incident = _first_object(payload.get("incident")) or payload
+        mode = _normalize_value(incident.get("mode"), {"real", "test"})
+        status = _normalize_value(incident.get("status"), {"active", "closed", "resolved"})
+        severity = _normalize_value(incident.get("severity"), {"low", "medium", "high", "critical"})
+        return {"active": mode == "real" and status == "active", "severity": severity}
     active = _boolish(payload.get("active")) or _status_in(payload.get("status"), {"active", "open", "triggered"})
     severity = _normalize_value(payload.get("severity"), {"low", "medium", "high", "critical"})
     return {"active": active, "severity": severity}
@@ -154,6 +160,14 @@ def _alert_state(payload: dict[str, object], *, provider: str) -> str:
                 return "firing"
             if any(impact in {"minor", "maintenance"} for impact in impacts):
                 return "elevated"
+    if provider == "cloudwatch":
+        alarms = payload.get("MetricAlarms") or payload.get("CompositeAlarms")
+        if isinstance(alarms, list):
+            states = {str(item.get("StateValue", "")).lower() for item in alarms if isinstance(item, dict)}
+            if "alarm" in states:
+                return "firing"
+            if "insufficient_data" in states:
+                return "elevated"
     direct = _normalize_value(payload.get("state"), {"clear", "elevated", "firing"})
     if direct:
         return direct
@@ -183,6 +197,15 @@ def _canary_health(payload: dict[str, object], *, provider: str) -> str:
             return "degraded"
         if status == "succeeded":
             return "healthy"
+    if provider == "harness":
+        stage = _first_object(payload.get("stage")) or payload
+        status = _normalize_value(stage.get("status"), {"success", "running", "failed", "aborted"})
+        if status in {"failed", "aborted"}:
+            return "failing"
+        if status == "running":
+            return "degraded"
+        if status == "success":
+            return "healthy"
     direct = _normalize_value(payload.get("health"), {"healthy", "degraded", "failing"})
     if direct:
         return direct
@@ -203,6 +226,13 @@ def _rollback_viability(payload: dict[str, object], *, provider: str) -> str:
             return "ready"
         if rollback:
             return rollback
+    if provider == "harness":
+        rollback = _first_object(payload.get("rollback")) or payload
+        status = _normalize_value(rollback.get("status"), {"ready", "blocked", "unverified", "verified"})
+        if status == "verified":
+            return "ready"
+        if status:
+            return status
     direct = _normalize_value(payload.get("viability"), {"ready", "unverified", "blocked"})
     if direct:
         return direct

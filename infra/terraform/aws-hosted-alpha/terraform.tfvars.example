@@ -1,0 +1,56 @@
+aws_region         = "us-west-2"
+name               = "veridion-alpha"
+create_network     = true
+create_nat_gateway = false
+vpc_cidr           = "10.42.0.0/16"
+public_subnet_cidrs  = ["10.42.0.0/24", "10.42.1.0/24"]
+private_subnet_cidrs = ["10.42.10.0/24", "10.42.11.0/24"]
+
+create_ecr_repository = true
+ecr_repository_name   = "veridion-alpha"
+container_image_tag   = "alpha"
+github_repository     = "veridionhq/veridion"
+
+db_name     = "veridion_history"
+db_username = "veridion"
+db_password = "replace-me"
+
+jwt_issuer         = "https://auth.example.com/"
+jwt_audience       = "veridion-history"
+jwks_url           = "https://auth.example.com/.well-known/jwks.json"
+oidc_discovery_url = ""
+
+service_tokens = [
+  {
+    token          = "replace-me-with-a-long-random-admin-token"
+    token_id       = "bootstrap-admin"
+    principal_name = "alpha-admin"
+    roles          = ["admin"]
+    tenants        = ["acme"]
+    status         = "active"
+  }
+]
+
+tenants = [
+  {
+    tenant_id    = "acme"
+    display_name = "Acme Production"
+    history_paths = []
+  }
+]
+
+schedules = [
+  {
+    schedule_id                  = "nightly-acme"
+    cron                         = "0 3 * * *"
+    tenants                      = ["acme"]
+    athena_database              = "analytics"
+    athena_table                 = "veridion_decision_events"
+    athena_s3_location_template  = "s3://veridion-alpha-materializations/veridion/events/repo={tenant_id}/"
+  }
+]
+
+service_desired_count = 0
+worker_desired_count  = 0
+ecs_tasks_in_public_subnets = true
+log_retention_in_days = 7

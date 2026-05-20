@@ -1,6 +1,9 @@
+import base64
+import hashlib
+import hmac
 import json
 
-from veridion.action.decision_history_config import HistoryTenant, HistoryToken
+from veridion.action.decision_history_config import HistoryTenant, HistoryToken, JWTAuthConfig, MaterializationSchedule, TrustedHeaderAuthConfig
 from veridion.action.decision_history_store import upsert_history_store
 from veridion.action.decision_history_service import resolve_history_request
 
@@ -39,6 +42,11 @@ def test_decision_history_service_routes_health_and_analytics(tmp_path) -> None:
         "/analytics?repository=acme/service-b",
         history_paths=history_paths,
     )
+    versioned_health_status, versioned_health = resolve_history_request("/api/v1/health", history_paths=history_paths)
+    versioned_analytics_status, versioned_analytics = resolve_history_request(
+        "/api/v1/analytics?repository=acme/service-b",
+        history_paths=history_paths,
+    )
     repositories_status, repositories = resolve_history_request("/repositories", history_paths=history_paths)
 
     assert health_status == 200
@@ -46,6 +54,12 @@ def test_decision_history_service_routes_health_and_analytics(tmp_path) -> None:
     assert analytics_status == 200
     assert analytics["summary"]["events"] == 1
     assert analytics["by_verdict"] == {"NO GO": 1}
+    assert versioned_health_status == 200
+    assert versioned_health["api_version"] == "v1"
+    assert versioned_health["data"]["status"] == "ok"
+    assert versioned_analytics_status == 200
+    assert versioned_analytics["route"] == "/analytics"
+    assert versioned_analytics["data"]["summary"]["events"] == 1
     assert repositories_status == 200
     assert repositories["repositories"] == ["acme/service-a", "acme/service-b"]
 
@@ -136,8 +150,18 @@ def test_decision_history_service_supports_tenants_and_auth(tmp_path) -> None:
         headers={"Authorization": "Bearer scoped"},
         scoped_tokens={"scoped": HistoryToken(token="scoped", tenants=("acme",))},
     )
+    versioned_dashboard_status, versioned_dashboard = resolve_history_request(
+        "/api/v1/dashboard?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        headers={"Authorization": "Bearer scoped"},
+        scoped_tokens={"scoped": HistoryToken(token="scoped", tenants=("acme",))},
+    )
     assert dashboard_status == 200
     assert "<html>" in dashboard["html"]
+    assert "Store Status" in dashboard["html"]
+    assert versioned_dashboard_status == 200
+    assert "<html>" in versioned_dashboard["html"]
 
 
 def test_decision_history_service_uses_sqlite_store_and_scoped_tokens(tmp_path) -> None:
@@ -204,22 +228,41 @@ def test_decision_history_service_enforces_roles_and_tracks_materializations(tmp
             {
                 "sqlite_path": str(sqlite_path),
                 "materialization_root": str(materialization_root),
+                "schedules": [
+                    {
+                        "schedule_id": "nightly",
+                        "cron": "0 3 * * *",
+                        "tenants": ["acme"],
+                        "athena_database": "analytics",
+                        "athena_s3_location_template": "s3://bucket/{tenant_id}/",
+                    }
+                ],
                 "tenants": [{"tenant_id": "acme", "history_paths": []}],
                 "tokens": [
                     {"token": "reader", "tenants": ["acme"], "roles": ["reader"]},
                     {"token": "materializer", "tenants": ["acme"], "roles": ["reader", "materializer"]},
                 ],
             }
-        )
+    )
     )
     tenants = {"acme": HistoryTenant(tenant_id="acme", history_paths=())}
+    schedule_map = {
+        "nightly": MaterializationSchedule(
+            schedule_id="nightly",
+            cron="0 3 * * *",
+            tenants=("acme",),
+            athena_database="analytics",
+            athena_s3_location_template="s3://bucket/{tenant_id}/",
+        )
+    }
 
     reader_post_status, reader_post = resolve_history_request(
         "/materializations",
         method="POST",
-        body=json.dumps({"tenant": "acme", "run_id": "run-3"}),
+        body=json.dumps({"tenant": "acme", "run_id": "run-3", "schedule_id": "nightly"}),
         history_paths=(),
         tenants=tenants,
+        schedules=schedule_map,
         sqlite_path=str(sqlite_path),
         materialization_root=str(materialization_root),
         config_path=str(config_path),
@@ -227,11 +270,12 @@ def test_decision_history_service_enforces_roles_and_tracks_materializations(tmp
         scoped_tokens={"reader": HistoryToken(token="reader", tenants=("acme",), roles=("reader",))},
     )
     create_status, create_payload = resolve_history_request(
-        "/materializations",
+        "/api/v1/materializations",
         method="POST",
-        body=json.dumps({"tenant": "acme", "run_id": "run-3"}),
+        body=json.dumps({"tenant": "acme", "run_id": "run-3", "schedule_id": "nightly"}),
         history_paths=(),
         tenants=tenants,
+        schedules=schedule_map,
         sqlite_path=str(sqlite_path),
         materialization_root=str(materialization_root),
         config_path=str(config_path),
@@ -239,19 +283,382 @@ def test_decision_history_service_enforces_roles_and_tracks_materializations(tmp
         scoped_tokens={"materializer": HistoryToken(token="materializer", tenants=("acme",), roles=("reader", "materializer"))},
     )
     list_status, list_payload = resolve_history_request(
-        "/materializations?tenant=acme",
+        "/api/v1/materializations?tenant=acme",
         history_paths=(),
         tenants=tenants,
+        schedules=schedule_map,
         sqlite_path=str(sqlite_path),
         materialization_root=str(materialization_root),
         config_path=str(config_path),
         headers={"Authorization": "Bearer reader"},
         scoped_tokens={"reader": HistoryToken(token="reader", tenants=("acme",), roles=("reader",))},
     )
+    status_status, status_payload = resolve_history_request(
+        "/api/v1/service/status?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        schedules=schedule_map,
+        sqlite_path=str(sqlite_path),
+        materialization_root=str(materialization_root),
+        config_path=str(config_path),
+        headers={"Authorization": "Bearer reader"},
+        scoped_tokens={"reader": HistoryToken(token="reader", token_id="tok_reader", principal_name="reader-user", tenants=("acme",), roles=("reader",))},
+    )
+    schedules_status, schedules_payload = resolve_history_request(
+        "/api/v1/materialization-schedules",
+        history_paths=(),
+        tenants=tenants,
+        headers={"Authorization": "Bearer reader"},
+        scoped_tokens={"reader": HistoryToken(token="reader", token_id="tok_reader", principal_name="reader-user", tenants=("acme",), roles=("reader",))},
+        schedules=schedule_map,
+    )
 
     assert reader_post_status == 403
     assert reader_post["error"] == "insufficient_role"
     assert create_status == 201
-    assert create_payload["materialization"]["run_id"] == "run-3"
+    assert create_payload["data"]["schedule_id"] == "nightly"
+    assert create_payload["data"]["materialization"]["run_id"] == "run-3"
     assert list_status == 200
-    assert list_payload["materializations"][0]["run_id"] == "run-3"
+    assert list_payload["data"]["materializations"][0]["run_id"] == "run-3"
+    assert status_status == 200
+    assert status_payload["identity"]["token_id"] == "tok_reader"
+    assert status_payload["data"]["store"]["backend"] == "sqlite"
+    assert schedules_status == 200
+    assert schedules_payload["data"]["schedules"][0]["schedule_id"] == "nightly"
+
+
+def test_decision_history_service_rejects_inactive_identity(tmp_path) -> None:
+    history_path = tmp_path / "history.ndjson"
+    history_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-05-14T12:00:00Z",
+                "repository": "acme/service-a",
+                "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+                "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+                "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+            }
+        )
+        + "\n"
+    )
+    tenants = {"acme": HistoryTenant(tenant_id="acme", history_paths=(str(history_path),))}
+
+    status, payload = resolve_history_request(
+        "/api/v1/analytics?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        headers={"Authorization": "Bearer disabled"},
+        scoped_tokens={"disabled": HistoryToken(token="disabled", status="disabled", tenants=("acme",), roles=("reader",))},
+    )
+
+    assert status == 403
+    assert payload["data"]["error"] == "identity_inactive"
+
+
+def test_decision_history_service_accepts_jwt_identity_for_versioned_api(tmp_path) -> None:
+    history_path = tmp_path / "history.ndjson"
+    history_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-05-14T12:00:00Z",
+                "repository": "acme/service-a",
+                "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+                "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+                "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+            }
+        )
+        + "\n"
+    )
+    tenants = {"acme": HistoryTenant(tenant_id="acme", history_paths=(str(history_path),))}
+    jwt_token = _build_test_jwt(
+        secret="super-secret",
+        payload={
+            "iss": "https://issuer.example",
+            "aud": "veridion-history",
+            "sub": "svc-acme",
+            "jti": "jwt-1",
+            "roles": ["reader"],
+            "tenants": ["acme"],
+        },
+    )
+
+    status, payload = resolve_history_request(
+        "/api/v1/analytics?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        headers={"Authorization": f"Bearer {jwt_token}"},
+        jwt_config=JWTAuthConfig(
+            issuer="https://issuer.example",
+            audience="veridion-history",
+            shared_secret="super-secret",
+        ),
+    )
+
+    assert status == 200
+    assert payload["identity"]["auth_type"] == "jwt"
+    assert payload["identity"]["token_id"] == "jwt-1"
+    assert payload["data"]["summary"]["events"] == 1
+
+
+def test_decision_history_service_requires_auth_when_jwks_is_configured(tmp_path) -> None:
+    history_path = tmp_path / "history.ndjson"
+    jwks_path = tmp_path / "jwks.json"
+    history_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-05-14T12:00:00Z",
+                "repository": "acme/service-a",
+                "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+                "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+                "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+            }
+        )
+        + "\n"
+    )
+    jwks_path.write_text(json.dumps({"keys": []}))
+    tenants = {"acme": HistoryTenant(tenant_id="acme", history_paths=(str(history_path),))}
+
+    status, payload = resolve_history_request(
+        "/api/v1/analytics?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        headers={},
+        jwt_config=JWTAuthConfig(jwks_path=str(jwks_path)),
+    )
+
+    assert status == 401
+    assert payload["data"]["error"] == "unauthorized"
+
+
+def test_decision_history_service_accepts_trusted_header_identity(tmp_path) -> None:
+    history_path = tmp_path / "history.ndjson"
+    history_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-05-14T12:00:00Z",
+                "repository": "acme/service-a",
+                "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+                "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+                "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+            }
+        )
+        + "\n"
+    )
+    tenants = {"acme": HistoryTenant(tenant_id="acme", history_paths=(str(history_path),))}
+
+    status, payload = resolve_history_request(
+        "/api/v1/analytics?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        headers={
+            "X-Veridion-Auth-Secret": "secret",
+            "X-Veridion-Principal": "alice@example.com",
+            "X-Veridion-Token-Id": "tok_hdr",
+            "X-Veridion-Roles": "reader",
+            "X-Veridion-Tenants": "acme",
+        },
+        trusted_header_auth=TrustedHeaderAuthConfig(enabled=True, shared_secret="secret"),
+    )
+
+    assert status == 200
+    assert payload["identity"]["auth_type"] == "trusted_header"
+    assert payload["identity"]["principal_name"] == "alice@example.com"
+
+
+def test_decision_history_service_exposes_overview_and_identity_endpoints(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    materialization_root = tmp_path / "materialized"
+    history_path = tmp_path / "history.ndjson"
+    config_path = tmp_path / "config.json"
+    history_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-05-14T12:00:00Z",
+                "repository": "acme/service-a",
+                "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+                "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+                "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+            }
+        )
+        + "\n"
+    )
+    upsert_history_store(sqlite_path=sqlite_path, tenant_id="acme", history_paths=(str(history_path),))
+    config_path.write_text(json.dumps({"sqlite_path": str(sqlite_path), "materialization_root": str(materialization_root), "tenants": [{"tenant_id": "acme", "history_paths": []}]}))
+    tenants = {"acme": HistoryTenant(tenant_id="acme", history_paths=())}
+
+    overview_status, overview = resolve_history_request(
+        "/api/v1/overview?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        materialization_root=str(materialization_root),
+        config_path=str(config_path),
+        headers={"Authorization": "Bearer reader"},
+        scoped_tokens={"reader": HistoryToken(token="reader", tenants=("acme",), roles=("reader",), principal_name="Reader One", token_id="reader-1")},
+    )
+    identity_status, identity = resolve_history_request(
+        "/api/v1/identity",
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer reader"},
+        scoped_tokens={"reader": HistoryToken(token="reader", tenants=("acme",), roles=("reader",), principal_name="Reader One", token_id="reader-1")},
+    )
+
+    assert overview_status == 200
+    assert overview["data"]["analytics"]["summary"]["events"] == 1
+    assert overview["data"]["status"]["store"]["backend"] == "sqlite"
+    assert overview["data"]["catalog"]["services"][0]["service_id"] == "service-a"
+    assert identity_status == 200
+    assert identity["data"]["identity"]["principal_name"] == "Reader One"
+
+
+def test_decision_history_service_ingests_events_and_exposes_catalog(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    tenants = {"acme": HistoryTenant(tenant_id="acme", history_paths=())}
+    event = {
+        "generated_at": "2026-05-14T12:00:00Z",
+        "repository": "acme/service-a",
+        "organization": "acme",
+        "project": "acme/service-a",
+        "service": "service-a",
+        "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+        "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+        "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+        "trust_context": {"service_owner": "payments-owner", "owning_team": "payments", "service_criticality": "high"},
+    }
+
+    ingest_status, ingest = resolve_history_request(
+        "/api/v1/events",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "event": event}),
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer ingestor"},
+        scoped_tokens={"ingestor": HistoryToken(token="ingestor", tenants=("acme",), roles=("ingestor",))},
+    )
+    services_status, services = resolve_history_request(
+        "/api/v1/services?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer reader"},
+        scoped_tokens={"reader": HistoryToken(token="reader", tenants=("acme",), roles=("reader",))},
+    )
+
+    assert ingest_status == 202
+    assert ingest["data"]["repository"] == "acme/service-a"
+    assert services_status == 200
+    assert services["data"]["services"][0]["service_id"] == "service-a"
+
+
+def test_decision_history_service_admin_and_session_surfaces(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    admin = {"Authorization": "Bearer admin"}
+    scoped = {"admin": HistoryToken(token="admin", tenants=("acme",), roles=("admin",), principal_name="Admin One", token_id="admin-1")}
+
+    create_tenant_status, _ = resolve_history_request(
+        "/api/v1/admin/tenants",
+        method="POST",
+        body=json.dumps({"tenant_id": "acme", "display_name": "Acme", "organization_name": "Acme Org"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    create_user_status, _ = resolve_history_request(
+        "/api/v1/admin/users",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "user_id": "alice", "principal_name": "Alice", "roles_csv": "reader,admin"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    create_secret_status, _ = resolve_history_request(
+        "/api/v1/admin/provider-secrets",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "secret_name": "pagerduty-token", "provider": "pagerduty", "secret_ref": "aws-sm://pagerduty/acme"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    create_client_status, create_client = resolve_history_request(
+        "/api/v1/admin/producer-clients",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "client_id": "ci-acme", "display_name": "CI Acme"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    producer_token = create_client["data"]["producer_client"]["token"]
+    ingest_status, ingest = resolve_history_request(
+        "/api/v1/events",
+        method="POST",
+        body=json.dumps(
+            {
+                "tenant": "acme",
+                "event": {
+                    "generated_at": "2026-05-14T12:00:00Z",
+                    "repository": "acme/service-a",
+                    "organization": "acme",
+                    "project": "acme/service-a",
+                    "service": "service-a",
+                    "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+                    "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+                    "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+                    "trust_context": {"service_owner": "payments-owner", "owning_team": "payments", "service_criticality": "high"},
+                },
+            }
+        ),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {producer_token}"},
+        scoped_tokens={},
+    )
+    session_status, session = resolve_history_request(
+        "/api/v1/auth/sessions",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "session_id": "sess-1"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    app_status, app = resolve_history_request(
+        "/api/v1/app?tenant=acme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+
+    assert create_tenant_status == 201
+    assert create_user_status == 201
+    assert create_secret_status == 201
+    assert create_client_status == 201
+    assert create_client["data"]["producer_client"]["token"]
+    assert ingest_status == 202
+    assert ingest["data"]["repository"] == "acme/service-a"
+    assert session_status == 201
+    assert session["data"]["session_id"] == "sess-1"
+    assert app_status == 200
+    assert "Managed Tenants" in app["html"]
+
+
+def _build_test_jwt(*, secret: str, payload: dict[str, object]) -> str:
+    header = {"alg": "HS256", "typ": "JWT"}
+    header_b64 = _b64(header)
+    payload_b64 = _b64(payload)
+    signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
+    signature = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
+    signature_b64 = base64.urlsafe_b64encode(signature).decode("utf-8").rstrip("=")
+    return f"{header_b64}.{payload_b64}.{signature_b64}"
+
+
+def _b64(payload: dict[str, object]) -> str:
+    encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return base64.urlsafe_b64encode(encoded).decode("utf-8").rstrip("=")

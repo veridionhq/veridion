@@ -255,6 +255,7 @@ Supported sink kinds:
 - `local-file:path=/abs/path/event.json`
 - `local-ndjson:path=/abs/path/history.ndjson`
 - `webhook:url=https://...`
+- `veridion-service:url=https://hosted.example.com,tenant=acme,token=...`
 - `s3:bucket=...,prefix=...,region=...`
 - `postgres:dsn=...,table=...`
 - `redshift:dsn=...,table=...`

@@ -70,11 +70,13 @@ veridion-rdi = "veridion.action.runner:main"
 veridion-athena-queries = "veridion.action.athena_queries:main"
 veridion-history-export = "veridion.action.decision_history_export:main"
 veridion-history-materialize = "veridion.action.decision_history_materialize:main"
+veridion-history-scheduler = "veridion.action.decision_history_scheduler:main"
 veridion-history-service = "veridion.action.decision_history_service:main"
 veridion-history-store = "veridion.action.decision_history_store:main"
 veridion-build-trust-profile = "veridion.action.trust_profile_builder:main"
 veridion-build-operational-context = "veridion.action.operational_context_builder:main"
 veridion-build-runtime-context = "veridion.action.runtime_context_builder:main"
+veridion-fetch-runtime-context = "veridion.action.runtime_live_fetch:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

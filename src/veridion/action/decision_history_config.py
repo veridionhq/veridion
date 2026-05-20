@@ -11,12 +11,53 @@ from pathlib import Path
 class HistoryTenant:
     tenant_id: str
     history_paths: tuple[str, ...]
+    display_name: str = ""
     auth_tokens: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class MaterializationSchedule:
+    schedule_id: str
+    cron: str
+    tenants: tuple[str, ...] = ()
+    enabled: bool = True
+    athena_database: str = ""
+    athena_table: str = "veridion_decision_events"
+    athena_s3_location_template: str = ""
+
+
+@dataclass(frozen=True)
+class JWTAuthConfig:
+    issuer: str = ""
+    audience: str = ""
+    shared_secret: str = ""
+    jwks_path: str = ""
+    jwks_url: str = ""
+    oidc_discovery_url: str = ""
+    roles_claim: str = "roles"
+    tenants_claim: str = "tenants"
+    principal_claim: str = "sub"
+
+
+@dataclass(frozen=True)
+class TrustedHeaderAuthConfig:
+    enabled: bool = False
+    shared_secret: str = ""
+    secret_header: str = "X-Veridion-Auth-Secret"
+    principal_header: str = "X-Veridion-Principal"
+    token_id_header: str = "X-Veridion-Token-Id"
+    roles_header: str = "X-Veridion-Roles"
+    tenants_header: str = "X-Veridion-Tenants"
+    status_header: str = "X-Veridion-Status"
 
 
 @dataclass(frozen=True)
 class HistoryToken:
     token: str
+    token_id: str = ""
+    principal_name: str = ""
+    auth_type: str = "bearer"
+    status: str = "active"
     tenants: tuple[str, ...] = ()
     roles: tuple[str, ...] = ()
 
@@ -24,11 +65,15 @@ class HistoryToken:
 @dataclass(frozen=True)
 class HistoryServiceConfig:
     tenants: tuple[HistoryTenant, ...]
+    service_name: str = "Veridion History Service"
     sqlite_path: str = ""
     store_dsn: str = ""
     materialization_root: str = ""
     auth_tokens: tuple[str, ...] = ()
     tokens: tuple[HistoryToken, ...] = ()
+    jwt: JWTAuthConfig = JWTAuthConfig()
+    trusted_headers: TrustedHeaderAuthConfig = TrustedHeaderAuthConfig()
+    schedules: tuple[MaterializationSchedule, ...] = ()
 
 
 def load_history_service_config(path: str | Path) -> HistoryServiceConfig:
@@ -54,17 +99,22 @@ def load_history_service_config(path: str | Path) -> HistoryServiceConfig:
             HistoryTenant(
                 tenant_id=tenant_id,
                 history_paths=tuple(history_paths),
+                display_name=_optional_string(item.get("display_name")),
                 auth_tokens=tuple(_string_list(item.get("auth_tokens"))),
             )
         )
 
     return HistoryServiceConfig(
         tenants=tuple(tenants),
+        service_name=_optional_string(payload.get("service_name")) or "Veridion History Service",
         sqlite_path=sqlite_path,
         store_dsn=store_dsn,
         materialization_root=_optional_string(payload.get("materialization_root")),
         auth_tokens=tuple(_string_list(payload.get("auth_tokens"))),
         tokens=tuple(_parse_tokens(payload.get("tokens"))),
+        jwt=_parse_jwt(payload.get("jwt")),
+        trusted_headers=_parse_trusted_headers(payload.get("trusted_headers")),
+        schedules=tuple(_parse_schedules(payload.get("schedules"))),
     )
 
 
@@ -74,6 +124,10 @@ def tenant_map(config: HistoryServiceConfig) -> dict[str, HistoryTenant]:
 
 def token_map(config: HistoryServiceConfig) -> dict[str, HistoryToken]:
     return {token.token: token for token in config.tokens}
+
+
+def schedule_map(config: HistoryServiceConfig) -> dict[str, MaterializationSchedule]:
+    return {schedule.schedule_id: schedule for schedule in config.schedules}
 
 
 def _required_string(payload: dict[str, object], key: str) -> str:
@@ -103,8 +157,74 @@ def _parse_tokens(value: object) -> list[HistoryToken]:
         tokens.append(
             HistoryToken(
                 token=_required_string(item, "token"),
+                token_id=_optional_string(item.get("token_id")) or _required_string(item, "token"),
+                principal_name=_optional_string(item.get("principal_name")) or _optional_string(item.get("display_name")),
+                auth_type=_optional_string(item.get("auth_type")) or "bearer",
+                status=_optional_string(item.get("status")) or "active",
                 tenants=tuple(_string_list(item.get("tenants"))),
                 roles=tuple(_string_list(item.get("roles"))),
             )
         )
     return tokens
+
+
+def _parse_jwt(value: object) -> JWTAuthConfig:
+    if not isinstance(value, dict):
+        return JWTAuthConfig()
+    return JWTAuthConfig(
+        issuer=_optional_string(value.get("issuer")),
+        audience=_optional_string(value.get("audience")),
+        shared_secret=_optional_string(value.get("shared_secret")),
+        jwks_path=_optional_string(value.get("jwks_path")),
+        jwks_url=_optional_string(value.get("jwks_url")),
+        oidc_discovery_url=_optional_string(value.get("oidc_discovery_url")),
+        roles_claim=_optional_string(value.get("roles_claim")) or "roles",
+        tenants_claim=_optional_string(value.get("tenants_claim")) or "tenants",
+        principal_claim=_optional_string(value.get("principal_claim")) or "sub",
+    )
+
+
+def _parse_schedules(value: object) -> list[MaterializationSchedule]:
+    if not isinstance(value, list):
+        return []
+    schedules: list[MaterializationSchedule] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise RuntimeError("history service config schedules must be objects")
+        schedules.append(
+            MaterializationSchedule(
+                schedule_id=_required_string(item, "schedule_id"),
+                cron=_required_string(item, "cron"),
+                tenants=tuple(_string_list(item.get("tenants"))),
+                enabled=_bool_value(item.get("enabled"), default=True),
+                athena_database=_optional_string(item.get("athena_database")),
+                athena_table=_optional_string(item.get("athena_table")) or "veridion_decision_events",
+                athena_s3_location_template=_optional_string(item.get("athena_s3_location_template")),
+            )
+        )
+    return schedules
+
+
+def _parse_trusted_headers(value: object) -> TrustedHeaderAuthConfig:
+    if not isinstance(value, dict):
+        return TrustedHeaderAuthConfig()
+    return TrustedHeaderAuthConfig(
+        enabled=_bool_value(value.get("enabled"), default=False),
+        shared_secret=_optional_string(value.get("shared_secret")),
+        secret_header=_optional_string(value.get("secret_header")) or "X-Veridion-Auth-Secret",
+        principal_header=_optional_string(value.get("principal_header")) or "X-Veridion-Principal",
+        token_id_header=_optional_string(value.get("token_id_header")) or "X-Veridion-Token-Id",
+        roles_header=_optional_string(value.get("roles_header")) or "X-Veridion-Roles",
+        tenants_header=_optional_string(value.get("tenants_header")) or "X-Veridion-Tenants",
+        status_header=_optional_string(value.get("status_header")) or "X-Veridion-Status",
+    )
+
+
+def _bool_value(value: object, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "false"}:
+            return lowered == "true"
+    return default

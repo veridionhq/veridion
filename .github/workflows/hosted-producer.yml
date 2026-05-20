@@ -1,25 +1,18 @@
-name: rdi-pr-comment
+name: hosted-producer
 
 on:
-  pull_request:
+  push:
     branches:
       - develop
       - main
   workflow_dispatch:
 
 jobs:
-  release-decision-intelligence:
+  release-decision-event:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
     steps:
-      - name: Workflow note
-        shell: bash
-        run: |
-          echo "This workflow is Veridion's internal self-test path."
-          echo "For normal installs, prefer the simpler bootstrap-generated workflow."
-
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -30,30 +23,12 @@ jobs:
 
       - name: Generate diff artifact
         shell: bash
-        env:
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            git diff --no-ext-diff --unified=0 \
-              "${PR_BASE_SHA}...${PR_HEAD_SHA}" > pr.diff
-          elif git rev-parse HEAD^ >/dev/null 2>&1; then
-            git diff --no-ext-diff --unified=0 HEAD^ HEAD > pr.diff
+          if git rev-parse HEAD^ >/dev/null 2>&1; then
+            git diff --no-ext-diff --unified=0 HEAD^ HEAD > push.diff
           else
-            : > pr.diff
+            : > push.diff
           fi
-
-      - name: Build PR metadata artifact
-        shell: bash
-        env:
-          PYTHONPATH: src
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          python3 -m veridion.action.metadata_builder \
-            --event-path "${GITHUB_EVENT_PATH}" \
-            --base-ref "${BASE_REF}" \
-            --output-path pr-metadata.json
 
       - name: Build trust profile artifact
         shell: bash
@@ -69,24 +44,17 @@ jobs:
         shell: bash
         env:
           PYTHONPATH: src
-          BASE_REF: ${{ github.base_ref }}
         run: |
           python3 -m veridion.action.operational_context_builder \
             --event-path "${GITHUB_EVENT_PATH}" \
-            --base-ref "${BASE_REF}" \
             --trust-profile-path trust-profile.json \
             --output-path operational-context.json
 
       - name: Prepare baseline worktree
         shell: bash
-        env:
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           mkdir -p artifacts
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            git worktree add --detach ../veridion-base "${PR_BASE_SHA}"
-          elif git rev-parse HEAD^ >/dev/null 2>&1; then
+          if git rev-parse HEAD^ >/dev/null 2>&1; then
             git worktree add --detach ../veridion-base HEAD^
           else
             cp -R . ../veridion-base
@@ -155,11 +123,11 @@ jobs:
         shell: bash
         run: ${{ steps.syft.outputs.cmd }} ../veridion-base -o syft-json=artifacts/baseline-syft.json
 
-      - name: Run Veridion RDI
+      - name: Run Veridion hosted producer
         id: run-rdi
         uses: ./
         with:
-          diff-path: pr.diff
+          diff-path: push.diff
           reports: |
             trivy=artifacts/trivy.json
             semgrep=artifacts/semgrep.json
@@ -184,10 +152,8 @@ jobs:
           decision-event-path: veridion-decision-event.json
           decision-sinks: |
             ${{ vars.VERIDION_HOSTED_SERVICE_URL != '' && secrets.VERIDION_HOSTED_INGESTOR_TOKEN != '' && vars.VERIDION_HOSTED_TENANT_ID != '' && format('veridion-service:url={0},tenant={1},token={2}', vars.VERIDION_HOSTED_SERVICE_URL, vars.VERIDION_HOSTED_TENANT_ID, secrets.VERIDION_HOSTED_INGESTOR_TOKEN) || '' }}
-          post-comment: "true"
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          post-comment: "false"
           repository: ${{ github.repository }}
-          pull-request-number: ${{ github.event.pull_request.number }}
 
       - name: Show outputs
         shell: bash
@@ -195,9 +161,8 @@ jobs:
           echo "Decision: ${{ steps.run-rdi.outputs.decision }}"
           echo "Score: ${{ steps.run-rdi.outputs.score }}"
           echo "Confidence: ${{ steps.run-rdi.outputs.confidence }}"
-          echo "Comment identifier: ${{ steps.run-rdi.outputs.comment_identifier }}"
-          echo "Comment mode: ${{ steps.run-rdi.outputs.comment_mode }}"
-          echo "Comment id: ${{ steps.run-rdi.outputs.comment_id }}"
+          echo "Gate: ${{ steps.run-rdi.outputs.gate_status }}"
+          echo "Sink summary: ${{ steps.run-rdi.outputs.sink_delivery_summary_json }}"
 
       - name: Clean up baseline worktree
         if: always()
@@ -206,15 +171,15 @@ jobs:
           git worktree remove ../veridion-base --force 2>/dev/null || true
           rm -rf ../veridion-base
 
-      - name: Upload RDI artifacts
+      - name: Upload producer artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rdi-pr-comment-artifacts
+          name: hosted-producer-artifacts
           path: |
             veridion-pr-comment.md
             veridion-result.json
             veridion-decision.json
-            pr-metadata.json
+            veridion-decision-event.json
             trust-profile.json
             operational-context.json

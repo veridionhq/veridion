@@ -161,11 +161,88 @@ Helper script:
 
 - [examples/aws/replay-s3-history.sh](../examples/aws/replay-s3-history.sh)
 - [examples/aws/ingest-history-store.sh](../examples/aws/ingest-history-store.sh)
+- [examples/aws/migrate-history-store.sh](../examples/aws/migrate-history-store.sh)
 - [examples/aws/materialize-history.sh](../examples/aws/materialize-history.sh)
 - [examples/aws/run-history-service.sh](../examples/aws/run-history-service.sh)
 - [examples/aws/history-service.config.json](../examples/aws/history-service.config.json)
 
 The default example uses SQLite as the first persistent hosted backend. Teams that outgrow it can keep the same service/export/materialization surfaces and switch to a Postgres-style store DSN later.
+
+For the first real hosted alpha on AWS, use:
+
+- [infra/terraform/aws-hosted-alpha](../infra/terraform/aws-hosted-alpha/README.md)
+
+## Service-grade persistence and lifecycle
+
+If you are moving from local hosting to a real service deployment, the next recommended path is:
+
+- SQLite for local development
+- Postgres-style DSN for persistent hosted deployments
+- explicit schema status and migration inspection through:
+  - `python3 -m veridion.action.decision_history_store status`
+  - `python3 -m veridion.action.decision_history_store migrate`
+
+This keeps the same service/API surface while making database lifecycle state visible to operators.
+
+## Versioned history APIs and identities
+
+The preferred service contract now lives under `/api/v1`:
+
+- `/api/v1/overview`
+- `/api/v1/identity`
+- `/api/v1/analytics`
+- `/api/v1/repositories`
+- `/api/v1/policy-rollouts`
+- `/api/v1/tenants`
+- `/api/v1/materializations`
+- `/api/v1/materialization-schedules`
+- `/api/v1/service/status`
+
+The service now supports both:
+
+- static scoped bearer identities from config
+- JWT-backed identities verified locally with issuer/audience/shared-secret settings
+- trusted-header identities from an upstream auth gateway or reverse proxy
+
+JWTs remain optional. They are the first bridge toward external identity-provider integration without making the deterministic core depend on a hosted auth service.
+
+For stronger JWT verification in hosted environments, the service can now verify RS256 tokens against a local JWKS file or a JWKS URL.
+
+For hosted environments behind an auth gateway, the service can also trust scoped identity headers guarded by a configured shared secret. That gives teams a pragmatic bridge to external IdPs without embedding OAuth/OIDC flows directly in the history service.
+
+## Scheduled execution
+
+Materialization schedules are now executable service config, not just documentation.
+
+Run due schedules:
+
+```bash
+python3 -m veridion.action.decision_history_scheduler \
+  --config-path examples/aws/history-service.config.json
+```
+
+Preview due runs:
+
+```bash
+python3 -m veridion.action.decision_history_scheduler \
+  --config-path examples/aws/history-service.config.json \
+  --dry-run
+```
+
+Run the scheduler continuously as a worker:
+
+```bash
+python3 -m veridion.action.decision_history_scheduler \
+  --config-path examples/aws/history-service.config.json \
+  --daemon \
+  --poll-interval-seconds 60
+```
+
+For Postgres rollout and migration assets:
+
+- [docs/POSTGRES.md](POSTGRES.md)
+- [docs/HOSTED.md](HOSTED.md)
+- [docs/SAAS.md](SAAS.md)
 
 ## Athena query examples
 
