@@ -635,6 +635,15 @@ def test_decision_history_service_admin_and_session_surfaces(tmp_path) -> None:
         headers=admin,
         scoped_tokens=scoped,
     )
+    connected_status, connected = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=connect_repository&tenant_id=acme&repository=acme%2Fservice-a&service=service-a&organization=acme&project_id=acme%2Fservice-a&service_owner=payments-owner&owning_team=payments&service_criticality=high&producer_client=ci-acme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin", "Content-Type": "application/x-www-form-urlencoded"},
+        scoped_tokens=scoped,
+    )
 
     assert create_tenant_status == 201
     assert create_user_status == 201
@@ -646,12 +655,15 @@ def test_decision_history_service_admin_and_session_surfaces(tmp_path) -> None:
     assert session_status == 201
     assert session["data"]["session_id"] == "sess-1"
     assert app_status == 200
+    assert connected_status == 200
     assert "Managed Tenants" in app["html"]
     assert "Repository Drilldown" in app["html"]
     assert "Producer Token Controls" in app["html"]
     assert "Second Tenant Playbook" in app["html"]
     assert "Connect First Repo" in app["html"]
     assert "Auth Hardening" in app["html"]
+    assert "First hosted decision received." in connected["html"]
+    assert "Recover With Fresh Token" in connected["html"]
 
 
 def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path) -> None:
@@ -713,6 +725,15 @@ def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path)
         headers=admin,
         scoped_tokens=scoped,
     )
+    connect_status, connect_app = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=connect_repository&tenant_id=acme&repository=acme%2Fservice-a&service=service-a&organization=acme&project_id=acme%2Fservice-a&service_owner=payments-owner&owning_team=payments&service_criticality=high&producer_client=github-actions",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
     clients_status, clients = resolve_history_request(
         "/api/v1/admin/producer-clients?tenant=acme",
         history_paths=(),
@@ -748,11 +769,16 @@ def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path)
     assert user_status == 200
     assert "Service user alice created." in user_app["html"]
     assert secret_status == 200
+    assert connect_status == 200
     assert "Provider secret reference pagerduty-token stored." in secret_app["html"]
     assert "Add Producer Client" in secret_app["html"]
     assert "Add Service User" in secret_app["html"]
     assert "Rotate Token" in secret_app["html"]
     assert "Second Tenant Playbook" in secret_app["html"]
+    assert "Generate Repo Plan" in connect_app["html"]
+    assert "Listening for the first hosted decision event from CI." in connect_app["html"]
+    assert "Recover With Fresh Token" in connect_app["html"]
+    assert "VERIDION_HOSTED_INGESTOR_TOKEN" in connect_app["html"]
     assert clients_status == 200
     assert clients["data"]["producer_clients"][0]["status"] == "revoked"
     assert clients["data"]["producer_clients"][0]["last_issued_at"]

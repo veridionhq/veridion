@@ -1131,6 +1131,21 @@ def _handle_app_post_request(
             )
             message = f"Provider secret reference {secret_name} stored."
             level = "success"
+    elif action == "connect_repository":
+        repository = _body_string(payload, "repository")
+        service_id = _body_string(payload, "service")
+        selected_client = _body_string(payload, "producer_client")
+        if not tenant_id or not repository or not service_id:
+            message = "Tenant, repository, and service are required."
+            level = "error"
+        else:
+            if not selected_client:
+                clients = list(list_producer_clients(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id))
+                active = next((item for item in clients if str(item.get("status", "")) == "active"), None)
+                selected_client = str((active or (clients[0] if clients else {})).get("client_id", "")) if clients else ""
+            payload["producer_client"] = selected_client
+            message = f"Repository onboarding plan prepared for {repository}."
+            level = "success"
     else:
         message = f"Unsupported app action: {action}"
         level = "error"
@@ -1166,6 +1181,29 @@ def _handle_app_post_request(
         "level": level,
         "revealed_token": _body_string(payload, "revealed_token"),
         "revealed_token_prefix": _body_string(payload, "revealed_token_prefix"),
+        "repo_connect": _build_repo_connect_payload(
+            tenant_id=tenant_id,
+            repository=_body_string(payload, "repository"),
+            service_id=_body_string(payload, "service"),
+            organization=_body_string(payload, "organization"),
+            project_id=_body_string(payload, "project_id"),
+            owner=_body_string(payload, "service_owner"),
+            team=_body_string(payload, "owning_team"),
+            criticality=_body_string(payload, "service_criticality"),
+            client_id=_body_string(payload, "producer_client"),
+            service_url=(
+                f"{headers.get('X-Forwarded-Proto', '').strip()}://{headers.get('Host', '').strip()}"
+                if headers.get("X-Forwarded-Proto", "").strip() and headers.get("Host", "").strip()
+                else ""
+            ),
+            api_version=api_version,
+            revealed_token=_body_string(payload, "revealed_token"),
+            producer_record=_producer_client_record(
+                list(list_producer_clients(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id)) if tenant_id else [],
+                _body_string(payload, "producer_client"),
+            ),
+            repository_analytics=(overview.get("detail") or {}).get("repository_analytics") if isinstance(overview.get("detail"), dict) else None,
+        ),
     }
     return (
         200,
@@ -1199,6 +1237,141 @@ def _body_string(payload: dict[str, object], key: str) -> str:
 
 def _producer_client_record(producer_clients: list[dict[str, object]], client_id: str) -> dict[str, object] | None:
     return next((item for item in producer_clients if str(item.get("client_id", "")) == client_id), None)
+
+
+def _repository_event_state(
+    analytics_payload: object,
+    *,
+    repository: str,
+) -> dict[str, object]:
+    repository_value = repository.strip()
+    if not repository_value or not isinstance(analytics_payload, dict):
+        return {
+            "repository": repository_value,
+            "events": 0,
+            "state": "idle",
+            "message": "Select a repository to generate onboarding instructions and wait for the first hosted decision.",
+        }
+    summary = analytics_payload.get("summary", {}) if isinstance(analytics_payload.get("summary"), dict) else {}
+    latest_rollout = (analytics_payload.get("policy_rollout") or {}) if isinstance(analytics_payload.get("policy_rollout"), dict) else {}
+    latest_items = latest_rollout.get("latest_by_repository", []) if isinstance(latest_rollout.get("latest_by_repository"), list) else []
+    latest_item = next((item for item in latest_items if str(item.get("repository", "")) == repository_value), None)
+    events = int(summary.get("events", 0) or 0)
+    if events > 0 and isinstance(latest_item, dict):
+        verdict = str(latest_item.get("verdict", "")).strip() or "decision received"
+        gate_status = str(latest_item.get("gate_status", "")).strip() or "unknown"
+        return {
+            "repository": repository_value,
+            "events": events,
+            "state": "success",
+            "message": f"First hosted decision received. Latest verdict: {verdict} / gate: {gate_status}.",
+            "latest": latest_item,
+        }
+    return {
+        "repository": repository_value,
+        "events": events,
+        "state": "waiting",
+        "message": "Listening for the first hosted decision event from CI. Run the workflow once after setting the variables and secret.",
+    }
+
+
+def _build_repo_connect_payload(
+    *,
+    tenant_id: str,
+    repository: str,
+    service_id: str,
+    organization: str,
+    project_id: str,
+    owner: str,
+    team: str,
+    criticality: str,
+    client_id: str,
+    service_url: str,
+    api_version: str,
+    revealed_token: str,
+    producer_record: dict[str, object] | None,
+    repository_analytics: dict[str, object] | None,
+) -> dict[str, object]:
+    repo_value = repository.strip()
+    service_value = service_id.strip()
+    client_value = client_id.strip()
+    if not tenant_id or not repo_value:
+        return {}
+    org_value = organization.strip() or tenant_id.strip()
+    project_value = project_id.strip() or repo_value
+    owner_value = owner.strip() or "service-owner"
+    team_value = team.strip() or "owning-team"
+    criticality_value = criticality.strip() or "high"
+    token_prefix = str((producer_record or {}).get("token_prefix", "")).strip()
+    producer_status = str((producer_record or {}).get("status", "")).strip() or "unknown"
+    service_url_value = service_url.strip() or "https://hosted-control-plane.example.com"
+    workflow_yaml = "\n".join(
+        (
+            "name: veridion-hosted-producer",
+            "on:",
+            "  workflow_dispatch:",
+            "jobs:",
+            "  deliver-decision:",
+            "    runs-on: ubuntu-latest",
+            "    steps:",
+            "      - uses: actions/checkout@v4",
+            "      - name: Emit hosted decision event",
+            "        env:",
+            f"          VERIDION_HOSTED_SERVICE_URL: {service_url_value}",
+            f"          VERIDION_HOSTED_TENANT_ID: {tenant_id}",
+            "          VERIDION_HOSTED_INGESTOR_TOKEN: ${{ secrets.VERIDION_HOSTED_INGESTOR_TOKEN }}",
+            "        run: |",
+            "          cat > veridion-decision-event.json <<'json'",
+            json.dumps(
+                {
+                    "tenant": tenant_id,
+                    "event": {
+                        "generated_at": "2026-05-20T00:00:00Z",
+                        "repository": repo_value,
+                        "organization": org_value,
+                        "project": project_value,
+                        "service": service_value,
+                        "decision": {"verdict": "GO", "gate_status": "pass", "blocking_categories": []},
+                        "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+                        "policy": {"pack_id": "application-team", "pack_version": "1", "rollout_stage": "general"},
+                        "trust_context": {
+                            "service_owner": owner_value,
+                            "owning_team": team_value,
+                            "service_criticality": criticality_value,
+                        },
+                    },
+                },
+                indent=2,
+            ).replace("\n", "\n          "),
+            "          json",
+            f"          curl -sS -X POST \"$VERIDION_HOSTED_SERVICE_URL/api/{api_version}/events\" \\",
+            "            -H \"Authorization: Bearer $VERIDION_HOSTED_INGESTOR_TOKEN\" \\",
+            "            -H \"Content-Type: application/json\" \\",
+            "            -d @veridion-decision-event.json",
+        )
+    )
+    return {
+        "tenant_id": tenant_id,
+        "repository": repo_value,
+        "service_id": service_value,
+        "organization": org_value,
+        "project_id": project_value,
+        "service_owner": owner_value,
+        "owning_team": team_value,
+        "service_criticality": criticality_value,
+        "client_id": client_value,
+        "producer_status": producer_status,
+        "token_prefix": token_prefix,
+        "needs_rotation": producer_status == "revoked" or (not revealed_token and not token_prefix),
+        "event_state": _repository_event_state(repository_analytics, repository=repo_value),
+        "vars": {
+            "VERIDION_HOSTED_SERVICE_URL": service_url_value,
+            "VERIDION_HOSTED_TENANT_ID": tenant_id,
+        },
+        "secret_name": "VERIDION_HOSTED_INGESTOR_TOKEN",
+        "secret_value": revealed_token,
+        "workflow_yaml": workflow_yaml,
+    }
 
 
 def _attach_selected_detail_analytics(
@@ -1689,13 +1862,6 @@ def render_app_html(
             f"<li><strong>Revoked at</strong><div class='hint'>{_html_escape(str(selected_producer.get('revoked_at', '') or 'active'))}</div></li>"
             f"</ul>"
         )
-    connect_repo_steps = (
-        "<ul>"
-        "<li><strong>Repo variables</strong><div class='hint mono'>VERIDION_HOSTED_SERVICE_URL</div><div class='hint mono'>VERIDION_HOSTED_TENANT_ID</div></li>"
-        "<li><strong>Repo secret</strong><div class='hint mono'>VERIDION_HOSTED_INGESTOR_TOKEN</div></li>"
-        "<li><strong>Expected path</strong><div class='hint'>Enable the hosted producer workflow or the internal decision sink so CI POSTs to <span class='mono'>/api/v1/events</span>.</div></li>"
-        "</ul>"
-    )
     auth_hardening_items = (
         "<ul>"
         f"<li><strong>JWT enabled</strong><div class='hint'>{'yes' if jwt_enabled else 'no'}</div></li>"
@@ -1717,6 +1883,61 @@ def render_app_html(
             f"<div class='hint'>Store this now. Only the prefix is persisted by the control plane after this response.</div>"
             f"<div class='token-box mono'>{_html_escape(revealed_token)}</div>"
             f"</div>"
+        )
+    repo_connect = ui.get("repo_connect", {}) if isinstance(ui, dict) and isinstance(ui.get("repo_connect"), dict) else {}
+    repo_connect_repository = str(repo_connect.get("repository", "")).strip() if isinstance(repo_connect, dict) else ""
+    repo_event_state = repo_connect.get("event_state", {}) if isinstance(repo_connect, dict) and isinstance(repo_connect.get("event_state"), dict) else {}
+    repo_event_status = str(repo_event_state.get("state", "idle")) if isinstance(repo_event_state, dict) else "idle"
+    repo_event_message = _html_escape(str(repo_event_state.get("message", ""))) if isinstance(repo_event_state, dict) else ""
+    repo_workflow_yaml = _html_escape(str(repo_connect.get("workflow_yaml", ""))) if isinstance(repo_connect, dict) else ""
+    repo_secret_value = str(repo_connect.get("secret_value", "")).strip() if isinstance(repo_connect, dict) else ""
+    repo_secret_state = (
+        "<div class='flash success'><strong>Fresh ingestor token available now.</strong>"
+        f"<div class='hint'>Set <span class='mono'>{_html_escape(str(repo_connect.get('secret_name', 'VERIDION_HOSTED_INGESTOR_TOKEN')))}</span> in the repository secrets using the token shown above.</div>"
+        "</div>"
+        if repo_secret_value
+        else "<div class='hint'>No fresh token is visible in this response. Rotate or create the selected producer if you need a one-time token reveal.</div>"
+    )
+    repo_recovery_html = ""
+    if isinstance(repo_connect, dict) and repo_connect_repository:
+        producer_status_value = _html_escape(str(repo_connect.get("producer_status", "unknown")))
+        token_prefix_value = _html_escape(str(repo_connect.get("token_prefix", "")) or "not issued")
+        selected_client_value = _html_escape(str(repo_connect.get("client_id", "")) or "unassigned")
+        recovery_button = (
+            f"<form method='post' action='/api/{_html_escape(api_version)}/app'><input type='hidden' name='action' value='rotate_producer_client'><input type='hidden' name='tenant_id' value='{_html_escape(tenant_value)}'><input type='hidden' name='client_id' value='{selected_client_value}'><input type='hidden' name='repository' value='{_html_escape(repo_connect_repository)}'><input type='hidden' name='service' value='{_html_escape(str(repo_connect.get('service_id', '')))}'><input type='hidden' name='producer_client' value='{selected_client_value}'><button type='submit'>Recover With Fresh Token</button></form>"
+            if str(repo_connect.get("client_id", "")).strip()
+            else ""
+        )
+        repo_recovery_html = (
+            "<ul>"
+            f"<li><strong>Producer</strong><div class='hint mono'>{selected_client_value}</div></li>"
+            f"<li><strong>Status</strong><div class='hint'>{producer_status_value}</div></li>"
+            f"<li><strong>Persisted prefix</strong><div class='hint mono'>{token_prefix_value}...</div></li>"
+            "<li><strong>Recovery path</strong><div class='hint'>If CI never lands an event, rotate the producer to reveal a new token and replace the repo secret.</div></li>"
+            "</ul>"
+            f"{recovery_button}"
+        )
+    repo_connect_steps = (
+        "<ul>"
+        "<li><strong>Repo variables</strong><div class='hint mono'>VERIDION_HOSTED_SERVICE_URL</div><div class='hint mono'>VERIDION_HOSTED_TENANT_ID</div></li>"
+        "<li><strong>Repo secret</strong><div class='hint mono'>VERIDION_HOSTED_INGESTOR_TOKEN</div></li>"
+        "<li><strong>Expected path</strong><div class='hint'>Enable the hosted producer workflow or the internal decision sink so CI POSTs to <span class='mono'>/api/v1/events</span>.</div></li>"
+        "</ul>"
+    )
+    if isinstance(repo_connect, dict) and repo_connect_repository:
+        repo_connect_steps = (
+            f"<div class='flash {'success' if repo_event_status == 'success' else 'warning' if repo_event_status == 'waiting' else 'info'}'>"
+            f"<strong>{_html_escape(repo_connect_repository)}</strong><div class='hint'>{repo_event_message}</div></div>"
+            "<ul>"
+            f"<li><strong>Repository</strong><div class='hint mono'>{_html_escape(repo_connect_repository)}</div></li>"
+            f"<li><strong>Service</strong><div class='hint mono'>{_html_escape(str(repo_connect.get('service_id', '')))}</div></li>"
+            f"<li><strong>Owner / team</strong><div class='hint'>{_html_escape(str(repo_connect.get('service_owner', '')))} / {_html_escape(str(repo_connect.get('owning_team', '')))}</div></li>"
+            f"<li><strong>Criticality</strong><div class='hint'>{_html_escape(str(repo_connect.get('service_criticality', '')))}</div></li>"
+            f"<li><strong>Vars</strong><div class='hint mono'>VERIDION_HOSTED_SERVICE_URL={_html_escape(str(((repo_connect.get('vars') or {}).get('VERIDION_HOSTED_SERVICE_URL', '')) if isinstance(repo_connect.get('vars'), dict) else ''))}</div><div class='hint mono'>VERIDION_HOSTED_TENANT_ID={_html_escape(str(((repo_connect.get('vars') or {}).get('VERIDION_HOSTED_TENANT_ID', '')) if isinstance(repo_connect.get('vars'), dict) else ''))}</div></li>"
+            f"<li><strong>Secret</strong><div class='hint mono'>{_html_escape(str(repo_connect.get('secret_name', 'VERIDION_HOSTED_INGESTOR_TOKEN')))}</div></li>"
+            "</ul>"
+            f"{repo_secret_state}"
+            f"<pre>{repo_workflow_yaml}</pre>"
         )
     repository_event_count = sum(1 for item in latest_by_repository if str(item.get("repository", "")) == str(repository_detail.get("repository", ""))) if isinstance(repository_detail, dict) else 0
     if isinstance(repository_detail, dict):
@@ -1938,8 +2159,21 @@ def render_app_html(
       <div class="triple">
         <div class="card">
           <h2 class="section-title">Connect First Repo</h2>
-          <div class="section-kicker">Exact GitHub settings needed for the next repository onboarding.</div>
-          {connect_repo_steps}
+          <div class="section-kicker">Generate the repo-specific CI wiring, then wait here for the first hosted decision to arrive.</div>
+          <form method="post" action="/api/{_html_escape(api_version)}/app">
+            <input type="hidden" name="action" value="connect_repository">
+            <input type="hidden" name="tenant_id" value="{_html_escape(tenant_value)}">
+            <label>Repository<input name="repository" value="{_html_escape(repo_connect_repository or selected_repository)}" placeholder="veridionhq/veridion"></label>
+            <label>Service<input name="service" value="{_html_escape(str((repo_connect.get('service_id', '') if isinstance(repo_connect, dict) else '') or selected_service))}" placeholder="history-service"></label>
+            <label>Organization<input name="organization" value="{_html_escape(str((repo_connect.get('organization', '') if isinstance(repo_connect, dict) else '') or tenant_value))}" placeholder="veridionhq"></label>
+            <label>Project<input name="project_id" value="{_html_escape(str((repo_connect.get('project_id', '') if isinstance(repo_connect, dict) else '') or repo_connect_repository or selected_repository))}" placeholder="veridionhq/veridion"></label>
+            <label>Service Owner<input name="service_owner" value="{_html_escape(str((repo_connect.get('service_owner', '') if isinstance(repo_connect, dict) else '') or 'platform-owner'))}" placeholder="platform-owner"></label>
+            <label>Owning Team<input name="owning_team" value="{_html_escape(str((repo_connect.get('owning_team', '') if isinstance(repo_connect, dict) else '') or 'platform-team'))}" placeholder="platform-team"></label>
+            <label>Criticality<input name="service_criticality" value="{_html_escape(str((repo_connect.get('service_criticality', '') if isinstance(repo_connect, dict) else '') or 'high'))}" placeholder="high"></label>
+            <label>Producer Client<input name="producer_client" value="{_html_escape(str((repo_connect.get('client_id', '') if isinstance(repo_connect, dict) else '') or selected_producer_client))}" placeholder="github-actions"></label>
+            <button type="submit">Generate Repo Plan</button>
+          </form>
+          <div style="margin-top:1rem;">{repo_connect_steps}</div>
         </div>
         <div class="card">
           <h2 class="section-title">Auth Hardening</h2>
@@ -1971,6 +2205,11 @@ def render_app_html(
           <div class="card">
             <h2 class="section-title">Top Blocking Categories</h2>
             <ul>{blocking_items}</ul>
+          </div>
+          <div class="card">
+            <h2 class="section-title">Producer Recovery</h2>
+            <div class="section-kicker">Rotate or recover credentials when onboarding gets stuck or a token leaks.</div>
+            {repo_recovery_html or "<p class='hint'>Generate a repo plan above to anchor recovery instructions to a specific producer client.</p>"}
           </div>
           <div class="card">
             <h2 class="section-title">Producer Token Controls</h2>
