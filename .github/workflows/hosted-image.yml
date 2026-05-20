@@ -43,6 +43,12 @@ jobs:
           [[ -n "${ECR_REPOSITORY_URL}" ]] || { echo "ECR_REPOSITORY_URL repo variable is required"; exit 1; }
           [[ -n "${AWS_GITHUB_ACTIONS_ROLE_ARN}" ]] || { echo "AWS_GITHUB_ACTIONS_ROLE_ARN repo variable or secret is required"; exit 1; }
 
+      - name: Validate deploy configuration
+        run: |
+          [[ -n "${AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN}" ]] || { echo "AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN repo variable or secret is required"; exit 1; }
+          [[ -n "${HOSTED_ECS_CLUSTER}" ]] || { echo "HOSTED_ECS_CLUSTER repo variable is required"; exit 1; }
+          [[ -n "${HOSTED_ECS_SERVICE}" ]] || { echo "HOSTED_ECS_SERVICE repo variable is required"; exit 1; }
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -68,14 +74,12 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Configure AWS deploy credentials
-        if: ${{ env.AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN != '' && env.HOSTED_ECS_CLUSTER != '' && env.HOSTED_ECS_SERVICE != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN }}
 
       - name: Deploy hosted ECS services with immutable image
-        if: ${{ env.AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN != '' && env.HOSTED_ECS_CLUSTER != '' && env.HOSTED_ECS_SERVICE != '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -131,6 +135,32 @@ jobs:
               --cluster "${HOSTED_ECS_CLUSTER}" \
               --service "${service_name}" \
               --task-definition "${new_task_def_arn}"
+
+            aws ecs wait services-stable \
+              --region "${AWS_REGION}" \
+              --cluster "${HOSTED_ECS_CLUSTER}" \
+              --services "${service_name}"
+
+            local deployed_task_def
+            local deployed_image
+            deployed_task_def="$(
+              aws ecs describe-services \
+                --region "${AWS_REGION}" \
+                --cluster "${HOSTED_ECS_CLUSTER}" \
+                --services "${service_name}" \
+                | jq -r '.services[0].taskDefinition'
+            )"
+            deployed_image="$(
+              aws ecs describe-task-definition \
+                --region "${AWS_REGION}" \
+                --task-definition "${deployed_task_def}" \
+                | jq -r --arg container "${container_name}" '.taskDefinition.containerDefinitions[] | select(.name == $container) | .image'
+            )"
+
+            [[ "${deployed_image}" == "${IMAGE_URI}" ]] || {
+              echo "deployed image mismatch for ${service_name}: expected ${IMAGE_URI}, got ${deployed_image}"
+              exit 1
+            }
           }
 
           deploy_service "${HOSTED_ECS_SERVICE}" "history-service"
