@@ -62,6 +62,21 @@ def analyze_history(
     return analyze_history_events(filtered)
 
 
+def load_history_events(
+    *,
+    history_paths: tuple[str, ...],
+    since: str | None = None,
+    until: str | None = None,
+) -> tuple[dict[str, object], ...]:
+    since_bound = _parse_timestamp_bound(since, label="since")
+    until_bound = _parse_timestamp_bound(until, label="until")
+    events = tuple(
+        _filter_event(event, repository=None, policy_pack_id=None, since=since_bound, until=until_bound)
+        for event in _load_history(history_paths)
+    )
+    return tuple(item for item in events if item is not None)
+
+
 def analyze_history_events(events: tuple[dict[str, object], ...]) -> dict[str, object]:
     return {
         "schema_version": 1,

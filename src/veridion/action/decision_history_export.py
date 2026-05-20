@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from veridion.action.decision_history_config import load_history_service_config
-from veridion.action.decision_history import analyze_history
+from veridion.action.decision_history import analyze_history_events, load_history_events
 from veridion.action.decision_history_store import analyze_history_store
 
 
@@ -56,21 +56,27 @@ def export_decision_history(
     root = Path(output_dir)
     root.mkdir(parents=True, exist_ok=True)
 
-    overall = analyze_history(history_paths=history_paths, since=since, until=until)
+    events = load_history_events(history_paths=history_paths, since=since, until=until)
+    overall = analyze_history_events(events)
     (root / "overall.json").write_text(json.dumps(overall, indent=2) + "\n")
 
     repositories = sorted(str(item["repository"]) for item in overall["policy_rollout"]["latest_by_repository"])
     repos_dir = root / "repositories"
     repos_dir.mkdir(exist_ok=True)
     for repository in repositories:
-        payload = analyze_history(history_paths=history_paths, repository=repository, since=since, until=until)
+        repo_events = tuple(e for e in events if e.get("repository") == repository)
+        payload = analyze_history_events(repo_events)
         (repos_dir / f"{repository.replace('/', '_')}.json").write_text(json.dumps(payload, indent=2) + "\n")
 
     packs_dir = root / "policy-packs"
     packs_dir.mkdir(exist_ok=True)
     seen_pack_ids = sorted({str(item["pack_id"]) for item in overall["by_policy_pack"] if item.get("pack_id")})
     for pack_id in seen_pack_ids:
-        payload = analyze_history(history_paths=history_paths, policy_pack_id=pack_id, since=since, until=until)
+        pack_events = tuple(
+            e for e in events
+            if isinstance(e.get("policy"), dict) and e["policy"].get("pack_id") == pack_id
+        )
+        payload = analyze_history_events(pack_events)
         (packs_dir / f"{pack_id}.json").write_text(json.dumps(payload, indent=2) + "\n")
 
 

@@ -1864,55 +1864,133 @@ def render_app_login_html(
         else ""
     )
     return f"""<!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8">
-    <title>{_html_escape(service_name)} Sign In</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{_html_escape(service_name)} · Sign In</title>
     {redirect_meta}
     <style>
-      :root {{ --bg:#f3f6f4; --panel:#fffdf8; --line:#d7ddd4; --ink:#12231d; --muted:#5d6e65; --accent:#176b52; }}
-      * {{ box-sizing:border-box; }}
-      body {{ margin:0; font-family:Georgia, "Iowan Old Style", "Palatino Linotype", serif; background:radial-gradient(circle at top, #fcfffb 0%, var(--bg) 48%, #edf2ee 100%); color:var(--ink); }}
-      .shell {{ max-width:720px; margin:0 auto; padding:4rem 1.25rem; }}
-      .card {{ background:var(--panel); border:1px solid var(--line); border-radius:24px; padding:1.5rem; box-shadow:0 12px 32px rgba(18,35,29,.06); }}
-      h1 {{ margin:0 0 .45rem 0; font-size:2rem; letter-spacing:-0.03em; }}
-      .hint {{ color:var(--muted); font-size:.95rem; margin-top:.3rem; }}
-      .flash {{ border-radius:18px; padding:1rem 1.1rem; margin:1rem 0; border:1px solid var(--line); }}
-      .flash.success {{ background:#edf8f2; border-color:#b9dccb; color:#15553f; }}
-      .flash.error {{ background:#fff0eb; border-color:#f1beb5; color:#8b2d1f; }}
-      .flash.info {{ background:#eef5ff; border-color:#c7d8ef; color:#214b72; }}
-      form {{ display:grid; gap:.8rem; margin-top:1rem; }}
-      label {{ display:grid; gap:.25rem; font-size:.92rem; color:var(--muted); }}
-      input {{ width:100%; border:1px solid var(--line); border-radius:12px; padding:.75rem .8rem; background:#fff; color:var(--ink); font:inherit; }}
-      button {{ border:none; border-radius:999px; padding:.8rem 1rem; background:var(--accent); color:#fff; font:inherit; cursor:pointer; }}
-      .actions {{ display:flex; gap:.75rem; flex-wrap:wrap; align-items:center; margin-top:1rem; }}
-      .mono {{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }}
-      a {{ color:var(--accent); text-decoration:none; }}
+      :root {{
+        --panel: #fefdf9;
+        --line: #d5dbd2;
+        --ink: #12231d;
+        --muted: #5d6e65;
+        --accent: #176b52;
+        --accent-dark: #0f4f3b;
+        --danger: #8b2d1f;
+        --danger-soft: #fff1ed;
+      }}
+      * {{ box-sizing: border-box; margin: 0; }}
+      body {{
+        font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+        background: linear-gradient(160deg, #f5f9f6 0%, #eaf2ec 55%, #e2ede4 100%);
+        color: var(--ink);
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem 1rem;
+      }}
+      .wordmark {{
+        font-size: .9rem;
+        letter-spacing: .18em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 1.75rem;
+        font-style: italic;
+        opacity: .85;
+      }}
+      .card {{
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        padding: 2.5rem 2.25rem;
+        width: 100%;
+        max-width: 420px;
+        box-shadow: 0 24px 64px rgba(18,35,29,.10), 0 4px 16px rgba(18,35,29,.05);
+      }}
+      h1 {{ font-size: 1.7rem; letter-spacing: -0.03em; margin-bottom: .45rem; line-height: 1.2; }}
+      .subtitle {{ color: var(--muted); font-size: .93rem; line-height: 1.55; margin-bottom: 1.75rem; }}
+      .flash {{ border-radius: 14px; padding: .85rem 1rem; margin-bottom: 1.25rem; border: 1px solid var(--line); font-size: .92rem; line-height: 1.5; }}
+      .flash.success {{ background: #edf8f2; border-color: #b9dccb; color: #15553f; }}
+      .flash.error {{ background: var(--danger-soft); border-color: #f1beb5; color: var(--danger); }}
+      .flash.info {{ background: #eef5ff; border-color: #c7d8ef; color: #214b72; }}
+      form {{ display: grid; gap: 1rem; }}
+      label {{ display: grid; gap: .35rem; font-size: .86rem; color: var(--muted); letter-spacing: .025em; }}
+      input {{
+        width: 100%;
+        border: 1.5px solid var(--line);
+        border-radius: 10px;
+        padding: .8rem .9rem;
+        background: #fff;
+        color: var(--ink);
+        font: inherit;
+        font-size: .97rem;
+        transition: border-color .15s;
+      }}
+      input:focus {{ outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(23,107,82,.10); }}
+      .btn-primary {{
+        border: none;
+        border-radius: 11px;
+        padding: .85rem 1rem;
+        background: var(--accent);
+        color: #fff;
+        font: inherit;
+        font-size: .97rem;
+        font-weight: 700;
+        letter-spacing: .01em;
+        cursor: pointer;
+        margin-top: .25rem;
+        transition: background .15s;
+        width: 100%;
+      }}
+      .btn-primary:hover {{ background: var(--accent-dark); }}
+      .divider {{ border: none; border-top: 1px solid var(--line); margin: 1.5rem 0; }}
+      .actions {{ display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; font-size: .9rem; }}
+      .btn-ghost {{
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: .45rem .9rem;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-size: .9rem;
+        cursor: pointer;
+        transition: border-color .15s;
+      }}
+      .btn-ghost:hover {{ border-color: var(--ink); color: var(--ink); }}
+      a {{ color: var(--accent); text-decoration: none; }}
+      a:hover {{ text-decoration: underline; }}
+      .hint {{ color: var(--muted); font-size: .88rem; margin-top: .85rem; line-height: 1.5; }}
+      .mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }}
     </style>
   </head>
   <body>
-    <div class="shell">
-      <div class="card">
-        <div class="hint">Hosted operator access</div>
-        <h1>Sign In To The Control Plane</h1>
-        <div class="hint">Paste a bearer token once to create a browser session cookie for the hosted app. This is a bridge until operator JWT/OIDC sign-in is the default.</div>
-        {flash}
-        <form method="post" action="/api/{_html_escape(api_version)}/app/login">
-          <label>Tenant
-            <input name="tenant_id" value="{_html_escape(tenant_id)}" placeholder="acme">
-          </label>
-          <label>Bearer Token
-            <input name="token" type="password" placeholder="veridion-alpha-admin-...">
-          </label>
-          <input type="hidden" name="next" value="{_html_escape(next_path)}">
-          <button type="submit">Create Browser Session</button>
+    <div class="wordmark">{_html_escape(service_name)}</div>
+    <div class="card">
+      <h1>Sign In To The Control Plane</h1>
+      <div class="subtitle">Enter your tenant and bearer token to open a browser session for the hosted app.</div>
+      {flash}
+      <form method="post" action="/api/{_html_escape(api_version)}/app/login">
+        <label>Tenant
+          <input name="tenant_id" value="{_html_escape(tenant_id)}" placeholder="acme" autocomplete="username">
+        </label>
+        <label>Bearer Token
+          <input name="token" type="password" placeholder="veridion-…" autocomplete="current-password">
+        </label>
+        <input type="hidden" name="next" value="{_html_escape(next_path)}">
+        <button class="btn-primary" type="submit">Sign In</button>
+      </form>
+      <hr class="divider">
+      <div class="actions">
+        <a href="/api/{_html_escape(api_version)}/app?tenant={_html_escape(tenant_id)}">Back to app</a>
+        <form method="post" action="/api/{_html_escape(api_version)}/app/logout">
+          <button class="btn-ghost" type="submit">Sign Out</button>
         </form>
-        <div class="actions">
-          <a href="/api/{_html_escape(api_version)}/app?tenant={_html_escape(tenant_id)}">Back To App</a>
-          <form method="post" action="/api/{_html_escape(api_version)}/app/logout"><button type="submit">Sign Out</button></form>
-        </div>
-        {redirect_copy}
       </div>
+      {redirect_copy}
     </div>
   </body>
 </html>"""
@@ -2083,8 +2161,8 @@ def render_app_html(
         ) or "<li>No time-series points recorded</li>"
         verdict_items = ", ".join(f"{key}={value}" for key, value in detail_verdicts.items()) or "none"
         return (
-            f"<div class='card' style='margin-top:1rem; background:#fcfffd;'>"
-            f"<h3 class='section-title' style='margin-top:0;'>History Slice</h3>"
+            f"<div class='card' style='margin-top:1rem; background:var(--panel-alt,#f7faf8);'>"
+            f"<h3 class='section-title'>History Slice</h3>"
             f"<div class='two-col'>"
             f"<div><div class='hint'><strong>Events:</strong> {_html_escape(str(detail_summary.get('events', 0)))}</div>"
             f"<div class='hint'><strong>Repositories:</strong> {_html_escape(str(detail_summary.get('repositories', 0)))}</div>"
@@ -2092,8 +2170,8 @@ def render_app_html(
             f"<div><div class='hint'><strong>Window start:</strong> {_html_escape(str(((detail_summary.get('window') or {}).get('first_generated_at', 'n/a')) if isinstance(detail_summary.get('window'), dict) else 'n/a'))}</div>"
             f"<div class='hint'><strong>Window end:</strong> {_html_escape(str(((detail_summary.get('window') or {}).get('last_generated_at', 'n/a')) if isinstance(detail_summary.get('window'), dict) else 'n/a'))}</div></div>"
             f"</div>"
-            f"<div class='two-col' style='margin-top:1rem;'><div><h3 class='section-title' style='margin-top:0;'>Blocking Trend</h3><ul>{block_items}</ul></div>"
-            f"<div><h3 class='section-title' style='margin-top:0;'>Recent Event Days</h3><ul>{series_items}</ul></div></div>"
+            f"<div class='two-col' style='margin-top:1rem;'><div><h3 class='section-title'>Blocking Trend</h3><ul>{block_items}</ul></div>"
+            f"<div><h3 class='section-title'>Recent Event Days</h3><ul>{series_items}</ul></div></div>"
             f"</div>"
         )
     producer_ops_items = "".join(
@@ -2102,7 +2180,7 @@ def render_app_html(
         f"<div class='hint'>issued {_html_escape(str(item.get('last_issued_at', '') or 'n/a'))} / used {_html_escape(str(item.get('last_used_at', '') or 'never'))}</div>"
         f"<div style='display:flex; gap:.5rem; margin-top:.55rem; flex-wrap:wrap;'>"
         f"<form method='post' action='/api/{_html_escape(api_version)}/app'><input type='hidden' name='action' value='rotate_producer_client'><input type='hidden' name='tenant_id' value='{_html_escape(tenant_value)}'><input type='hidden' name='client_id' value='{_html_escape(str(item.get('client_id', '')))}'><button type='submit'>Rotate Token</button></form>"
-        f"<form method='post' action='/api/{_html_escape(api_version)}/app'><input type='hidden' name='action' value='revoke_producer_client'><input type='hidden' name='tenant_id' value='{_html_escape(tenant_value)}'><input type='hidden' name='client_id' value='{_html_escape(str(item.get('client_id', '')))}'><button type='submit' style='background:#8b2d1f;'>Revoke</button></form>"
+        f"<form method='post' action='/api/{_html_escape(api_version)}/app'><input type='hidden' name='action' value='revoke_producer_client'><input type='hidden' name='tenant_id' value='{_html_escape(tenant_value)}'><input type='hidden' name='client_id' value='{_html_escape(str(item.get('client_id', '')))}'><button type='submit' style='background:var(--danger,#8b2d1f);'>Revoke</button></form>"
         f"</div></li>"
         for item in producer_clients[:6]
     ) or "<li>No producer clients yet</li>"
@@ -2229,56 +2307,117 @@ def render_app_html(
     <meta charset="utf-8">
     <title>{_html_escape(service_name)} App</title>
     <style>
-      :root {{ --bg:#f3f6f4; --panel:#fffdf8; --line:#d7ddd4; --ink:#12231d; --muted:#5d6e65; --accent:#176b52; --accent-soft:#e8f5ef; --warn:#9b5a00; --warn-soft:#fff3df; --danger:#9a2f1f; --danger-soft:#fff0eb; }}
-      * {{ box-sizing:border-box; }}
-      body {{ margin:0; font-family:Georgia, "Iowan Old Style", "Palatino Linotype", serif; background:radial-gradient(circle at top, #fcfffb 0%, var(--bg) 48%, #edf2ee 100%); color:var(--ink); }}
-      .shell {{ max-width:1320px; margin:0 auto; padding:2rem 1.25rem 3rem; }}
-      .hero {{ display:grid; grid-template-columns:1.1fr 0.9fr; gap:1rem; margin-bottom:1rem; }}
-      .hero-card {{ background:linear-gradient(135deg, #153b2d 0%, #245843 55%, #dff0e7 180%); color:#f6fbf8; border-radius:28px; padding:1.5rem; min-height:220px; box-shadow:0 22px 48px rgba(18,35,29,.15); }}
-      .hero h1 {{ margin:0 0 .4rem 0; font-size:2.3rem; letter-spacing:-0.04em; }}
-      .hero p {{ margin:.45rem 0 0 0; max-width:42rem; color:rgba(246,251,248,.84); line-height:1.45; }}
-      .meta {{ color:rgba(246,251,248,.74); font-size:.95rem; }}
-      .hero-side {{ display:grid; gap:1rem; }}
-      .card {{ background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:1rem; box-shadow:0 12px 32px rgba(18,35,29,.06); }}
-      .summary-grid {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1rem; margin:1rem 0; }}
-      .mini-card {{ background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:1rem; }}
-      .label {{ color:var(--muted); font-size:.84rem; text-transform:uppercase; letter-spacing:.08em; }}
-      .value {{ font-size:2rem; margin-top:.35rem; font-weight:700; }}
-      .value.small {{ font-size:1.2rem; }}
-      .section-grid {{ display:grid; grid-template-columns:1.15fr .85fr; gap:1rem; margin-top:1rem; }}
-      .stack {{ display:grid; gap:1rem; }}
-      .triple {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; margin-top:1rem; }}
-      .section-title {{ margin:0 0 .85rem 0; font-size:1rem; letter-spacing:-0.01em; }}
-      .section-kicker {{ color:var(--muted); font-size:.9rem; margin:-.35rem 0 .9rem 0; }}
-      .pill {{ display:inline-block; padding:.35rem .7rem; border-radius:999px; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.18); margin-right:.45rem; margin-bottom:.45rem; font-size:.88rem; }}
-      .status {{ display:inline-block; margin-left:.4rem; padding:.18rem .45rem; border-radius:999px; font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; }}
-      .status.ready {{ background:var(--accent-soft); color:var(--accent); }}
-      .status.todo {{ background:var(--warn-soft); color:var(--warn); }}
-      .mono {{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.85rem; }}
-      ul {{ margin:0; padding-left:1rem; }}
-      li {{ margin:.45rem 0; }}
-      .hint {{ color:var(--muted); font-size:.9rem; margin-top:.2rem; }}
-      .callout {{ background:linear-gradient(180deg, #fff9ef 0%, #fffdf9 100%); border:1px solid #f0d7aa; }}
-      .callout strong {{ color:#7a4d00; }}
-      .flash {{ border-radius:18px; padding:1rem 1.1rem; margin:1rem 0; border:1px solid var(--line); }}
-      .flash.success {{ background:#edf8f2; border-color:#b9dccb; color:#15553f; }}
-      .flash.warning {{ background:#fff6e7; border-color:#efd49f; color:#7a4d00; }}
-      .flash.error {{ background:#fff0eb; border-color:#f1beb5; color:#8b2d1f; }}
-      .token-box {{ margin-top:.75rem; padding:.9rem 1rem; background:#fffdf8; border:1px dashed #d2b276; border-radius:14px; word-break:break-all; color:#6b4300; }}
-      table {{ width:100%; border-collapse:collapse; }}
-      th, td {{ text-align:left; padding:.7rem .55rem; border-top:1px solid var(--line); font-size:.94rem; vertical-align:top; }}
-      th {{ color:var(--muted); font-weight:600; border-top:none; }}
-      .count {{ float:right; color:var(--muted); font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }}
-      .footer {{ margin-top:1rem; color:var(--muted); font-size:.92rem; }}
-      .two-col {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }}
-      form {{ display:grid; gap:.75rem; }}
-      label {{ display:grid; gap:.25rem; font-size:.92rem; color:var(--muted); }}
-      input {{ width:100%; border:1px solid var(--line); border-radius:12px; padding:.75rem .8rem; background:#fff; color:var(--ink); font:inherit; }}
-      button {{ border:none; border-radius:999px; padding:.75rem 1rem; background:var(--accent); color:#fff; font:inherit; cursor:pointer; }}
-      a {{ color:var(--accent); text-decoration:none; }}
-      a:hover {{ text-decoration:underline; }}
+      :root {{
+        --panel: #fefdf9;
+        --panel-alt: #f7faf8;
+        --line: #d5dbd2;
+        --ink: #12231d;
+        --muted: #5d6e65;
+        --accent: #176b52;
+        --accent-dark: #0f4f3b;
+        --accent-soft: #e4f3ec;
+        --warn: #8a5000;
+        --warn-soft: #fff8ec;
+        --danger: #8b2d1f;
+        --danger-soft: #fff1ed;
+      }}
+      * {{ box-sizing: border-box; }}
+      body {{
+        margin: 0;
+        font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+        background: linear-gradient(180deg, #f2f6f3 0%, #eaefeb 100%);
+        color: var(--ink);
+        font-size: 15px;
+        line-height: 1.5;
+      }}
+      .shell {{ max-width: 1360px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }}
+
+      /* Hero */
+      .hero {{ display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 1.25rem; margin-bottom: 1.25rem; }}
+      .hero-card {{
+        background: linear-gradient(140deg, #112b20 0%, #1c4d3a 50%, #275e48 100%);
+        color: #f4f9f6;
+        border-radius: 28px;
+        padding: 2rem 2rem 1.75rem;
+        min-height: 210px;
+        box-shadow: 0 28px 60px rgba(18,35,29,.20);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }}
+      .hero h1 {{ margin: 0 0 .4rem; font-size: 2.1rem; letter-spacing: -0.04em; line-height: 1.15; }}
+      .hero p {{ margin: .4rem 0 0; color: rgba(244,249,246,.72); line-height: 1.55; font-size: .94rem; max-width: 40rem; }}
+      .meta {{ color: rgba(244,249,246,.55); font-size: .82rem; letter-spacing: .015em; margin-bottom: .5rem; }}
+      .hero-side {{ display: grid; gap: 1.25rem; }}
+
+      /* Cards */
+      .card {{ background: var(--panel); border: 1px solid var(--line); border-radius: 22px; padding: 1.25rem; box-shadow: 0 6px 20px rgba(18,35,29,.05); }}
+      .callout {{ background: linear-gradient(180deg, #fffcf0 0%, #fefdf8 100%); border-color: #e4d090; }}
+      .callout strong {{ color: var(--warn); }}
+
+      /* Metric grid */
+      .summary-grid {{ display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 1rem; margin: 1.25rem 0; }}
+      .mini-card {{ background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 1.25rem 1.1rem; box-shadow: 0 4px 12px rgba(18,35,29,.04); }}
+      .label {{ color: var(--muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .1em; font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 600; }}
+      .value {{ font-size: 2.25rem; font-weight: 700; margin-top: .3rem; line-height: 1; letter-spacing: -0.02em; }}
+      .value.small {{ font-size: 1.3rem; line-height: 1.2; }}
+
+      /* Layout grids */
+      .section-grid {{ display: grid; grid-template-columns: 1.2fr .8fr; gap: 1.25rem; margin-top: 1.25rem; }}
+      .stack {{ display: grid; gap: 1.25rem; }}
+      .triple {{ display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 1.25rem; margin-top: 1.25rem; }}
+      .two-col {{ display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1.25rem; }}
+
+      /* Typography */
+      .section-title {{ margin: 0 0 .55rem; font-size: 1rem; font-weight: 700; letter-spacing: -0.015em; }}
+      .section-kicker {{ color: var(--muted); font-size: .87rem; margin: -.2rem 0 .9rem; line-height: 1.5; }}
+      h3.section-title {{ font-size: .92rem; margin-bottom: .5rem; }}
+
+      /* Chips & badges */
+      .pill {{ display: inline-block; padding: .28rem .75rem; border-radius: 999px; background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.22); margin-right: .4rem; margin-bottom: .4rem; font-size: .83rem; }}
+      .status {{ display: inline-flex; align-items: center; margin-left: .45rem; padding: .17rem .5rem; border-radius: 999px; font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 700; }}
+      .status.ready {{ background: var(--accent-soft); color: var(--accent); }}
+      .status.todo {{ background: var(--warn-soft); color: var(--warn); }}
+
+      /* Utility */
+      .mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; }}
+      ul {{ margin: 0; padding-left: 1.1rem; }}
+      li {{ margin: .5rem 0; line-height: 1.45; }}
+      .hint {{ color: var(--muted); font-size: .9rem; margin-top: .2rem; line-height: 1.45; }}
+      .count {{ float: right; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88rem; }}
+
+      /* Flash */
+      .flash {{ border-radius: 16px; padding: 1rem 1.1rem; margin: 1rem 0; border: 1px solid var(--line); font-size: .92rem; line-height: 1.5; }}
+      .flash.success {{ background: #edf8f2; border-color: #b9dccb; color: #15553f; }}
+      .flash.warning {{ background: var(--warn-soft); border-color: #e8c97a; color: var(--warn); }}
+      .flash.error {{ background: var(--danger-soft); border-color: #f1beb5; color: var(--danger); }}
+      .token-box {{ margin-top: .75rem; padding: .9rem 1rem; background: #fffdf8; border: 1px dashed #d2b276; border-radius: 12px; word-break: break-all; color: #6b4300; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .87rem; }}
+
+      /* Table */
+      table {{ width: 100%; border-collapse: collapse; }}
+      th, td {{ text-align: left; padding: .7rem .6rem; border-top: 1px solid var(--line); font-size: .92rem; vertical-align: top; }}
+      th {{ color: var(--muted); font-weight: 600; border-top: none; font-size: .78rem; text-transform: uppercase; letter-spacing: .07em; font-family: ui-sans-serif, system-ui, sans-serif; }}
+
+      /* Forms */
+      form {{ display: grid; gap: .75rem; }}
+      label {{ display: grid; gap: .3rem; font-size: .87rem; color: var(--muted); }}
+      input {{ width: 100%; border: 1.5px solid var(--line); border-radius: 10px; padding: .7rem .85rem; background: #fff; color: var(--ink); font: inherit; font-size: .94rem; transition: border-color .15s; }}
+      input:focus {{ outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(23,107,82,.09); }}
+
+      /* Buttons */
+      button {{ border: none; border-radius: 10px; padding: .65rem 1.1rem; background: var(--accent); color: #fff; font: inherit; font-size: .9rem; font-weight: 700; cursor: pointer; transition: background .15s; }}
+      button:hover {{ background: var(--accent-dark); }}
+      button[style*="8b2d1f"], button[style*="danger"] {{ background: var(--danger); }}
+
+      /* Links */
+      a {{ color: var(--accent); text-decoration: none; }}
+      a:hover {{ text-decoration: underline; }}
+
+      /* Footer */
+      .footer {{ margin-top: 2rem; color: var(--muted); font-size: .87rem; text-align: center; line-height: 1.6; }}
+
       @media (max-width: 1080px) {{
-        .hero, .section-grid, .triple, .summary-grid, .two-col {{ grid-template-columns:1fr; }}
+        .hero, .section-grid, .triple, .summary-grid, .two-col {{ grid-template-columns: 1fr; }}
       }}
     </style>
   </head>
@@ -2286,11 +2425,13 @@ def render_app_html(
     <div class="shell">
       <div class="hero">
         <div class="hero-card">
-          <div class="meta">Tenant {tenant_label} / Identity {_html_escape(principal)} / API {_html_escape(api_version)}</div>
-          <h1>{display_name}</h1>
-          <p>Hosted control plane for release decisions, CI event intake, scheduled materializations, and operator state. This screen should answer whether the tenant is onboarded, whether decisions are arriving, and whether the worker is alive.</p>
-          <div style="margin-top:1rem;">
-            <span class="pill">{events} decision events</span>
+          <div>
+            <div class="meta">{_html_escape(service_name)} &middot; Tenant {tenant_label} &middot; {_html_escape(principal)}</div>
+            <h1>{display_name}</h1>
+            <p>Release-control overview for this tenant. Track whether events are arriving, producers are live, and the scheduler is running.</p>
+          </div>
+          <div>
+            <span class="pill">{events} events</span>
             <span class="pill">{repositories} repositories</span>
             <span class="pill">{schedule_count} schedules</span>
             <span class="pill">{materialization_count} materializations</span>
@@ -2300,14 +2441,14 @@ def render_app_html(
           <div class="card callout">
             <div class="label">Onboarding Progress</div>
             <div class="value small">{completed_steps} / {len(checklist)} complete</div>
-            <p class="hint"><strong>Next step:</strong> {_html_escape(next_step)}</p>
+            <p class="hint" style="margin-top:.6rem;"><strong>Next:</strong> {_html_escape(next_step)}</p>
           </div>
           <div class="card">
             <div class="label">Service Shape</div>
-            <div class="hint">Backend {store_backend} / schema {schema_version} / persistent store {has_persistent_store}</div>
+            <div class="hint" style="margin-top:.5rem;">Backend: <strong>{store_backend}</strong> &nbsp;·&nbsp; Schema: <strong>{schema_version}</strong> &nbsp;·&nbsp; Persistent store: <strong>{has_persistent_store}</strong></div>
             <div class="hint">History paths: {_html_escape(str(len(history_paths)))}</div>
-            <form method="post" action="/api/{_html_escape(api_version)}/app/logout" style="margin-top:1rem;">
-              <button type="submit">Sign Out</button>
+            <form method="post" action="/api/{_html_escape(api_version)}/app/logout" style="margin-top:1rem; display:block;">
+              <button type="submit" style="width:100%;">Sign Out</button>
             </form>
           </div>
         </div>
@@ -2577,7 +2718,7 @@ def render_app_html(
         </ul>
       </div>
 
-      <div class="footer">Hosted alpha UX is now centered on onboarding, live intake, and worker health. The next layer should turn these static operator cues into writable forms and deeper repo/service drilldowns.</div>
+      <div class="footer">{_html_escape(service_name)} &middot; Tenant {tenant_label} &middot; API {_html_escape(api_version)}</div>
     </div>
   </body>
 </html>"""
@@ -2650,49 +2791,98 @@ def render_focus_page_html(
         focus_meta = "<p class='hint'>No focused selection found.</p>"
 
     return f"""<!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8">
-    <title>{_html_escape(service_name)} {kind.title()}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{_html_escape(service_name)} &middot; {_html_escape(focus_title)}</title>
     <style>
-      :root {{ --bg:#f3f6f4; --panel:#fffdf8; --line:#d7ddd4; --ink:#12231d; --muted:#5d6e65; --accent:#176b52; }}
-      body {{ margin:0; font-family:Georgia, "Iowan Old Style", "Palatino Linotype", serif; background:var(--bg); color:var(--ink); }}
-      .shell {{ max-width:1180px; margin:0 auto; padding:2rem 1.25rem 3rem; }}
-      .hero, .grid {{ display:grid; gap:1rem; }}
-      .hero {{ grid-template-columns:1fr .8fr; }}
-      .grid {{ grid-template-columns:1fr 1fr 1fr; margin-top:1rem; }}
-      .card {{ background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:1rem; box-shadow:0 12px 32px rgba(18,35,29,.06); }}
-      .section-title {{ margin:0 0 .85rem 0; font-size:1rem; }}
-      .hint {{ color:var(--muted); font-size:.92rem; margin-top:.2rem; }}
-      .count {{ float:right; color:var(--muted); font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }}
-      .mono {{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }}
-      ul {{ margin:0; padding-left:1rem; }}
-      a {{ color:var(--accent); text-decoration:none; }}
-      @media (max-width: 1080px) {{ .hero, .grid {{ grid-template-columns:1fr; }} }}
+      :root {{
+        --panel: #fefdf9;
+        --line: #d5dbd2;
+        --ink: #12231d;
+        --muted: #5d6e65;
+        --accent: #176b52;
+        --accent-dark: #0f4f3b;
+        --accent-soft: #e4f3ec;
+      }}
+      * {{ box-sizing: border-box; margin: 0; }}
+      body {{
+        font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+        background: linear-gradient(180deg, #f2f6f3 0%, #eaefeb 100%);
+        color: var(--ink);
+        font-size: 15px;
+        line-height: 1.5;
+      }}
+      .shell {{ max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }}
+
+      /* Breadcrumb */
+      .breadcrumb {{ display: flex; align-items: center; gap: .5rem; margin-bottom: 1.5rem; font-size: .86rem; color: var(--muted); }}
+      .breadcrumb a {{ color: var(--accent); text-decoration: none; }}
+      .breadcrumb a:hover {{ text-decoration: underline; }}
+      .breadcrumb .sep {{ opacity: .5; }}
+
+      /* Header */
+      .page-header {{ margin-bottom: 1.5rem; }}
+      .page-kicker {{ font-size: .82rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 600; margin-bottom: .45rem; }}
+      .page-title {{ font-size: 2rem; letter-spacing: -0.035em; line-height: 1.15; }}
+      .page-sub {{ color: var(--muted); font-size: .93rem; margin-top: .35rem; }}
+
+      /* Cards */
+      .card {{ background: var(--panel); border: 1px solid var(--line); border-radius: 22px; padding: 1.25rem; box-shadow: 0 6px 20px rgba(18,35,29,.05); }}
+      .section-title {{ margin: 0 0 .65rem; font-size: 1rem; font-weight: 700; letter-spacing: -0.015em; }}
+      .hint {{ color: var(--muted); font-size: .9rem; margin-top: .2rem; line-height: 1.45; }}
+      .count {{ float: right; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88rem; }}
+      .mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; }}
+
+      /* Lists */
+      ul {{ margin: 0; padding-left: 1.1rem; }}
+      li {{ margin: .5rem 0; line-height: 1.4; }}
+
+      /* State panel */
+      .state-grid {{ display: grid; grid-template-columns: 1fr 2fr; gap: 1.25rem; margin-bottom: 1.25rem; }}
+      .analytics-grid {{ display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 1.25rem; }}
+
+      a {{ color: var(--accent); text-decoration: none; }}
+      a:hover {{ text-decoration: underline; }}
+
+      @media (max-width: 900px) {{
+        .state-grid, .analytics-grid {{ grid-template-columns: 1fr; }}
+      }}
     </style>
   </head>
   <body>
     <div class="shell">
-      <div class="hero">
-        <div class="card">
-          <div class="hint">Tenant {_html_escape(str(tenant.get('tenant_id', '')) or 'all')} / Identity {_html_escape(principal)} / API {_html_escape(api_version)}</div>
-          <h1 style="margin:.35rem 0 0 0;">{_html_escape(focus_title)}</h1>
-          <div class="hint" style="margin-top:.5rem;">Dedicated {kind} page for operator review and historical analysis.</div>
-        </div>
-        <div class="card">
-          <h2 class="section-title">Navigation</h2>
-          <ul>
-            <li><a href="/api/{_html_escape(api_version)}/app?tenant={tenant_value}">Back to tenant dashboard</a></li>
-            <li><a href="/api/{_html_escape(api_version)}/app/repository?tenant={tenant_value}&repository={quote(selected_repository)}">Repository page</a></li>
-            <li><a href="/api/{_html_escape(api_version)}/app/service?tenant={tenant_value}&service={quote(selected_service)}">Service page</a></li>
-          </ul>
-        </div>
-      </div>
-      <div class="grid">
+      <nav class="breadcrumb">
+        <a href="/api/{_html_escape(api_version)}/app?tenant={tenant_value}">{_html_escape(service_name)}</a>
+        <span class="sep">&rsaquo;</span>
+        <span>{kind.title()}s</span>
+        <span class="sep">&rsaquo;</span>
+        <span>{_html_escape(focus_title)}</span>
+      </nav>
+
+      <header class="page-header">
+        <div class="page-kicker">Dedicated {kind} page for operator review and historical analysis.</div>
+        <div class="page-title">{_html_escape(focus_title)}</div>
+        <div class="page-sub">Tenant {_html_escape(str(tenant.get('tenant_id', '')) or 'all')} &middot; {_html_escape(principal)}</div>
+      </header>
+
+      <div class="state-grid">
         <div class="card">
           <h2 class="section-title">Current State</h2>
           {focus_meta}
         </div>
+        <div class="card">
+          <h2 class="section-title">Related Pages</h2>
+          <ul>
+            <li><a href="/api/{_html_escape(api_version)}/app?tenant={tenant_value}">&larr; Back to dashboard</a></li>
+            <li><a href="/api/{_html_escape(api_version)}/app/repository?tenant={tenant_value}&repository={quote(selected_repository)}">Repository focus page</a></li>
+            <li><a href="/api/{_html_escape(api_version)}/app/service?tenant={tenant_value}&service={quote(selected_service)}">Service focus page</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="analytics-grid">
         {_focus_analytics(repository_analytics if kind == 'repository' else service_analytics)}
       </div>
     </div>
