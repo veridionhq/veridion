@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, urlparse
 
@@ -44,6 +45,7 @@ from veridion.action.decision_history_store import (
 from veridion.action.history_identity import jwt_auth_enabled, resolve_bearer_identity, resolve_trusted_header_identity
 
 API_VERSION = "v1"
+APP_SESSION_COOKIE = "veridion_app_bearer"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -134,7 +136,7 @@ def _build_handler(
                 scoped_tokens=scoped_tokens,
             )
             if "html" in payload:
-                self._write_html(status, str(payload["html"]))
+                self._write_html(status, str(payload["html"]), headers=payload.get("__headers", {}))
             else:
                 self._write_json(status, payload)
 
@@ -160,7 +162,7 @@ def _build_handler(
                 scoped_tokens=scoped_tokens,
             )
             if "html" in payload:
-                self._write_html(status, str(payload["html"]))
+                self._write_html(status, str(payload["html"]), headers=payload.get("__headers", {}))
             else:
                 self._write_json(status, payload)
 
@@ -168,18 +170,24 @@ def _build_handler(
             return
 
         def _write_json(self, status: int, payload: dict[str, object]) -> None:
-            body = json.dumps(payload, indent=2).encode("utf-8")
+            response_headers = payload.get("__headers", {}) if isinstance(payload.get("__headers"), dict) else {}
+            response_payload = {key: value for key, value in payload.items() if key != "__headers"}
+            body = json.dumps(response_payload, indent=2).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
+            for key, value in response_headers.items():
+                self.send_header(str(key), str(value))
             self.end_headers()
             self.wfile.write(body)
 
-        def _write_html(self, status: int, payload: str) -> None:
+        def _write_html(self, status: int, payload: str, *, headers: dict[str, object] | None = None) -> None:
             body = payload.encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
+            for key, value in (headers or {}).items():
+                self.send_header(str(key), str(value))
             self.end_headers()
             self.wfile.write(body)
 
@@ -226,6 +234,18 @@ def resolve_history_request(
         method=method,
     )
     if authz is not None:
+        if authz[0] == 401 and method == "GET" and route in {"/app", "/app/repository", "/app/service"}:
+            return (
+                200,
+                {
+                    "html": render_app_login_html(
+                        api_version=api_version or API_VERSION,
+                        tenant_id=params.get("tenant", ""),
+                        next_path=path,
+                        service_name=service_name,
+                    )
+                },
+            )
         return _respond(authz[0], authz[1], route=route, api_version=api_version, identity=identity)
     if method == "POST":
         status, payload = _handle_post_request(
@@ -239,10 +259,13 @@ def resolve_history_request(
             materialization_root=materialization_root,
             config_path=config_path,
             scoped_token=identity,
+            auth_tokens=auth_tokens,
+            scoped_tokens=scoped_lookup,
             headers=headers or {},
             api_version=api_version or API_VERSION,
             service_name=service_name,
             jwt_config=jwt_config or JWTAuthConfig(),
+            trusted_header_auth=trusted_header_auth or TrustedHeaderAuthConfig(),
         )
         return _respond(status, payload, route=route, api_version=api_version, identity=identity)
     if route == "/tenants":
@@ -275,6 +298,18 @@ def resolve_history_request(
         if payload is None:
             return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
         return _respond(200, payload, route=route, api_version=api_version, identity=identity)
+    if route == "/app/login":
+        return (
+            200,
+            {
+                "html": render_app_login_html(
+                    api_version=api_version or API_VERSION,
+                    tenant_id=params.get("tenant", ""),
+                    next_path=params.get("next") or f"/api/{api_version or API_VERSION}/app?tenant={params.get('tenant', '')}",
+                    service_name=service_name,
+                )
+            },
+        )
     if route == "/app":
         overview = _build_overview_payload(
             history_paths=history_paths,
@@ -549,7 +584,7 @@ def _respond(
 ) -> tuple[int, dict[str, object]]:
     if not api_version:
         return (status, payload)
-    if route in {"/dashboard", "/app"} and "html" in payload:
+    if route in {"/dashboard", "/app", "/app/login", "/app/logout"} and "html" in payload:
         return (status, payload)
     return (
         status,
@@ -565,6 +600,42 @@ def _respond(
 def _query_params(raw: str) -> dict[str, str]:
     parsed = parse_qs(raw)
     return {key: values[0] for key, values in parsed.items() if values}
+
+
+def _cookie_value(headers: dict[str, str], name: str) -> str:
+    raw_cookie = headers.get("Cookie", "") or headers.get("cookie", "")
+    if not raw_cookie:
+        return ""
+    cookie = SimpleCookie()
+    try:
+        cookie.load(raw_cookie)
+    except Exception:
+        return ""
+    morsel = cookie.get(name)
+    return morsel.value.strip() if morsel is not None and morsel.value else ""
+
+
+def _session_cookie_header(*, token: str, secure: bool) -> str:
+    cookie = SimpleCookie()
+    cookie[APP_SESSION_COOKIE] = token
+    cookie[APP_SESSION_COOKIE]["path"] = "/"
+    cookie[APP_SESSION_COOKIE]["httponly"] = True
+    cookie[APP_SESSION_COOKIE]["samesite"] = "Lax"
+    if secure:
+        cookie[APP_SESSION_COOKIE]["secure"] = True
+    return cookie.output(header="").strip()
+
+
+def _clear_session_cookie_header(*, secure: bool) -> str:
+    cookie = SimpleCookie()
+    cookie[APP_SESSION_COOKIE] = ""
+    cookie[APP_SESSION_COOKIE]["path"] = "/"
+    cookie[APP_SESSION_COOKIE]["httponly"] = True
+    cookie[APP_SESSION_COOKIE]["samesite"] = "Lax"
+    cookie[APP_SESSION_COOKIE]["max-age"] = 0
+    if secure:
+        cookie[APP_SESSION_COOKIE]["secure"] = True
+    return cookie.output(header="").strip()
 
 
 def _analyze_request(
@@ -632,12 +703,18 @@ def _authorize_request(
     method: str,
 ) -> tuple[tuple[int, dict[str, object]] | None, HistoryToken | None]:
     auth_header = headers.get("Authorization", "") or headers.get("authorization", "")
+    if not auth_header:
+        cookie_token = _cookie_value(headers, APP_SESSION_COOKIE)
+        if cookie_token:
+            auth_header = f"Bearer {cookie_token}"
     header_identity = resolve_trusted_header_identity(headers=headers, config=trusted_header_auth)
     if not auth_tokens and not scoped_tokens and not jwt_auth_enabled(jwt_config) and header_identity is None:
         return (None, None)
     if header_identity is not None:
         scoped = header_identity
     else:
+        if path in {"/app/login", "/app/logout"}:
+            return (None, None)
         if not auth_header.startswith("Bearer "):
             return ((401, {"error": "unauthorized"}), None)
         token = auth_header[len("Bearer ") :].strip()
@@ -774,11 +851,43 @@ def _handle_post_request(
     materialization_root: str,
     config_path: str,
     scoped_token: HistoryToken | None,
+    auth_tokens: tuple[str, ...],
+    scoped_tokens: dict[str, HistoryToken],
     headers: dict[str, str],
     api_version: str,
     service_name: str,
     jwt_config: JWTAuthConfig,
+    trusted_header_auth: TrustedHeaderAuthConfig,
 ) -> tuple[int, dict[str, object]]:
+    if path == "/app/login":
+        return _handle_app_login_post_request(
+            body=body,
+            headers=headers,
+            scoped_tokens=scoped_tokens,
+            auth_tokens=auth_tokens,
+            jwt_config=jwt_config,
+            trusted_header_auth=trusted_header_auth,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            api_version=api_version,
+            service_name=service_name,
+        )
+    if path == "/app/logout":
+        secure_cookie = (headers.get("X-Forwarded-Proto", "") or headers.get("x-forwarded-proto", "")).strip().lower() == "https"
+        return (
+            200,
+            {
+                "html": render_app_login_html(
+                    api_version=api_version,
+                    tenant_id="",
+                    next_path=f"/api/{api_version}/app",
+                    service_name=service_name,
+                    message="Signed out.",
+                    level="success",
+                ),
+                "__headers": {"Set-Cookie": _clear_session_cookie_header(secure=secure_cookie)},
+            },
+        )
     if path == "/app":
         return _handle_app_post_request(
             body=body,
@@ -1214,6 +1323,82 @@ def _handle_app_post_request(
                 identity=scoped_token,
                 service_name=service_name,
             )
+        },
+    )
+
+
+def _handle_app_login_post_request(
+    *,
+    body: str,
+    headers: dict[str, str],
+    scoped_tokens: dict[str, HistoryToken],
+    auth_tokens: tuple[str, ...],
+    jwt_config: JWTAuthConfig,
+    trusted_header_auth: TrustedHeaderAuthConfig,
+    sqlite_path: str,
+    store_dsn: str,
+    api_version: str,
+    service_name: str,
+) -> tuple[int, dict[str, object]]:
+    payload = _parse_form_payload(body, headers)
+    token = _body_string(payload, "token")
+    tenant_id = _body_string(payload, "tenant_id")
+    next_path = _body_string(payload, "next") or f"/api/{api_version}/app?tenant={tenant_id}"
+    if not token:
+        return (
+            200,
+            {
+                "html": render_app_login_html(
+                    api_version=api_version,
+                    tenant_id=tenant_id,
+                    next_path=next_path,
+                    service_name=service_name,
+                    message="Bearer token is required.",
+                    level="error",
+                )
+            },
+        )
+    authz, identity = _authorize_request(
+        headers={"Authorization": f"Bearer {token}"},
+        auth_tokens=auth_tokens,
+        scoped_tokens=scoped_tokens,
+        jwt_config=jwt_config,
+        trusted_header_auth=trusted_header_auth,
+        sqlite_path=sqlite_path,
+        store_dsn=store_dsn,
+        tenant_id=tenant_id,
+        path="/app",
+        method="GET",
+    )
+    if authz is not None or identity is None:
+        return (
+            200,
+            {
+                "html": render_app_login_html(
+                    api_version=api_version,
+                    tenant_id=tenant_id,
+                    next_path=next_path,
+                    service_name=service_name,
+                    message="Sign-in failed. Check the bearer token and tenant scope.",
+                    level="error",
+                )
+            },
+        )
+    secure_cookie = (headers.get("X-Forwarded-Proto", "") or headers.get("x-forwarded-proto", "")).strip().lower() == "https"
+    redirect_html = render_app_login_html(
+        api_version=api_version,
+        tenant_id=tenant_id,
+        next_path=next_path,
+        service_name=service_name,
+        message="Signed in. Redirecting to the hosted app.",
+        level="success",
+        auto_redirect=True,
+    )
+    return (
+        200,
+        {
+            "html": redirect_html,
+            "__headers": {"Set-Cookie": _session_cookie_header(token=token, secure=secure_cookie)},
         },
     )
 
@@ -1657,6 +1842,82 @@ def render_dashboard_html(
 </html>"""
 
 
+def render_app_login_html(
+    *,
+    api_version: str,
+    tenant_id: str,
+    next_path: str,
+    service_name: str,
+    message: str = "",
+    level: str = "info",
+    auto_redirect: bool = False,
+) -> str:
+    flash = (
+        f"<div class='flash { _html_escape(level) }'>{_html_escape(message)}</div>"
+        if message
+        else ""
+    )
+    redirect_meta = f"<meta http-equiv='refresh' content='0;url={_html_escape(next_path)}'>" if auto_redirect else ""
+    redirect_copy = (
+        f"<p class='hint'>If redirect does not start, continue to <a href='{_html_escape(next_path)}'>{_html_escape(next_path)}</a>.</p>"
+        if auto_redirect
+        else ""
+    )
+    return f"""<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>{_html_escape(service_name)} Sign In</title>
+    {redirect_meta}
+    <style>
+      :root {{ --bg:#f3f6f4; --panel:#fffdf8; --line:#d7ddd4; --ink:#12231d; --muted:#5d6e65; --accent:#176b52; }}
+      * {{ box-sizing:border-box; }}
+      body {{ margin:0; font-family:Georgia, "Iowan Old Style", "Palatino Linotype", serif; background:radial-gradient(circle at top, #fcfffb 0%, var(--bg) 48%, #edf2ee 100%); color:var(--ink); }}
+      .shell {{ max-width:720px; margin:0 auto; padding:4rem 1.25rem; }}
+      .card {{ background:var(--panel); border:1px solid var(--line); border-radius:24px; padding:1.5rem; box-shadow:0 12px 32px rgba(18,35,29,.06); }}
+      h1 {{ margin:0 0 .45rem 0; font-size:2rem; letter-spacing:-0.03em; }}
+      .hint {{ color:var(--muted); font-size:.95rem; margin-top:.3rem; }}
+      .flash {{ border-radius:18px; padding:1rem 1.1rem; margin:1rem 0; border:1px solid var(--line); }}
+      .flash.success {{ background:#edf8f2; border-color:#b9dccb; color:#15553f; }}
+      .flash.error {{ background:#fff0eb; border-color:#f1beb5; color:#8b2d1f; }}
+      .flash.info {{ background:#eef5ff; border-color:#c7d8ef; color:#214b72; }}
+      form {{ display:grid; gap:.8rem; margin-top:1rem; }}
+      label {{ display:grid; gap:.25rem; font-size:.92rem; color:var(--muted); }}
+      input {{ width:100%; border:1px solid var(--line); border-radius:12px; padding:.75rem .8rem; background:#fff; color:var(--ink); font:inherit; }}
+      button {{ border:none; border-radius:999px; padding:.8rem 1rem; background:var(--accent); color:#fff; font:inherit; cursor:pointer; }}
+      .actions {{ display:flex; gap:.75rem; flex-wrap:wrap; align-items:center; margin-top:1rem; }}
+      .mono {{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }}
+      a {{ color:var(--accent); text-decoration:none; }}
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="card">
+        <div class="hint">Hosted operator access</div>
+        <h1>Sign In To The Control Plane</h1>
+        <div class="hint">Paste a bearer token once to create a browser session cookie for the hosted app. This is a bridge until operator JWT/OIDC sign-in is the default.</div>
+        {flash}
+        <form method="post" action="/api/{_html_escape(api_version)}/app/login">
+          <label>Tenant
+            <input name="tenant_id" value="{_html_escape(tenant_id)}" placeholder="acme">
+          </label>
+          <label>Bearer Token
+            <input name="token" type="password" placeholder="veridion-alpha-admin-...">
+          </label>
+          <input type="hidden" name="next" value="{_html_escape(next_path)}">
+          <button type="submit">Create Browser Session</button>
+        </form>
+        <div class="actions">
+          <a href="/api/{_html_escape(api_version)}/app?tenant={_html_escape(tenant_id)}">Back To App</a>
+          <form method="post" action="/api/{_html_escape(api_version)}/app/logout"><button type="submit">Sign Out</button></form>
+        </div>
+        {redirect_copy}
+      </div>
+    </div>
+  </body>
+</html>"""
+
+
 def render_app_html(
     payload: dict[str, object],
     *,
@@ -2045,6 +2306,9 @@ def render_app_html(
             <div class="label">Service Shape</div>
             <div class="hint">Backend {store_backend} / schema {schema_version} / persistent store {has_persistent_store}</div>
             <div class="hint">History paths: {_html_escape(str(len(history_paths)))}</div>
+            <form method="post" action="/api/{_html_escape(api_version)}/app/logout" style="margin-top:1rem;">
+              <button type="submit">Sign Out</button>
+            </form>
           </div>
         </div>
       </div>

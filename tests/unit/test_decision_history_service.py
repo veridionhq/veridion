@@ -164,6 +164,54 @@ def test_decision_history_service_supports_tenants_and_auth(tmp_path) -> None:
     assert "<html>" in versioned_dashboard["html"]
 
 
+def test_decision_history_service_app_login_uses_session_cookie(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    scoped = {"admin": HistoryToken(token="admin", tenants=("acme",), roles=("admin",), principal_name="Admin One", token_id="admin-1")}
+
+    resolve_history_request(
+        "/api/v1/admin/tenants",
+        method="POST",
+        body=json.dumps({"tenant_id": "acme", "display_name": "Acme", "organization_name": "Acme Org"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens=scoped,
+    )
+
+    login_page_status, login_page = resolve_history_request(
+        "/api/v1/app?tenant=acme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={},
+        scoped_tokens=scoped,
+    )
+    login_status, login_payload = resolve_history_request(
+        "/api/v1/app/login",
+        method="POST",
+        body="tenant_id=acme&token=admin&next=%2Fapi%2Fv1%2Fapp%3Ftenant%3Dacme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        scoped_tokens=scoped,
+    )
+    cookie_header = str(login_payload.get("__headers", {}).get("Set-Cookie", ""))
+    app_status, app_payload = resolve_history_request(
+        "/api/v1/app?tenant=acme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Cookie": cookie_header},
+        scoped_tokens=scoped,
+    )
+
+    assert login_page_status == 200
+    assert "Sign In To The Control Plane" in login_page["html"]
+    assert login_status == 200
+    assert "Signed in. Redirecting to the hosted app." in login_payload["html"]
+    assert "veridion_app_bearer=" in cookie_header
+    assert app_status == 200
+    assert "Onboarding Checklist" in app_payload["html"]
+
+
 def test_decision_history_service_uses_sqlite_store_and_scoped_tokens(tmp_path) -> None:
     sqlite_path = tmp_path / "history.db"
     acme_history = tmp_path / "acme.ndjson"
