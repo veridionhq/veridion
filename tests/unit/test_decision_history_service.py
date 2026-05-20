@@ -647,6 +647,120 @@ def test_decision_history_service_admin_and_session_surfaces(tmp_path) -> None:
     assert session["data"]["session_id"] == "sess-1"
     assert app_status == 200
     assert "Managed Tenants" in app["html"]
+    assert "Repository Drilldown" in app["html"]
+    assert "Producer Token Controls" in app["html"]
+    assert "Second Tenant Playbook" in app["html"]
+    assert "Connect First Repo" in app["html"]
+    assert "Auth Hardening" in app["html"]
+
+
+def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    admin = {"Authorization": "Bearer admin", "Content-Type": "application/x-www-form-urlencoded"}
+    scoped = {"admin": HistoryToken(token="admin", tenants=("acme",), roles=("admin",), principal_name="Admin One", token_id="admin-1")}
+
+    create_tenant_status, tenant_app = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=create_tenant&tenant_id=acme&display_name=Acme+Production&organization_name=Acme&status=active",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    producer_status, producer_app = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=create_producer_client&tenant_id=acme&client_id=github-actions&display_name=GitHub+Actions&roles_csv=ingestor&status=active",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    user_status, user_app = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=create_service_user&tenant_id=acme&user_id=alice&principal_name=Alice+Doe&email=alice%40example.com&roles_csv=reader%2Cadmin&status=active",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    secret_status, secret_app = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=create_provider_secret&tenant_id=acme&provider=pagerduty&secret_name=pagerduty-token&secret_ref=aws-secretsmanager%3A%2F%2Fveridion%2Facme%2Fpagerduty&description=PagerDuty+API+token",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    rotate_status, rotate_app = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=rotate_producer_client&tenant_id=acme&client_id=github-actions",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    revoke_status, revoke_app = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=revoke_producer_client&tenant_id=acme&client_id=github-actions",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    clients_status, clients = resolve_history_request(
+        "/api/v1/admin/producer-clients?tenant=acme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens=scoped,
+    )
+    repo_page_status, repo_page = resolve_history_request(
+        "/api/v1/app/repository?tenant=acme&repository=acme/service-a",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens=scoped,
+    )
+    service_page_status, service_page = resolve_history_request(
+        "/api/v1/app/service?tenant=acme&service=service-a",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens=scoped,
+    )
+
+    assert create_tenant_status == 200
+    assert "Tenant acme provisioned." in tenant_app["html"]
+    assert producer_status == 200
+    assert "Producer client github-actions created." in producer_app["html"]
+    assert "Producer token issued once." in producer_app["html"]
+    assert rotate_status == 200
+    assert "Producer client github-actions rotated." in rotate_app["html"]
+    assert "Producer token issued once." in rotate_app["html"]
+    assert revoke_status == 200
+    assert "Producer client github-actions revoked." in revoke_app["html"]
+    assert user_status == 200
+    assert "Service user alice created." in user_app["html"]
+    assert secret_status == 200
+    assert "Provider secret reference pagerduty-token stored." in secret_app["html"]
+    assert "Add Producer Client" in secret_app["html"]
+    assert "Add Service User" in secret_app["html"]
+    assert "Rotate Token" in secret_app["html"]
+    assert "Second Tenant Playbook" in secret_app["html"]
+    assert clients_status == 200
+    assert clients["data"]["producer_clients"][0]["status"] == "revoked"
+    assert clients["data"]["producer_clients"][0]["last_issued_at"]
+    assert repo_page_status == 200
+    assert "Dedicated repository page" in repo_page["data"]["html"]
+    assert "History Summary" in repo_page["data"]["html"]
+    assert service_page_status == 200
+    assert "Dedicated service page" in service_page["data"]["html"]
 
 
 def _build_test_jwt(*, secret: str, payload: dict[str, object]) -> str:

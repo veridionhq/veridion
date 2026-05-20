@@ -132,6 +132,29 @@ resource "aws_ecr_repository" "app" {
   name  = local.ecr_repo_name
 }
 
+resource "aws_ecr_lifecycle_policy" "app" {
+  count      = var.create_ecr_repository ? 1 : 0
+  repository = aws_ecr_repository.app[0].name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Expire untagged images after the configured retention window"
+        selection = {
+          tagStatus   = "untagged"
+          countType   = "sinceImagePushed"
+          countUnit   = "days"
+          countNumber = var.ecr_expire_untagged_after_days
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
+}
+
 resource "aws_iam_openid_connect_provider" "github_actions" {
   count = var.create_github_actions_oidc_role && var.create_github_oidc_provider ? 1 : 0
 
@@ -234,18 +257,19 @@ resource "aws_lb" "service" {
 }
 
 resource "aws_lb_target_group" "service" {
-  name        = replace(substr("${local.prefix}-tg", 0, 32), "_", "-")
-  port        = 8787
-  protocol    = "HTTP"
-  target_type = "ip"
-  vpc_id      = local.chosen_vpc_id
+  name                         = replace(substr("${local.prefix}-tg", 0, 32), "_", "-")
+  port                         = 8787
+  protocol                     = "HTTP"
+  target_type                  = "ip"
+  vpc_id                       = local.chosen_vpc_id
+  deregistration_delay         = var.alb_target_deregistration_delay_seconds
 
   health_check {
     path                = "/healthz"
     matcher             = "200"
-    interval            = 30
-    healthy_threshold   = 2
-    unhealthy_threshold = 3
+    interval            = var.alb_health_check_interval_seconds
+    healthy_threshold   = var.alb_health_check_healthy_threshold
+    unhealthy_threshold = var.alb_health_check_unhealthy_threshold
   }
 }
 
@@ -405,16 +429,18 @@ data "aws_iam_policy_document" "github_actions_deploy" {
       "ecs:UpdateService",
       "ecs:DescribeServices",
       "ecs:DescribeTaskDefinition",
+      "ecs:RegisterTaskDefinition",
       "ecs:ListTasks",
       "ecs:DescribeTasks"
     ]
+    resources = ["*"]
+  }
+
+  statement {
+    actions = ["iam:PassRole"]
     resources = [
-      aws_ecs_cluster.main.arn,
-      aws_ecs_service.service.id,
-      aws_ecs_service.worker.id,
-      aws_ecs_task_definition.service.arn,
-      aws_ecs_task_definition.worker.arn,
-      aws_ecs_task_definition.migrate.arn
+      aws_iam_role.execution.arn,
+      aws_iam_role.task.arn
     ]
   }
 }

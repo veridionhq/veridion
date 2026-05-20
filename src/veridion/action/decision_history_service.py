@@ -6,7 +6,7 @@ import argparse
 import html
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from veridion.action.decision_history_config import (
     HistoryTenant,
@@ -29,12 +29,14 @@ from veridion.action.decision_history_store import (
     list_catalog_models,
     list_managed_tenants,
     list_materialization_runs,
+    list_producer_client_audit,
     list_producer_clients,
     list_provider_secret_refs,
     list_service_sessions,
     list_service_users,
     provision_managed_tenant,
     resolve_persistent_bearer_identity,
+    update_producer_client_status,
     upsert_provider_secret_ref,
     upsert_service_user,
     upsert_decision_event_store,
@@ -157,7 +159,10 @@ def _build_handler(
                 auth_tokens=auth_tokens,
                 scoped_tokens=scoped_tokens,
             )
-            self._write_json(status, payload)
+            if "html" in payload:
+                self._write_html(status, str(payload["html"]))
+            else:
+                self._write_json(status, payload)
 
         def log_message(self, format: str, *args) -> None:  # noqa: A003 - stdlib signature
             return
@@ -234,6 +239,10 @@ def resolve_history_request(
             materialization_root=materialization_root,
             config_path=config_path,
             scoped_token=identity,
+            headers=headers or {},
+            api_version=api_version or API_VERSION,
+            service_name=service_name,
+            jwt_config=jwt_config or JWTAuthConfig(),
         )
         return _respond(status, payload, route=route, api_version=api_version, identity=identity)
     if route == "/tenants":
@@ -278,12 +287,66 @@ def resolve_history_request(
             since=params.get("since"),
             until=params.get("until"),
             identity=identity,
+            jwt_config=jwt_config,
         )
         if overview is None:
             return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
+        _attach_selected_detail_analytics(
+            overview,
+            history_paths=history_paths,
+            tenants=tenant_lookup,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=params.get("tenant", ""),
+            selected_repository=params.get("repository", ""),
+            selected_service=params.get("service", ""),
+            selected_producer_client=params.get("producer_client", ""),
+        )
         return _respond(
             200,
             {"html": render_app_html(overview, api_version=api_version or API_VERSION, identity=identity, service_name=service_name)},
+            route=route,
+            api_version=api_version,
+            identity=identity,
+        )
+    if route == "/app/repository" or route == "/app/service":
+        overview = _build_overview_payload(
+            history_paths=history_paths,
+            tenants=tenant_lookup,
+            schedules=schedule_lookup,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            materialization_root=materialization_root,
+            tenant_id=params.get("tenant", ""),
+            since=params.get("since"),
+            until=params.get("until"),
+            identity=identity,
+            jwt_config=jwt_config,
+        )
+        if overview is None:
+            return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
+        _attach_selected_detail_analytics(
+            overview,
+            history_paths=history_paths,
+            tenants=tenant_lookup,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=params.get("tenant", ""),
+            selected_repository=params.get("repository", ""),
+            selected_service=params.get("service", ""),
+            selected_producer_client=params.get("producer_client", ""),
+        )
+        return _respond(
+            200,
+            {
+                "html": render_focus_page_html(
+                    overview,
+                    api_version=api_version or API_VERSION,
+                    identity=identity,
+                    service_name=service_name,
+                    kind="repository" if route.endswith("/repository") else "service",
+                )
+            },
             route=route,
             api_version=api_version,
             identity=identity,
@@ -353,6 +416,7 @@ def resolve_history_request(
             since=params.get("since"),
             until=params.get("until"),
             identity=identity,
+            jwt_config=jwt_config,
             analytics=analytics,
         )
         return _respond(
@@ -384,9 +448,21 @@ def resolve_history_request(
             since=params.get("since"),
             until=params.get("until"),
             identity=identity,
+            jwt_config=jwt_config,
         )
         if payload is None:
             return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
+        _attach_selected_detail_analytics(
+            payload,
+            history_paths=history_paths,
+            tenants=tenant_lookup,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=params.get("tenant", ""),
+            selected_repository=params.get("repository", ""),
+            selected_service=params.get("service", ""),
+            selected_producer_client=params.get("producer_client", ""),
+        )
         return _respond(200, payload, route=route, api_version=api_version, identity=identity)
     if route == "/materializations":
         if not materialization_root and not (sqlite_path or store_dsn):
@@ -609,8 +685,10 @@ def _build_overview_payload(
     since: str | None,
     until: str | None,
     identity: HistoryToken | None,
+    jwt_config: JWTAuthConfig,
     analytics: dict[str, object] | None = None,
 ) -> dict[str, object] | None:
+    jwt_config = jwt_config or JWTAuthConfig()
     analytics_payload = analytics or _analyze_request(
         history_paths=history_paths,
         tenants=tenants,
@@ -667,6 +745,11 @@ def _build_overview_payload(
             "materialization_root": materialization_root,
             "history_paths": list(history_paths),
             "has_persistent_store": bool(sqlite_path or store_dsn),
+            "jwt_issuer": jwt_config.issuer,
+            "jwt_audience": jwt_config.audience,
+            "jwks_url": jwt_config.jwks_url,
+            "oidc_discovery_url": jwt_config.oidc_discovery_url,
+            "jwt_enabled": bool(jwt_auth_enabled(jwt_config)),
         },
         "catalog": _catalog_payload(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id),
         "admin": {
@@ -691,7 +774,27 @@ def _handle_post_request(
     materialization_root: str,
     config_path: str,
     scoped_token: HistoryToken | None,
+    headers: dict[str, str],
+    api_version: str,
+    service_name: str,
+    jwt_config: JWTAuthConfig,
 ) -> tuple[int, dict[str, object]]:
+    if path == "/app":
+        return _handle_app_post_request(
+            body=body,
+            headers=headers,
+            history_paths=history_paths,
+            tenants=tenants,
+            schedules=schedules,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            materialization_root=materialization_root,
+            config_path=config_path,
+            scoped_token=scoped_token,
+            api_version=api_version,
+            service_name=service_name,
+            jwt_config=jwt_config,
+        )
     if path == "/admin/tenants":
         try:
             payload = json.loads(body) if body.strip() else {}
@@ -890,9 +993,291 @@ def _handle_post_request(
     )
 
 
+def _handle_app_post_request(
+    *,
+    body: str,
+    headers: dict[str, str],
+    history_paths: tuple[str, ...],
+    tenants: dict[str, HistoryTenant],
+    schedules: dict[str, MaterializationSchedule],
+    sqlite_path: str,
+    store_dsn: str,
+    materialization_root: str,
+    config_path: str,
+    scoped_token: HistoryToken | None,
+    api_version: str,
+    service_name: str,
+    jwt_config: JWTAuthConfig,
+) -> tuple[int, dict[str, object]]:
+    payload = _parse_form_payload(body, headers)
+    action = _body_string(payload, "action")
+    tenant_id = _body_string(payload, "tenant_id") or _body_string(payload, "tenant") or (
+        scoped_token.tenants[0] if scoped_token and scoped_token.tenants else ""
+    )
+    message = ""
+    level = "info"
+    if not action:
+        message = "Select an onboarding action to submit."
+        level = "warning"
+    elif action == "create_tenant":
+        target_tenant = _body_string(payload, "tenant_id")
+        if not target_tenant:
+            message = "Tenant ID is required."
+            level = "error"
+        else:
+            provision_managed_tenant(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=target_tenant,
+                display_name=_body_string(payload, "display_name") or target_tenant,
+                organization_name=_body_string(payload, "organization_name") or target_tenant,
+                status=_body_string(payload, "status") or "active",
+            )
+            tenant_id = target_tenant
+            message = f"Tenant {target_tenant} provisioned."
+            level = "success"
+    elif action == "create_producer_client":
+        client_id = _body_string(payload, "client_id")
+        if not tenant_id or not client_id:
+            message = "Tenant and client ID are required."
+            level = "error"
+        else:
+            created = create_producer_client(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                client_id=client_id,
+                display_name=_body_string(payload, "display_name") or client_id,
+                roles_csv=_body_string(payload, "roles_csv") or "ingestor",
+                status=_body_string(payload, "status") or "active",
+            )
+            message = f"Producer client {client_id} created."
+            level = "success"
+            payload["revealed_token"] = created.get("token", "")
+            payload["revealed_token_prefix"] = created.get("token_prefix", "")
+    elif action == "rotate_producer_client":
+        client_id = _body_string(payload, "client_id")
+        existing = _producer_client_record(
+            list(list_producer_clients(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id)) if tenant_id else [],
+            client_id,
+        )
+        if not tenant_id or not client_id:
+            message = "Tenant and client ID are required."
+            level = "error"
+        elif not isinstance(existing, dict):
+            message = f"Producer client {client_id} not found."
+            level = "error"
+        else:
+            created = create_producer_client(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                client_id=client_id,
+                display_name=str(existing.get("display_name", "")) or client_id,
+                roles_csv=str(existing.get("roles_csv", "")) or "ingestor",
+                status="active",
+            )
+            message = f"Producer client {client_id} rotated."
+            level = "success"
+            payload["revealed_token"] = created.get("token", "")
+            payload["revealed_token_prefix"] = created.get("token_prefix", "")
+    elif action == "revoke_producer_client":
+        client_id = _body_string(payload, "client_id")
+        if not tenant_id or not client_id:
+            message = "Tenant and client ID are required."
+            level = "error"
+        else:
+            update_producer_client_status(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                client_id=client_id,
+                status="revoked",
+            )
+            message = f"Producer client {client_id} revoked."
+            level = "success"
+    elif action == "create_service_user":
+        user_id = _body_string(payload, "user_id")
+        if not tenant_id or not user_id:
+            message = "Tenant and user ID are required."
+            level = "error"
+        else:
+            upsert_service_user(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                principal_name=_body_string(payload, "principal_name") or user_id,
+                email=_body_string(payload, "email"),
+                roles_csv=_body_string(payload, "roles_csv") or "reader",
+                status=_body_string(payload, "status") or "active",
+            )
+            message = f"Service user {user_id} created."
+            level = "success"
+    elif action == "create_provider_secret":
+        secret_name = _body_string(payload, "secret_name")
+        if not tenant_id or not secret_name:
+            message = "Tenant and secret name are required."
+            level = "error"
+        else:
+            upsert_provider_secret_ref(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                secret_name=secret_name,
+                provider=_body_string(payload, "provider"),
+                secret_ref=_body_string(payload, "secret_ref"),
+                description=_body_string(payload, "description"),
+            )
+            message = f"Provider secret reference {secret_name} stored."
+            level = "success"
+    else:
+        message = f"Unsupported app action: {action}"
+        level = "error"
+
+    overview = _build_overview_payload(
+        history_paths=history_paths,
+        tenants=tenants,
+        schedules=schedules,
+        sqlite_path=sqlite_path,
+        store_dsn=store_dsn,
+        materialization_root=materialization_root,
+        tenant_id=tenant_id,
+        since=None,
+        until=None,
+        identity=scoped_token,
+        jwt_config=jwt_config,
+    )
+    if overview is None:
+        return (404, {"error": "tenant_not_found"})
+    _attach_selected_detail_analytics(
+        overview,
+        history_paths=history_paths,
+        tenants=tenants,
+        sqlite_path=sqlite_path,
+        store_dsn=store_dsn,
+        tenant_id=tenant_id,
+        selected_repository=_body_string(payload, "repository"),
+        selected_service=_body_string(payload, "service"),
+        selected_producer_client=_body_string(payload, "producer_client"),
+    )
+    overview["ui"] = {
+        "message": message,
+        "level": level,
+        "revealed_token": _body_string(payload, "revealed_token"),
+        "revealed_token_prefix": _body_string(payload, "revealed_token_prefix"),
+    }
+    return (
+        200,
+        {
+            "html": render_app_html(
+                overview,
+                api_version=api_version,
+                identity=scoped_token,
+                service_name=service_name,
+            )
+        },
+    )
+
+
+def _parse_form_payload(body: str, headers: dict[str, str]) -> dict[str, object]:
+    content_type = headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+    if content_type == "application/x-www-form-urlencoded":
+        parsed = parse_qs(body, keep_blank_values=True)
+        return {key: values[-1] if values else "" for key, values in parsed.items()}
+    try:
+        payload = json.loads(body) if body.strip() else {}
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def _body_string(payload: dict[str, object], key: str) -> str:
     value = payload.get(key)
     return value.strip() if isinstance(value, str) else ""
+
+
+def _producer_client_record(producer_clients: list[dict[str, object]], client_id: str) -> dict[str, object] | None:
+    return next((item for item in producer_clients if str(item.get("client_id", "")) == client_id), None)
+
+
+def _attach_selected_detail_analytics(
+    overview: dict[str, object],
+    *,
+    history_paths: tuple[str, ...],
+    tenants: dict[str, HistoryTenant],
+    sqlite_path: str,
+    store_dsn: str,
+    tenant_id: str,
+    selected_repository: str,
+    selected_service: str,
+    selected_producer_client: str,
+) -> None:
+    tenant = overview.get("tenant", {})
+    if isinstance(tenant, dict):
+        tenant["selected_repository"] = selected_repository
+        tenant["selected_service"] = selected_service
+        tenant["selected_producer_client"] = selected_producer_client
+
+    catalog = overview.get("catalog", {})
+    services = catalog.get("services", []) if isinstance(catalog, dict) else []
+    latest_by_repository = ((overview.get("analytics") or {}).get("policy_rollout") or {}).get("latest_by_repository", []) if isinstance(overview.get("analytics"), dict) else []
+    admin = overview.get("admin", {})
+    producer_clients = admin.get("producer_clients", []) if isinstance(admin, dict) else []
+
+    selected_repository_value = selected_repository
+    if not selected_repository_value and latest_by_repository:
+        selected_repository_value = str(latest_by_repository[0].get("repository", ""))
+
+    selected_service_value = selected_service
+    if not selected_service_value and services:
+        selected_service_value = str(services[0].get("service_id", ""))
+
+    selected_service_record = next((item for item in services if str(item.get("service_id", "")) == selected_service_value), None)
+    service_repository = str(selected_service_record.get("repository", "")) if isinstance(selected_service_record, dict) else ""
+
+    repository_analytics = (
+        _analyze_request(
+            history_paths=history_paths,
+            tenants=tenants,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=tenant_id,
+            repository=selected_repository_value,
+        )
+        if selected_repository_value
+        else None
+    )
+    service_analytics = (
+        _analyze_request(
+            history_paths=history_paths,
+            tenants=tenants,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=tenant_id,
+            repository=service_repository,
+        )
+        if service_repository
+        else None
+    )
+    selected_producer_value = selected_producer_client
+    if not selected_producer_value and producer_clients:
+        selected_producer_value = str(producer_clients[0].get("client_id", ""))
+    producer_audit = (
+        list(list_producer_client_audit(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id, client_id=selected_producer_value, limit=10))
+        if selected_producer_value and (sqlite_path or store_dsn)
+        else []
+    )
+
+    overview["detail"] = {
+        "selected_repository": selected_repository_value,
+        "selected_service": selected_service_value,
+        "selected_producer_client": selected_producer_value,
+        "service_repository": service_repository,
+        "repository_analytics": repository_analytics,
+        "service_analytics": service_analytics,
+        "producer_audit": producer_audit,
+    }
 
 
 def _parse_limit(raw: str) -> int:
@@ -1126,6 +1511,7 @@ def render_app_html(
     projects = catalog.get("projects", []) if isinstance(catalog, dict) else []
     services = catalog.get("services", []) if isinstance(catalog, dict) else []
     latest_by_repository = ((analytics.get("policy_rollout") or {}).get("latest_by_repository", [])) if isinstance(analytics, dict) else []
+    detail = payload.get("detail", {}) if isinstance(payload, dict) else {}
     blocking_categories = analytics.get("top_blocking_categories", []) if isinstance(analytics, dict) else []
     schedule_runs = [
         item for item in materializations if isinstance(item, dict) and str(item.get("run_id", "")).startswith("nightly-")
@@ -1152,6 +1538,11 @@ def render_app_html(
     store_backend = _html_escape(str(status_store.get("backend", "file")))
     schema_version = _html_escape(str(status_store.get("schema_version", "0")))
     has_persistent_store = "Yes" if bool(service.get("has_persistent_store")) else "No"
+    jwt_enabled = bool(service.get("jwt_enabled"))
+    jwt_issuer = _html_escape(str(service.get("jwt_issuer", "")) or "not configured")
+    jwt_audience = _html_escape(str(service.get("jwt_audience", "")) or "not configured")
+    jwks_url = _html_escape(str(service.get("jwks_url", "")) or "not configured")
+    oidc_discovery_url = _html_escape(str(service.get("oidc_discovery_url", "")) or "not configured")
     history_paths = service.get("history_paths", []) if isinstance(service, dict) else []
     onboarding_items = "".join(
         f"<li><strong>{_html_escape(label)}</strong> <span class='status {'ready' if ready else 'todo'}'>{'ready' if ready else 'next'}</span><div class='hint'>{_html_escape(detail)}</div></li>"
@@ -1193,6 +1584,163 @@ def render_app_html(
         f"<li><strong>{_html_escape(str(item.get('session_id', '')))}</strong><div class='hint'>{_html_escape(str(item.get('principal_name', '')))}</div></li>"
         for item in sessions[:6]
     ) or "<li>No sessions recorded</li>"
+    tenant_value = str(tenant.get("tenant_id", "")).strip()
+    tenant_query = quote(tenant_value) if tenant_value else ""
+    service_link_items = "".join(
+        f"<li><a href='/api/{_html_escape(api_version)}/app?tenant={tenant_query}&service={quote(str(item.get('service_id', '')))}'>{_html_escape(str(item.get('service_id', '')))}</a> · <a href='/api/{_html_escape(api_version)}/app/service?tenant={tenant_query}&service={quote(str(item.get('service_id', '')))}'>open page</a><div class='hint'>{_html_escape(str(item.get('repository', '')))} / {_html_escape(str(item.get('service_criticality', '')) or 'unknown')}</div></li>"
+        for item in services[:8]
+    ) or "<li>No services recorded</li>"
+    repository_link_items = "".join(
+        f"<li><a href='/api/{_html_escape(api_version)}/app?tenant={tenant_query}&repository={quote(str(item.get('repository', '')))}'>{_html_escape(str(item.get('repository', '')))}</a> · <a href='/api/{_html_escape(api_version)}/app/repository?tenant={tenant_query}&repository={quote(str(item.get('repository', '')))}'>open page</a><div class='hint'>{_html_escape(str(item.get('verdict', '')))} / {_html_escape(str(item.get('gate_status', '')))}</div></li>"
+        for item in latest_by_repository[:8]
+    ) or "<li>No repository activity yet</li>"
+    selected_repository = str((detail.get("selected_repository") if isinstance(detail, dict) else "") or tenant.get("selected_repository", "")).strip()
+    selected_service = str((detail.get("selected_service") if isinstance(detail, dict) else "") or tenant.get("selected_service", "")).strip()
+    selected_producer_client = str((detail.get("selected_producer_client") if isinstance(detail, dict) else "") or tenant.get("selected_producer_client", "")).strip()
+    repository_detail = next((item for item in latest_by_repository if str(item.get("repository", "")) == selected_repository), None)
+    if repository_detail is None and latest_by_repository:
+        repository_detail = latest_by_repository[0]
+    service_detail = next((item for item in services if str(item.get("service_id", "")) == selected_service), None)
+    if service_detail is None and services:
+        service_detail = services[0]
+    repository_analytics = detail.get("repository_analytics") if isinstance(detail, dict) else None
+    service_analytics = detail.get("service_analytics") if isinstance(detail, dict) else None
+    producer_audit = detail.get("producer_audit", []) if isinstance(detail, dict) else []
+    selected_producer = next((item for item in producer_clients if str(item.get("client_id", "")) == selected_producer_client), None)
+    if selected_producer is None and producer_clients:
+        selected_producer = producer_clients[0]
+    repository_detail_html = "<p class='hint'>Select a repository to inspect its latest decision state.</p>"
+    if isinstance(repository_detail, dict):
+        repository_detail_html = (
+            f"<ul>"
+            f"<li><strong>Repository</strong><div class='hint mono'>{_html_escape(str(repository_detail.get('repository', '')))}</div></li>"
+            f"<li><strong>Verdict</strong><div class='hint'>{_html_escape(str(repository_detail.get('verdict', '')))}</div></li>"
+            f"<li><strong>Gate status</strong><div class='hint'>{_html_escape(str(repository_detail.get('gate_status', '')))}</div></li>"
+            f"<li><strong>Pack</strong><div class='hint'>{_html_escape(str(repository_detail.get('pack_id', '')))} / {_html_escape(str(repository_detail.get('pack_version', '')))}</div></li>"
+            f"<li><strong>Generated at</strong><div class='hint mono'>{_html_escape(str(repository_detail.get('generated_at', '')))}</div></li>"
+            f"</ul>"
+        )
+    service_detail_html = "<p class='hint'>Select a service to inspect ownership and criticality details.</p>"
+    if isinstance(service_detail, dict):
+        service_detail_html = (
+            f"<ul>"
+            f"<li><strong>Service</strong><div class='hint mono'>{_html_escape(str(service_detail.get('service_id', '')))}</div></li>"
+            f"<li><strong>Repository</strong><div class='hint mono'>{_html_escape(str(service_detail.get('repository', '')))}</div></li>"
+            f"<li><strong>Owner</strong><div class='hint'>{_html_escape(str(service_detail.get('service_owner', '')) or 'unassigned')}</div></li>"
+            f"<li><strong>Owning team</strong><div class='hint'>{_html_escape(str(service_detail.get('owning_team', '')) or 'unassigned')}</div></li>"
+            f"<li><strong>Criticality</strong><div class='hint'>{_html_escape(str(service_detail.get('service_criticality', '')) or 'unknown')}</div></li>"
+            f"<li><strong>Project</strong><div class='hint'>{_html_escape(str(service_detail.get('project_id', '')))}</div></li>"
+            f"</ul>"
+        )
+    def _detail_analytics_html(detail_payload: object, *, empty_message: str) -> str:
+        if not isinstance(detail_payload, dict):
+            return f"<p class='hint'>{_html_escape(empty_message)}</p>"
+        detail_summary = detail_payload.get("summary", {}) if isinstance(detail_payload.get("summary"), dict) else {}
+        detail_blocks = detail_payload.get("top_blocking_categories", []) if isinstance(detail_payload.get("top_blocking_categories"), list) else []
+        detail_series = ((detail_payload.get("time_series") or {}).get("by_day", [])) if isinstance(detail_payload.get("time_series"), dict) else []
+        detail_verdicts = detail_payload.get("by_verdict", {}) if isinstance(detail_payload.get("by_verdict"), dict) else {}
+        block_items = "".join(
+            f"<li>{_html_escape(str(item.get('name', '')))} <span class='count'>{_html_escape(str(item.get('count', '0')))}</span></li>"
+            for item in detail_blocks[:4]
+        ) or "<li>No blocking categories recorded</li>"
+        series_items = "".join(
+            f"<li>{_html_escape(str(item.get('day', '')))} <span class='count'>{_html_escape(str(item.get('events', '0')))}</span></li>"
+            for item in detail_series[-4:]
+        ) or "<li>No time-series points recorded</li>"
+        verdict_items = ", ".join(f"{key}={value}" for key, value in detail_verdicts.items()) or "none"
+        return (
+            f"<div class='card' style='margin-top:1rem; background:#fcfffd;'>"
+            f"<h3 class='section-title' style='margin-top:0;'>History Slice</h3>"
+            f"<div class='two-col'>"
+            f"<div><div class='hint'><strong>Events:</strong> {_html_escape(str(detail_summary.get('events', 0)))}</div>"
+            f"<div class='hint'><strong>Repositories:</strong> {_html_escape(str(detail_summary.get('repositories', 0)))}</div>"
+            f"<div class='hint'><strong>Verdicts:</strong> {_html_escape(verdict_items)}</div></div>"
+            f"<div><div class='hint'><strong>Window start:</strong> {_html_escape(str(((detail_summary.get('window') or {}).get('first_generated_at', 'n/a')) if isinstance(detail_summary.get('window'), dict) else 'n/a'))}</div>"
+            f"<div class='hint'><strong>Window end:</strong> {_html_escape(str(((detail_summary.get('window') or {}).get('last_generated_at', 'n/a')) if isinstance(detail_summary.get('window'), dict) else 'n/a'))}</div></div>"
+            f"</div>"
+            f"<div class='two-col' style='margin-top:1rem;'><div><h3 class='section-title' style='margin-top:0;'>Blocking Trend</h3><ul>{block_items}</ul></div>"
+            f"<div><h3 class='section-title' style='margin-top:0;'>Recent Event Days</h3><ul>{series_items}</ul></div></div>"
+            f"</div>"
+        )
+    producer_ops_items = "".join(
+        f"<li><strong>{_html_escape(str(item.get('client_id', '')))}</strong> <span class='mono'>{_html_escape(str(item.get('token_prefix', '')))}...</span> · <a href='/api/{_html_escape(api_version)}/app?tenant={tenant_query}&producer_client={quote(str(item.get('client_id', '')))}'>inspect</a>"
+        f"<div class='hint'>{_html_escape(str(item.get('status', 'active')))} / {_html_escape(str(item.get('roles_csv', '')) or 'ingestor')}</div>"
+        f"<div class='hint'>issued {_html_escape(str(item.get('last_issued_at', '') or 'n/a'))} / used {_html_escape(str(item.get('last_used_at', '') or 'never'))}</div>"
+        f"<div style='display:flex; gap:.5rem; margin-top:.55rem; flex-wrap:wrap;'>"
+        f"<form method='post' action='/api/{_html_escape(api_version)}/app'><input type='hidden' name='action' value='rotate_producer_client'><input type='hidden' name='tenant_id' value='{_html_escape(tenant_value)}'><input type='hidden' name='client_id' value='{_html_escape(str(item.get('client_id', '')))}'><button type='submit'>Rotate Token</button></form>"
+        f"<form method='post' action='/api/{_html_escape(api_version)}/app'><input type='hidden' name='action' value='revoke_producer_client'><input type='hidden' name='tenant_id' value='{_html_escape(tenant_value)}'><input type='hidden' name='client_id' value='{_html_escape(str(item.get('client_id', '')))}'><button type='submit' style='background:#8b2d1f;'>Revoke</button></form>"
+        f"</div></li>"
+        for item in producer_clients[:6]
+    ) or "<li>No producer clients yet</li>"
+    producer_audit_items = "".join(
+        f"<li><strong>{_html_escape(str(item.get('action', '')))}</strong><div class='hint'>{_html_escape(str(item.get('created_at', '')))} / {_html_escape(str(item.get('detail', '')))}</div></li>"
+        for item in producer_audit[:6]
+    ) or "<li>No producer audit events recorded</li>"
+    selected_producer_html = "<p class='hint'>Select a producer client to inspect last-used and rotation history.</p>"
+    if isinstance(selected_producer, dict):
+        selected_producer_html = (
+            f"<ul>"
+            f"<li><strong>Client</strong><div class='hint mono'>{_html_escape(str(selected_producer.get('client_id', '')))}</div></li>"
+            f"<li><strong>Status</strong><div class='hint'>{_html_escape(str(selected_producer.get('status', 'active')))}</div></li>"
+            f"<li><strong>Roles</strong><div class='hint'>{_html_escape(str(selected_producer.get('roles_csv', '')))}</div></li>"
+            f"<li><strong>Last issued</strong><div class='hint'>{_html_escape(str(selected_producer.get('last_issued_at', '') or 'n/a'))}</div></li>"
+            f"<li><strong>Last rotated</strong><div class='hint'>{_html_escape(str(selected_producer.get('last_rotated_at', '') or 'never'))}</div></li>"
+            f"<li><strong>Last used</strong><div class='hint'>{_html_escape(str(selected_producer.get('last_used_at', '') or 'never'))}</div></li>"
+            f"<li><strong>Revoked at</strong><div class='hint'>{_html_escape(str(selected_producer.get('revoked_at', '') or 'active'))}</div></li>"
+            f"</ul>"
+        )
+    connect_repo_steps = (
+        "<ul>"
+        "<li><strong>Repo variables</strong><div class='hint mono'>VERIDION_HOSTED_SERVICE_URL</div><div class='hint mono'>VERIDION_HOSTED_TENANT_ID</div></li>"
+        "<li><strong>Repo secret</strong><div class='hint mono'>VERIDION_HOSTED_INGESTOR_TOKEN</div></li>"
+        "<li><strong>Expected path</strong><div class='hint'>Enable the hosted producer workflow or the internal decision sink so CI POSTs to <span class='mono'>/api/v1/events</span>.</div></li>"
+        "</ul>"
+    )
+    auth_hardening_items = (
+        "<ul>"
+        f"<li><strong>JWT enabled</strong><div class='hint'>{'yes' if jwt_enabled else 'no'}</div></li>"
+        f"<li><strong>Issuer</strong><div class='hint mono'>{jwt_issuer}</div></li>"
+        f"<li><strong>Audience</strong><div class='hint mono'>{jwt_audience}</div></li>"
+        f"<li><strong>JWKS URL</strong><div class='hint mono'>{jwks_url}</div></li>"
+        f"<li><strong>OIDC discovery</strong><div class='hint mono'>{oidc_discovery_url}</div></li>"
+        "</ul>"
+    )
+    ui = payload.get("ui", {}) if isinstance(payload, dict) else {}
+    flash = ""
+    if isinstance(ui, dict) and ui.get("message"):
+        flash = f"<div class='flash {_html_escape(str(ui.get('level', 'info')))}'>{_html_escape(str(ui.get('message', '')))}</div>"
+    revealed_token = str(ui.get("revealed_token", "")).strip() if isinstance(ui, dict) else ""
+    token_reveal = ""
+    if revealed_token:
+        token_reveal = (
+            f"<div class='flash warning'><strong>Producer token issued once.</strong>"
+            f"<div class='hint'>Store this now. Only the prefix is persisted by the control plane after this response.</div>"
+            f"<div class='token-box mono'>{_html_escape(revealed_token)}</div>"
+            f"</div>"
+        )
+    repository_event_count = sum(1 for item in latest_by_repository if str(item.get("repository", "")) == str(repository_detail.get("repository", ""))) if isinstance(repository_detail, dict) else 0
+    if isinstance(repository_detail, dict):
+        related_service = next((item for item in services if str(item.get("repository", "")) == str(repository_detail.get("repository", ""))), None)
+        if isinstance(related_service, dict):
+            repository_detail_html += (
+                f"<div class='hint' style='margin-top:.75rem;'><strong>Related service:</strong> {_html_escape(str(related_service.get('service_id', '')))} / "
+                f"{_html_escape(str(related_service.get('service_criticality', '')) or 'unknown')}</div>"
+            )
+        repository_detail_html += f"<div class='hint' style='margin-top:.5rem;'><strong>Observed latest-repository entries:</strong> {repository_event_count}</div>"
+    if isinstance(service_detail, dict):
+        matching_repo_detail = next((item for item in latest_by_repository if str(item.get("repository", "")) == str(service_detail.get("repository", ""))), None)
+        if isinstance(matching_repo_detail, dict):
+            service_detail_html += (
+                f"<div class='hint' style='margin-top:.75rem;'><strong>Latest decision:</strong> "
+                f"{_html_escape(str(matching_repo_detail.get('verdict', '')))} / {_html_escape(str(matching_repo_detail.get('gate_status', '')))}</div>"
+            )
+    if not latest_by_repository:
+        repository_detail_html = "<p class='hint'>No decision history yet. Connect a producer client and send the first event to unlock repository drilldowns.</p>"
+    if not services:
+        service_detail_html = "<p class='hint'>No services cataloged yet. Service drilldowns appear after decisions arrive with service metadata.</p>"
+    onboarding_empty = ""
+    if not events:
+        onboarding_empty = "<div class='flash warning'>No decision events have landed for this tenant yet. Create or copy a producer token below, wire it into CI, and then return here to verify the first event.</div>"
     return f"""<!doctype html>
 <html>
   <head>
@@ -1230,12 +1778,23 @@ def render_app_html(
       .hint {{ color:var(--muted); font-size:.9rem; margin-top:.2rem; }}
       .callout {{ background:linear-gradient(180deg, #fff9ef 0%, #fffdf9 100%); border:1px solid #f0d7aa; }}
       .callout strong {{ color:#7a4d00; }}
+      .flash {{ border-radius:18px; padding:1rem 1.1rem; margin:1rem 0; border:1px solid var(--line); }}
+      .flash.success {{ background:#edf8f2; border-color:#b9dccb; color:#15553f; }}
+      .flash.warning {{ background:#fff6e7; border-color:#efd49f; color:#7a4d00; }}
+      .flash.error {{ background:#fff0eb; border-color:#f1beb5; color:#8b2d1f; }}
+      .token-box {{ margin-top:.75rem; padding:.9rem 1rem; background:#fffdf8; border:1px dashed #d2b276; border-radius:14px; word-break:break-all; color:#6b4300; }}
       table {{ width:100%; border-collapse:collapse; }}
       th, td {{ text-align:left; padding:.7rem .55rem; border-top:1px solid var(--line); font-size:.94rem; vertical-align:top; }}
       th {{ color:var(--muted); font-weight:600; border-top:none; }}
       .count {{ float:right; color:var(--muted); font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }}
       .footer {{ margin-top:1rem; color:var(--muted); font-size:.92rem; }}
       .two-col {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }}
+      form {{ display:grid; gap:.75rem; }}
+      label {{ display:grid; gap:.25rem; font-size:.92rem; color:var(--muted); }}
+      input {{ width:100%; border:1px solid var(--line); border-radius:12px; padding:.75rem .8rem; background:#fff; color:var(--ink); font:inherit; }}
+      button {{ border:none; border-radius:999px; padding:.75rem 1rem; background:var(--accent); color:#fff; font:inherit; cursor:pointer; }}
+      a {{ color:var(--accent); text-decoration:none; }}
+      a:hover {{ text-decoration:underline; }}
       @media (max-width: 1080px) {{
         .hero, .section-grid, .triple, .summary-grid, .two-col {{ grid-template-columns:1fr; }}
       }}
@@ -1268,6 +1827,9 @@ def render_app_html(
           </div>
         </div>
       </div>
+      {flash}
+      {token_reveal}
+      {onboarding_empty}
 
       <div class="summary-grid">
         <div class="mini-card"><div class="label">Events</div><div class="value">{events}</div></div>
@@ -1296,6 +1858,106 @@ def render_app_html(
         </div>
       </div>
 
+      <div class="triple">
+        <div class="card">
+          <h2 class="section-title">Add Tenant</h2>
+          <div class="section-kicker">Provision a new tenant boundary directly from the app.</div>
+          <form method="post" action="/api/{_html_escape(api_version)}/app">
+            <input type="hidden" name="action" value="create_tenant">
+            <label>Tenant ID<input name="tenant_id" value="{_html_escape(tenant_value)}" placeholder="acme"></label>
+            <label>Display Name<input name="display_name" value="{_html_escape(str(tenant.get('display_name', '')))}" placeholder="Acme Production"></label>
+            <label>Organization Name<input name="organization_name" value="{_html_escape(str(tenant.get('display_name', '')))}" placeholder="Acme"></label>
+            <label>Status<input name="status" value="active"></label>
+            <button type="submit">Provision Tenant</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Add Producer Client</h2>
+          <div class="section-kicker">Create a CI ingestor token without leaving the control plane.</div>
+          <form method="post" action="/api/{_html_escape(api_version)}/app">
+            <input type="hidden" name="action" value="create_producer_client">
+            <input type="hidden" name="tenant_id" value="{_html_escape(tenant_value)}">
+            <label>Client ID<input name="client_id" placeholder="github-actions"></label>
+            <label>Display Name<input name="display_name" placeholder="GitHub Actions"></label>
+            <label>Roles<input name="roles_csv" value="ingestor"></label>
+            <label>Status<input name="status" value="active"></label>
+            <button type="submit">Create Producer</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Add Service User</h2>
+          <div class="section-kicker">Create an operator identity record for this tenant.</div>
+          <form method="post" action="/api/{_html_escape(api_version)}/app">
+            <input type="hidden" name="action" value="create_service_user">
+            <input type="hidden" name="tenant_id" value="{_html_escape(tenant_value)}">
+            <label>User ID<input name="user_id" placeholder="alice"></label>
+            <label>Principal Name<input name="principal_name" placeholder="Alice Doe"></label>
+            <label>Email<input name="email" placeholder="alice@example.com"></label>
+            <label>Roles<input name="roles_csv" value="reader"></label>
+            <label>Status<input name="status" value="active"></label>
+            <button type="submit">Create User</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="triple">
+        <div class="card">
+          <h2 class="section-title">Add Provider Secret Ref</h2>
+          <div class="section-kicker">Store an integration reference for incidents, alerts, or rollout systems.</div>
+          <form method="post" action="/api/{_html_escape(api_version)}/app">
+            <input type="hidden" name="action" value="create_provider_secret">
+            <input type="hidden" name="tenant_id" value="{_html_escape(tenant_value)}">
+            <label>Provider<input name="provider" placeholder="pagerduty"></label>
+            <label>Secret Name<input name="secret_name" placeholder="pagerduty-token"></label>
+            <label>Secret Ref<input name="secret_ref" placeholder="aws-secretsmanager://veridion/acme/pagerduty"></label>
+            <label>Description<input name="description" placeholder="PagerDuty API token"></label>
+            <button type="submit">Store Secret Ref</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2 class="section-title">First Run Notes</h2>
+          <div class="section-kicker">How to make this tenant stop looking empty.</div>
+          <ul>
+            <li><strong>Step 1</strong><div class="hint">Provision the tenant boundary and at least one producer client.</div></li>
+            <li><strong>Step 2</strong><div class="hint">Send the first decision event from CI so repository and service drilldowns become meaningful.</div></li>
+            <li><strong>Step 3</strong><div class="hint">Add provider refs and service users so the control plane reflects real operator ownership.</div></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Second Tenant Playbook</h2>
+          <div class="section-kicker">Use this when onboarding the next org, not just the first one.</div>
+          <ul>
+            <li><strong>Tenant skeleton</strong><div class="hint">Create a second tenant ID such as <span class="mono">beta</span> before sharing producer credentials.</div></li>
+            <li><strong>Dedicated producer</strong><div class="hint">Issue a separate CI ingestor per repo or team so rotation and revocation stay isolated.</div></li>
+            <li><strong>Service mapping</strong><div class="hint">Verify the first decision event contains organization, project, service owner, and criticality metadata.</div></li>
+            <li><strong>Operator access</strong><div class="hint">Create at least one named service user before sharing the app URL with a new team.</div></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="triple">
+        <div class="card">
+          <h2 class="section-title">Connect First Repo</h2>
+          <div class="section-kicker">Exact GitHub settings needed for the next repository onboarding.</div>
+          {connect_repo_steps}
+        </div>
+        <div class="card">
+          <h2 class="section-title">Auth Hardening</h2>
+          <div class="section-kicker">Move operators off bootstrap tokens and onto JWT/JWKS-backed identities.</div>
+          {auth_hardening_items}
+          <div class="hint" style="margin-top:.75rem;">Keep the bootstrap bearer only for break-glass admin access. Day-to-day operators should arrive through JWT or OIDC-backed sessions.</div>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Current Control Signals</h2>
+          <div class="section-kicker">Fast read of what is live for this tenant.</div>
+          <ul>
+            <li><strong>Latest repo decision</strong><div class="hint">{_html_escape(str((latest_by_repository[0] if latest_by_repository else {}).get('repository', 'none')))} / {_html_escape(str((latest_by_repository[0] if latest_by_repository else {}).get('verdict', 'none')))}</div></li>
+            <li><strong>Latest materialization</strong><div class="hint">{_html_escape(str((materializations[0] if materializations else {}).get('run_id', 'none')))}</div></li>
+            <li><strong>Latest session</strong><div class="hint">{_html_escape(str((sessions[0] if sessions else {}).get('session_id', 'none')))}</div></li>
+          </ul>
+        </div>
+      </div>
+
       <div class="section-grid">
         <div class="card">
           <h2 class="section-title">Recent Repository Decisions</h2>
@@ -1311,8 +1973,19 @@ def render_app_html(
             <ul>{blocking_items}</ul>
           </div>
           <div class="card">
-            <h2 class="section-title">Producer Clients</h2>
-            <ul>{producer_items}</ul>
+            <h2 class="section-title">Producer Token Controls</h2>
+            <div class="section-kicker">Rotate active credentials and revoke stale ones without leaving the app.</div>
+            <div class="two-col">
+              <div>
+                <ul>{producer_ops_items}</ul>
+              </div>
+              <div>
+                <h3 class="section-title" style="margin-top:0;">Selected Producer</h3>
+                {selected_producer_html}
+                <h3 class="section-title" style="margin-top:1rem;">Audit Trail</h3>
+                <ul>{producer_audit_items}</ul>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1331,6 +2004,39 @@ def render_app_html(
           <div class="section-kicker">Tenant boundaries provisioned inside the hosted control plane.</div>
           <ul>{managed_tenant_items}</ul>
           <div class="section-kicker" style="margin-top:1rem;">Catalog inventory: {len(organizations)} orgs / {len(projects)} projects / {len(services)} services.</div>
+        </div>
+      </div>
+
+      <div class="section-grid">
+        <div class="card">
+          <h2 class="section-title">Repository Drilldown</h2>
+          <div class="section-kicker">Select a repository to inspect its latest decision state.</div>
+          <div class="two-col">
+            <div>
+              <h3 class="section-title" style="margin-top:0;">Repositories</h3>
+              <ul>{repository_link_items}</ul>
+            </div>
+            <div>
+              <h3 class="section-title" style="margin-top:0;">Selected Repository</h3>
+              {repository_detail_html}
+              {_detail_analytics_html(repository_analytics, empty_message="No repository history slice yet. Send more decisions for this repository to unlock trends.")}
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Service Drilldown</h2>
+          <div class="section-kicker">Inspect cataloged service ownership and criticality.</div>
+          <div class="two-col">
+            <div>
+              <h3 class="section-title" style="margin-top:0;">Services</h3>
+              <ul>{service_link_items}</ul>
+            </div>
+            <div>
+              <h3 class="section-title" style="margin-top:0;">Selected Service</h3>
+              {service_detail_html}
+              {_detail_analytics_html(service_analytics, empty_message="No service-linked history slice yet. The selected service needs repository-backed decision events.")}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1369,6 +2075,123 @@ def render_app_html(
       </div>
 
       <div class="footer">Hosted alpha UX is now centered on onboarding, live intake, and worker health. The next layer should turn these static operator cues into writable forms and deeper repo/service drilldowns.</div>
+    </div>
+  </body>
+</html>"""
+
+
+def render_focus_page_html(
+    payload: dict[str, object],
+    *,
+    api_version: str,
+    identity: HistoryToken | None,
+    service_name: str,
+    kind: str,
+) -> str:
+    tenant = payload.get("tenant", {}) if isinstance(payload, dict) else {}
+    detail = payload.get("detail", {}) if isinstance(payload, dict) else {}
+    principal = identity.principal_name or identity.token_id if identity is not None else "anonymous"
+    repository_analytics = detail.get("repository_analytics") if isinstance(detail, dict) else None
+    service_analytics = detail.get("service_analytics") if isinstance(detail, dict) else None
+    selected_repository = str((detail.get("selected_repository") if isinstance(detail, dict) else "") or tenant.get("selected_repository", "")).strip()
+    selected_service = str((detail.get("selected_service") if isinstance(detail, dict) else "") or tenant.get("selected_service", "")).strip()
+    catalog = payload.get("catalog", {}) if isinstance(payload, dict) else {}
+    services = catalog.get("services", []) if isinstance(catalog, dict) else []
+    latest_by_repository = ((payload.get("analytics") or {}).get("policy_rollout") or {}).get("latest_by_repository", []) if isinstance(payload.get("analytics"), dict) else []
+    repository_detail = next((item for item in latest_by_repository if str(item.get("repository", "")) == selected_repository), None)
+    service_detail = next((item for item in services if str(item.get("service_id", "")) == selected_service), None)
+    focus_title = selected_repository if kind == "repository" else selected_service
+    focus_title = focus_title or ("Repository" if kind == "repository" else "Service")
+    tenant_value = quote(str(tenant.get("tenant_id", "")).strip())
+
+    def _focus_analytics(detail_payload: object) -> str:
+        if not isinstance(detail_payload, dict):
+            return "<p class='hint'>No history available yet for this selection.</p>"
+        summary = detail_payload.get("summary", {}) if isinstance(detail_payload.get("summary"), dict) else {}
+        series = ((detail_payload.get("time_series") or {}).get("by_day", [])) if isinstance(detail_payload.get("time_series"), dict) else []
+        blocks = detail_payload.get("top_blocking_categories", []) if isinstance(detail_payload.get("top_blocking_categories"), list) else []
+        series_items = "".join(
+            f"<li>{_html_escape(str(item.get('day', '')))}<span class='count'>{_html_escape(str(item.get('events', '0')))}</span></li>"
+            for item in series[-6:]
+        ) or "<li>No time-series points recorded</li>"
+        block_items = "".join(
+            f"<li>{_html_escape(str(item.get('name', '')))}<span class='count'>{_html_escape(str(item.get('count', '0')))}</span></li>"
+            for item in blocks[:6]
+        ) or "<li>No blocking categories recorded</li>"
+        return (
+            f"<div class='card'><h2 class='section-title'>History Summary</h2>"
+            f"<ul><li><strong>Events</strong><span class='count'>{_html_escape(str(summary.get('events', 0)))}</span></li>"
+            f"<li><strong>Repositories</strong><span class='count'>{_html_escape(str(summary.get('repositories', 0)))}</span></li>"
+            f"<li><strong>Blocked decisions</strong><span class='count'>{_html_escape(str(summary.get('blocked_events', 0)))}</span></li></ul></div>"
+            f"<div class='card'><h2 class='section-title'>Recent Event Days</h2><ul>{series_items}</ul></div>"
+            f"<div class='card'><h2 class='section-title'>Blocking Categories</h2><ul>{block_items}</ul></div>"
+        )
+
+    focus_meta = ""
+    if kind == "repository" and isinstance(repository_detail, dict):
+        focus_meta = (
+            f"<ul><li><strong>Repository</strong><div class='hint mono'>{_html_escape(str(repository_detail.get('repository', '')))}</div></li>"
+            f"<li><strong>Verdict</strong><div class='hint'>{_html_escape(str(repository_detail.get('verdict', '')))}</div></li>"
+            f"<li><strong>Gate</strong><div class='hint'>{_html_escape(str(repository_detail.get('gate_status', '')))}</div></li>"
+            f"<li><strong>Pack</strong><div class='hint'>{_html_escape(str(repository_detail.get('pack_id', '')))} / {_html_escape(str(repository_detail.get('pack_version', '')))}</div></li></ul>"
+        )
+    elif kind == "service" and isinstance(service_detail, dict):
+        focus_meta = (
+            f"<ul><li><strong>Service</strong><div class='hint mono'>{_html_escape(str(service_detail.get('service_id', '')))}</div></li>"
+            f"<li><strong>Repository</strong><div class='hint mono'>{_html_escape(str(service_detail.get('repository', '')))}</div></li>"
+            f"<li><strong>Owner</strong><div class='hint'>{_html_escape(str(service_detail.get('service_owner', '')) or 'unassigned')}</div></li>"
+            f"<li><strong>Owning team</strong><div class='hint'>{_html_escape(str(service_detail.get('owning_team', '')) or 'unassigned')}</div></li>"
+            f"<li><strong>Criticality</strong><div class='hint'>{_html_escape(str(service_detail.get('service_criticality', '')) or 'unknown')}</div></li></ul>"
+        )
+    else:
+        focus_meta = "<p class='hint'>No focused selection found.</p>"
+
+    return f"""<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>{_html_escape(service_name)} {kind.title()}</title>
+    <style>
+      :root {{ --bg:#f3f6f4; --panel:#fffdf8; --line:#d7ddd4; --ink:#12231d; --muted:#5d6e65; --accent:#176b52; }}
+      body {{ margin:0; font-family:Georgia, "Iowan Old Style", "Palatino Linotype", serif; background:var(--bg); color:var(--ink); }}
+      .shell {{ max-width:1180px; margin:0 auto; padding:2rem 1.25rem 3rem; }}
+      .hero, .grid {{ display:grid; gap:1rem; }}
+      .hero {{ grid-template-columns:1fr .8fr; }}
+      .grid {{ grid-template-columns:1fr 1fr 1fr; margin-top:1rem; }}
+      .card {{ background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:1rem; box-shadow:0 12px 32px rgba(18,35,29,.06); }}
+      .section-title {{ margin:0 0 .85rem 0; font-size:1rem; }}
+      .hint {{ color:var(--muted); font-size:.92rem; margin-top:.2rem; }}
+      .count {{ float:right; color:var(--muted); font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }}
+      .mono {{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }}
+      ul {{ margin:0; padding-left:1rem; }}
+      a {{ color:var(--accent); text-decoration:none; }}
+      @media (max-width: 1080px) {{ .hero, .grid {{ grid-template-columns:1fr; }} }}
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="hero">
+        <div class="card">
+          <div class="hint">Tenant {_html_escape(str(tenant.get('tenant_id', '')) or 'all')} / Identity {_html_escape(principal)} / API {_html_escape(api_version)}</div>
+          <h1 style="margin:.35rem 0 0 0;">{_html_escape(focus_title)}</h1>
+          <div class="hint" style="margin-top:.5rem;">Dedicated {kind} page for operator review and historical analysis.</div>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Navigation</h2>
+          <ul>
+            <li><a href="/api/{_html_escape(api_version)}/app?tenant={tenant_value}">Back to tenant dashboard</a></li>
+            <li><a href="/api/{_html_escape(api_version)}/app/repository?tenant={tenant_value}&repository={quote(selected_repository)}">Repository page</a></li>
+            <li><a href="/api/{_html_escape(api_version)}/app/service?tenant={tenant_value}&service={quote(selected_service)}">Service page</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <h2 class="section-title">Current State</h2>
+          {focus_meta}
+        </div>
+        {_focus_analytics(repository_analytics if kind == 'repository' else service_analytics)}
+      </div>
     </div>
   </body>
 </html>"""
