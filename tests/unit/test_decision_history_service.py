@@ -673,6 +673,15 @@ def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path)
         headers=admin,
         scoped_tokens=scoped,
     )
+    user_status, user_app = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=create_service_user&tenant_id=acme&user_id=alice&principal_name=Alice+Doe&email=alice%40example.com&roles_csv=reader%2Cadmin&status=active",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
     secret_status, secret_app = resolve_history_request(
         "/api/v1/app",
         method="POST",
@@ -687,9 +696,13 @@ def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path)
     assert "Tenant acme provisioned." in tenant_app["html"]
     assert producer_status == 200
     assert "Producer client github-actions created." in producer_app["html"]
+    assert "Producer token issued once." in producer_app["html"]
+    assert user_status == 200
+    assert "Service user alice created." in user_app["html"]
     assert secret_status == 200
     assert "Provider secret reference pagerduty-token stored." in secret_app["html"]
     assert "Add Producer Client" in secret_app["html"]
+    assert "Add Service User" in secret_app["html"]
 
 
 def _build_test_jwt(*, secret: str, payload: dict[str, object]) -> str:

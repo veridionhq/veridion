@@ -977,7 +977,27 @@ def _handle_app_post_request(
                 roles_csv=_body_string(payload, "roles_csv") or "ingestor",
                 status=_body_string(payload, "status") or "active",
             )
-            message = f"Producer client {client_id} created. Token prefix: {created.get('token_prefix', '')}..."
+            message = f"Producer client {client_id} created."
+            level = "success"
+            payload["revealed_token"] = created.get("token", "")
+            payload["revealed_token_prefix"] = created.get("token_prefix", "")
+    elif action == "create_service_user":
+        user_id = _body_string(payload, "user_id")
+        if not tenant_id or not user_id:
+            message = "Tenant and user ID are required."
+            level = "error"
+        else:
+            upsert_service_user(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                principal_name=_body_string(payload, "principal_name") or user_id,
+                email=_body_string(payload, "email"),
+                roles_csv=_body_string(payload, "roles_csv") or "reader",
+                status=_body_string(payload, "status") or "active",
+            )
+            message = f"Service user {user_id} created."
             level = "success"
     elif action == "create_provider_secret":
         secret_name = _body_string(payload, "secret_name")
@@ -1014,7 +1034,12 @@ def _handle_app_post_request(
     )
     if overview is None:
         return (404, {"error": "tenant_not_found"})
-    overview["ui"] = {"message": message, "level": level}
+    overview["ui"] = {
+        "message": message,
+        "level": level,
+        "revealed_token": _body_string(payload, "revealed_token"),
+        "revealed_token_prefix": _body_string(payload, "revealed_token_prefix"),
+    }
     return (
         200,
         {
@@ -1388,6 +1413,38 @@ def render_app_html(
     flash = ""
     if isinstance(ui, dict) and ui.get("message"):
         flash = f"<div class='flash {_html_escape(str(ui.get('level', 'info')))}'>{_html_escape(str(ui.get('message', '')))}</div>"
+    revealed_token = str(ui.get("revealed_token", "")).strip() if isinstance(ui, dict) else ""
+    token_reveal = ""
+    if revealed_token:
+        token_reveal = (
+            f"<div class='flash warning'><strong>Producer token issued once.</strong>"
+            f"<div class='hint'>Store this now. Only the prefix is persisted by the control plane after this response.</div>"
+            f"<div class='token-box mono'>{_html_escape(revealed_token)}</div>"
+            f"</div>"
+        )
+    repository_event_count = sum(1 for item in latest_by_repository if str(item.get("repository", "")) == str(repository_detail.get("repository", ""))) if isinstance(repository_detail, dict) else 0
+    if isinstance(repository_detail, dict):
+        related_service = next((item for item in services if str(item.get("repository", "")) == str(repository_detail.get("repository", ""))), None)
+        if isinstance(related_service, dict):
+            repository_detail_html += (
+                f"<div class='hint' style='margin-top:.75rem;'><strong>Related service:</strong> {_html_escape(str(related_service.get('service_id', '')))} / "
+                f"{_html_escape(str(related_service.get('service_criticality', '')) or 'unknown')}</div>"
+            )
+        repository_detail_html += f"<div class='hint' style='margin-top:.5rem;'><strong>Observed latest-repository entries:</strong> {repository_event_count}</div>"
+    if isinstance(service_detail, dict):
+        matching_repo_detail = next((item for item in latest_by_repository if str(item.get("repository", "")) == str(service_detail.get("repository", ""))), None)
+        if isinstance(matching_repo_detail, dict):
+            service_detail_html += (
+                f"<div class='hint' style='margin-top:.75rem;'><strong>Latest decision:</strong> "
+                f"{_html_escape(str(matching_repo_detail.get('verdict', '')))} / {_html_escape(str(matching_repo_detail.get('gate_status', '')))}</div>"
+            )
+    if not latest_by_repository:
+        repository_detail_html = "<p class='hint'>No decision history yet. Connect a producer client and send the first event to unlock repository drilldowns.</p>"
+    if not services:
+        service_detail_html = "<p class='hint'>No services cataloged yet. Service drilldowns appear after decisions arrive with service metadata.</p>"
+    onboarding_empty = ""
+    if not events:
+        onboarding_empty = "<div class='flash warning'>No decision events have landed for this tenant yet. Create or copy a producer token below, wire it into CI, and then return here to verify the first event.</div>"
     return f"""<!doctype html>
 <html>
   <head>
@@ -1429,6 +1486,7 @@ def render_app_html(
       .flash.success {{ background:#edf8f2; border-color:#b9dccb; color:#15553f; }}
       .flash.warning {{ background:#fff6e7; border-color:#efd49f; color:#7a4d00; }}
       .flash.error {{ background:#fff0eb; border-color:#f1beb5; color:#8b2d1f; }}
+      .token-box {{ margin-top:.75rem; padding:.9rem 1rem; background:#fffdf8; border:1px dashed #d2b276; border-radius:14px; word-break:break-all; color:#6b4300; }}
       table {{ width:100%; border-collapse:collapse; }}
       th, td {{ text-align:left; padding:.7rem .55rem; border-top:1px solid var(--line); font-size:.94rem; vertical-align:top; }}
       th {{ color:var(--muted); font-weight:600; border-top:none; }}
@@ -1474,6 +1532,8 @@ def render_app_html(
         </div>
       </div>
       {flash}
+      {token_reveal}
+      {onboarding_empty}
 
       <div class="summary-grid">
         <div class="mini-card"><div class="label">Events</div><div class="value">{events}</div></div>
@@ -1529,6 +1589,23 @@ def render_app_html(
           </form>
         </div>
         <div class="card">
+          <h2 class="section-title">Add Service User</h2>
+          <div class="section-kicker">Create an operator identity record for this tenant.</div>
+          <form method="post" action="/api/{_html_escape(api_version)}/app">
+            <input type="hidden" name="action" value="create_service_user">
+            <input type="hidden" name="tenant_id" value="{_html_escape(tenant_value)}">
+            <label>User ID<input name="user_id" placeholder="alice"></label>
+            <label>Principal Name<input name="principal_name" placeholder="Alice Doe"></label>
+            <label>Email<input name="email" placeholder="alice@example.com"></label>
+            <label>Roles<input name="roles_csv" value="reader"></label>
+            <label>Status<input name="status" value="active"></label>
+            <button type="submit">Create User</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="triple">
+        <div class="card">
           <h2 class="section-title">Add Provider Secret Ref</h2>
           <div class="section-kicker">Store an integration reference for incidents, alerts, or rollout systems.</div>
           <form method="post" action="/api/{_html_escape(api_version)}/app">
@@ -1540,6 +1617,24 @@ def render_app_html(
             <label>Description<input name="description" placeholder="PagerDuty API token"></label>
             <button type="submit">Store Secret Ref</button>
           </form>
+        </div>
+        <div class="card">
+          <h2 class="section-title">First Run Notes</h2>
+          <div class="section-kicker">How to make this tenant stop looking empty.</div>
+          <ul>
+            <li><strong>Step 1</strong><div class="hint">Provision the tenant boundary and at least one producer client.</div></li>
+            <li><strong>Step 2</strong><div class="hint">Send the first decision event from CI so repository and service drilldowns become meaningful.</div></li>
+            <li><strong>Step 3</strong><div class="hint">Add provider refs and service users so the control plane reflects real operator ownership.</div></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Current Control Signals</h2>
+          <div class="section-kicker">Fast read of what is live for this tenant.</div>
+          <ul>
+            <li><strong>Latest repo decision</strong><div class="hint">{_html_escape(str((latest_by_repository[0] if latest_by_repository else {}).get('repository', 'none')))} / {_html_escape(str((latest_by_repository[0] if latest_by_repository else {}).get('verdict', 'none')))}</div></li>
+            <li><strong>Latest materialization</strong><div class="hint">{_html_escape(str((materializations[0] if materializations else {}).get('run_id', 'none')))}</div></li>
+            <li><strong>Latest session</strong><div class="hint">{_html_escape(str((sessions[0] if sessions else {}).get('session_id', 'none')))}</div></li>
+          </ul>
         </div>
       </div>
 
