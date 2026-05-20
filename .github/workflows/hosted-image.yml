@@ -34,6 +34,7 @@ jobs:
       HOSTED_ECS_SERVICE: ${{ vars.HOSTED_ECS_SERVICE }}
       HOSTED_ECS_WORKER_SERVICE: ${{ vars.HOSTED_ECS_WORKER_SERVICE }}
       IMAGE_TAG: alpha
+      SHA_TAG: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -60,7 +61,9 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ env.ECR_REPOSITORY_URL }}:${{ env.IMAGE_TAG }}
+          tags: |
+            ${{ env.ECR_REPOSITORY_URL }}:${{ env.IMAGE_TAG }}
+            ${{ env.ECR_REPOSITORY_URL }}:${{ env.SHA_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -71,22 +74,68 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN }}
 
-      - name: Roll hosted ECS services
+      - name: Deploy hosted ECS services with immutable image
         if: ${{ env.AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN != '' && env.HOSTED_ECS_CLUSTER != '' && env.HOSTED_ECS_SERVICE != '' }}
         shell: bash
         run: |
           set -euo pipefail
-          aws ecs update-service \
-            --region "${AWS_REGION}" \
-            --cluster "${HOSTED_ECS_CLUSTER}" \
-            --service "${HOSTED_ECS_SERVICE}" \
-            --force-new-deployment
-          if [[ -n "${HOSTED_ECS_WORKER_SERVICE}" ]]; then
+
+          IMAGE_URI="${ECR_REPOSITORY_URL}:${SHA_TAG}"
+
+          deploy_service() {
+            local service_name="$1"
+            local container_name="$2"
+            local service_json
+            local current_task_def
+            local task_json
+            local rendered_td
+            local new_task_def_arn
+
+            service_json="$(aws ecs describe-services --region "${AWS_REGION}" --cluster "${HOSTED_ECS_CLUSTER}" --services "${service_name}")"
+            current_task_def="$(printf '%s' "${service_json}" | jq -r '.services[0].taskDefinition')"
+            task_json="$(aws ecs describe-task-definition --region "${AWS_REGION}" --task-definition "${current_task_def}")"
+
+            rendered_td="$(printf '%s' "${task_json}" | jq --arg image "${IMAGE_URI}" --arg container "${container_name}" '
+              .taskDefinition
+              | {
+                  family,
+                  taskRoleArn,
+                  executionRoleArn,
+                  networkMode,
+                  containerDefinitions,
+                  volumes,
+                  placementConstraints,
+                  requiresCompatibilities,
+                  cpu,
+                  memory,
+                  runtimePlatform,
+                  ephemeralStorage,
+                  pidMode,
+                  ipcMode,
+                  proxyConfiguration,
+                  inferenceAccelerators
+                }
+              | .containerDefinitions |= map(if .name == $container then .image = $image else . end)
+              | with_entries(select(.value != null and .value != []))
+            ')"
+
+            new_task_def_arn="$(
+              aws ecs register-task-definition \
+                --region "${AWS_REGION}" \
+                --cli-input-json "${rendered_td}" \
+                | jq -r '.taskDefinition.taskDefinitionArn'
+            )"
+
             aws ecs update-service \
               --region "${AWS_REGION}" \
               --cluster "${HOSTED_ECS_CLUSTER}" \
-              --service "${HOSTED_ECS_WORKER_SERVICE}" \
-              --force-new-deployment
+              --service "${service_name}" \
+              --task-definition "${new_task_def_arn}"
+          }
+
+          deploy_service "${HOSTED_ECS_SERVICE}" "history-service"
+          if [[ -n "${HOSTED_ECS_WORKER_SERVICE}" ]]; then
+            deploy_service "${HOSTED_ECS_WORKER_SERVICE}" "scheduler-worker"
           fi
 
   publish-main:
@@ -100,6 +149,7 @@ jobs:
       ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
       AWS_GITHUB_ACTIONS_ROLE_ARN: ${{ vars.AWS_GITHUB_ACTIONS_ROLE_ARN != '' && vars.AWS_GITHUB_ACTIONS_ROLE_ARN || secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
       IMAGE_TAG: latest
+      SHA_TAG: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -126,7 +176,9 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ env.ECR_REPOSITORY_URL }}:${{ env.IMAGE_TAG }}
+          tags: |
+            ${{ env.ECR_REPOSITORY_URL }}:${{ env.IMAGE_TAG }}
+            ${{ env.ECR_REPOSITORY_URL }}:${{ env.SHA_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -141,6 +193,7 @@ jobs:
       ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
       AWS_GITHUB_ACTIONS_ROLE_ARN: ${{ vars.AWS_GITHUB_ACTIONS_ROLE_ARN != '' && vars.AWS_GITHUB_ACTIONS_ROLE_ARN || secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
       IMAGE_TAG: ${{ inputs.image_tag }}
+      SHA_TAG: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -167,6 +220,8 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ env.ECR_REPOSITORY_URL }}:${{ env.IMAGE_TAG }}
+          tags: |
+            ${{ env.ECR_REPOSITORY_URL }}:${{ env.IMAGE_TAG }}
+            ${{ env.ECR_REPOSITORY_URL }}:${{ env.SHA_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

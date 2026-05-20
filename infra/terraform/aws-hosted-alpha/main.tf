@@ -405,16 +405,18 @@ data "aws_iam_policy_document" "github_actions_deploy" {
       "ecs:UpdateService",
       "ecs:DescribeServices",
       "ecs:DescribeTaskDefinition",
+      "ecs:RegisterTaskDefinition",
       "ecs:ListTasks",
       "ecs:DescribeTasks"
     ]
+    resources = ["*"]
+  }
+
+  statement {
+    actions = ["iam:PassRole"]
     resources = [
-      aws_ecs_cluster.main.arn,
-      aws_ecs_service.service.id,
-      aws_ecs_service.worker.id,
-      aws_ecs_task_definition.service.arn,
-      aws_ecs_task_definition.worker.arn,
-      aws_ecs_task_definition.migrate.arn
+      aws_iam_role.execution.arn,
+      aws_iam_role.task.arn
     ]
   }
 }

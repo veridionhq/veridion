@@ -109,7 +109,14 @@ For automatic ECS rollout after the `develop` image publish:
 4. Set repository variable `HOSTED_ECS_SERVICE` to `veridion-alpha-service`.
 5. Optionally set `HOSTED_ECS_WORKER_SERVICE` when the worker is enabled.
 
-That lets `.github/workflows/hosted-image.yml` force a new ECS deployment after pushing `:alpha`.
+That lets `.github/workflows/hosted-image.yml`:
+
+- publish the mutable branch tag (`:alpha` on `develop`, `:latest` on `main`)
+- publish an immutable commit tag (`:${GITHUB_SHA}`)
+- register a fresh ECS task definition revision pinned to the immutable commit tag
+- update the ECS service to that exact task definition
+
+This avoids the race where ECS force-redeploys against a task definition that still references a mutable tag.
 
 4. Scale the ECS services up by setting:
 
