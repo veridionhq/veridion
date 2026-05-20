@@ -3042,6 +3042,11 @@ def render_focus_page_html(
             f"<li><strong>Pack</strong><div class='hint'>{_html_escape(str(repository_detail.get('pack_id', '')))} / {_html_escape(str(repository_detail.get('pack_version', '')))}</div></li>"
             f"<li><strong>Next action</strong><div class='hint'>{_html_escape(_event_next_action(latest_event) if isinstance(latest_event, dict) and latest_event else 'Collect the next decision event for this repository.')}</div></li></ul>"
         )
+    elif kind == "repository" and selected_repository:
+        focus_meta = (
+            f"<ul><li><strong>Repository</strong><div class='hint mono'>{_html_escape(selected_repository)}</div></li>"
+            f"<li><strong>Next action</strong><div class='hint'>Collect the next decision event for this repository.</div></li></ul>"
+        )
     elif kind == "service" and isinstance(service_detail, dict):
         latest_event = service_recent_events[0] if service_recent_events and isinstance(service_recent_events[0], dict) else {}
         focus_meta = (
@@ -3051,6 +3056,11 @@ def render_focus_page_html(
             f"<li><strong>Owning team</strong><div class='hint'>{_html_escape(str(service_detail.get('owning_team', '')) or 'unassigned')}</div></li>"
             f"<li><strong>Criticality</strong><div class='hint'>{_html_escape(str(service_detail.get('service_criticality', '')) or 'unknown')}</div></li>"
             f"<li><strong>Next action</strong><div class='hint'>{_html_escape(_event_next_action(latest_event) if isinstance(latest_event, dict) and latest_event else 'Send repository-linked decisions to unlock service posture guidance.')}</div></li></ul>"
+        )
+    elif kind == "service" and selected_service:
+        focus_meta = (
+            f"<ul><li><strong>Service</strong><div class='hint mono'>{_html_escape(selected_service)}</div></li>"
+            f"<li><strong>Next action</strong><div class='hint'>Send repository-linked decisions to unlock service posture guidance.</div></li></ul>"
         )
     else:
         focus_meta = "<p class='hint'>No focused selection found.</p>"
