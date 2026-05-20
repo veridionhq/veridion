@@ -648,6 +648,8 @@ def test_decision_history_service_admin_and_session_surfaces(tmp_path) -> None:
     assert app_status == 200
     assert "Managed Tenants" in app["html"]
     assert "Repository Drilldown" in app["html"]
+    assert "Producer Token Controls" in app["html"]
+    assert "Second Tenant Playbook" in app["html"]
 
 
 def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path) -> None:
@@ -691,18 +693,52 @@ def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path)
         headers=admin,
         scoped_tokens=scoped,
     )
+    rotate_status, rotate_app = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=rotate_producer_client&tenant_id=acme&client_id=github-actions",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    revoke_status, revoke_app = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=revoke_producer_client&tenant_id=acme&client_id=github-actions",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    clients_status, clients = resolve_history_request(
+        "/api/v1/admin/producer-clients?tenant=acme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens=scoped,
+    )
 
     assert create_tenant_status == 200
     assert "Tenant acme provisioned." in tenant_app["html"]
     assert producer_status == 200
     assert "Producer client github-actions created." in producer_app["html"]
     assert "Producer token issued once." in producer_app["html"]
+    assert rotate_status == 200
+    assert "Producer client github-actions rotated." in rotate_app["html"]
+    assert "Producer token issued once." in rotate_app["html"]
+    assert revoke_status == 200
+    assert "Producer client github-actions revoked." in revoke_app["html"]
     assert user_status == 200
     assert "Service user alice created." in user_app["html"]
     assert secret_status == 200
     assert "Provider secret reference pagerduty-token stored." in secret_app["html"]
     assert "Add Producer Client" in secret_app["html"]
     assert "Add Service User" in secret_app["html"]
+    assert "Rotate Token" in secret_app["html"]
+    assert "Second Tenant Playbook" in secret_app["html"]
+    assert clients_status == 200
+    assert clients["data"]["producer_clients"][0]["status"] == "revoked"
 
 
 def _build_test_jwt(*, secret: str, payload: dict[str, object]) -> str:

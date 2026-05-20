@@ -321,6 +321,9 @@ class HistoryStore:
     ) -> dict[str, str]:  # pragma: no cover - interface
         raise NotImplementedError
 
+    def update_producer_client_status(self, *, tenant_id: str, client_id: str, status: str) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
     def list_producer_clients(self, *, tenant_id: str) -> tuple[dict[str, str], ...]:  # pragma: no cover - interface
         raise NotImplementedError
 
@@ -658,6 +661,12 @@ class SQLiteHistoryStore(HistoryStore):
             "roles_csv": roles_csv,
             "status": status,
         }
+
+    def update_producer_client_status(self, *, tenant_id: str, client_id: str, status: str) -> None:
+        self.connection.execute(
+            "UPDATE producer_clients SET status = ? WHERE tenant_id = ? AND client_id = ?",
+            (status, tenant_id, client_id),
+        )
 
     def list_producer_clients(self, *, tenant_id: str) -> tuple[dict[str, str], ...]:
         rows = self.connection.execute(
@@ -1035,6 +1044,13 @@ class PostgresHistoryStore(HistoryStore):
             "roles_csv": roles_csv,
             "status": status,
         }
+
+    def update_producer_client_status(self, *, tenant_id: str, client_id: str, status: str) -> None:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE producer_clients SET status = %s WHERE tenant_id = %s AND client_id = %s",
+                (status, tenant_id, client_id),
+            )
 
     def list_producer_clients(self, *, tenant_id: str) -> tuple[dict[str, str], ...]:
         with self.connection.cursor() as cursor:
@@ -1652,6 +1668,24 @@ def create_producer_client(
         )
         store.commit()
         return result
+
+
+def update_producer_client_status(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str,
+    client_id: str,
+    status: str,
+) -> None:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        store.update_producer_client_status(
+            tenant_id=tenant_id,
+            client_id=client_id,
+            status=status,
+        )
+        store.commit()
 
 
 def list_producer_clients(

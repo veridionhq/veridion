@@ -35,6 +35,7 @@ from veridion.action.decision_history_store import (
     list_service_users,
     provision_managed_tenant,
     resolve_persistent_bearer_identity,
+    update_producer_client_status,
     upsert_provider_secret_ref,
     upsert_service_user,
     upsert_decision_event_store,
@@ -287,9 +288,16 @@ def resolve_history_request(
         )
         if overview is None:
             return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
-        if isinstance(overview.get("tenant"), dict):
-            overview["tenant"]["selected_repository"] = params.get("repository", "")
-            overview["tenant"]["selected_service"] = params.get("service", "")
+        _attach_selected_detail_analytics(
+            overview,
+            history_paths=history_paths,
+            tenants=tenant_lookup,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=params.get("tenant", ""),
+            selected_repository=params.get("repository", ""),
+            selected_service=params.get("service", ""),
+        )
         return _respond(
             200,
             {"html": render_app_html(overview, api_version=api_version or API_VERSION, identity=identity, service_name=service_name)},
@@ -396,9 +404,16 @@ def resolve_history_request(
         )
         if payload is None:
             return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
-        if isinstance(payload.get("tenant"), dict):
-            payload["tenant"]["selected_repository"] = params.get("repository", "")
-            payload["tenant"]["selected_service"] = params.get("service", "")
+        _attach_selected_detail_analytics(
+            payload,
+            history_paths=history_paths,
+            tenants=tenant_lookup,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=params.get("tenant", ""),
+            selected_repository=params.get("repository", ""),
+            selected_service=params.get("service", ""),
+        )
         return _respond(200, payload, route=route, api_version=api_version, identity=identity)
     if route == "/materializations":
         if not materialization_root and not (sqlite_path or store_dsn):
@@ -981,6 +996,47 @@ def _handle_app_post_request(
             level = "success"
             payload["revealed_token"] = created.get("token", "")
             payload["revealed_token_prefix"] = created.get("token_prefix", "")
+    elif action == "rotate_producer_client":
+        client_id = _body_string(payload, "client_id")
+        existing = _producer_client_record(
+            list(list_producer_clients(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id)) if tenant_id else [],
+            client_id,
+        )
+        if not tenant_id or not client_id:
+            message = "Tenant and client ID are required."
+            level = "error"
+        elif not isinstance(existing, dict):
+            message = f"Producer client {client_id} not found."
+            level = "error"
+        else:
+            created = create_producer_client(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                client_id=client_id,
+                display_name=str(existing.get("display_name", "")) or client_id,
+                roles_csv=str(existing.get("roles_csv", "")) or "ingestor",
+                status="active",
+            )
+            message = f"Producer client {client_id} rotated."
+            level = "success"
+            payload["revealed_token"] = created.get("token", "")
+            payload["revealed_token_prefix"] = created.get("token_prefix", "")
+    elif action == "revoke_producer_client":
+        client_id = _body_string(payload, "client_id")
+        if not tenant_id or not client_id:
+            message = "Tenant and client ID are required."
+            level = "error"
+        else:
+            update_producer_client_status(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                client_id=client_id,
+                status="revoked",
+            )
+            message = f"Producer client {client_id} revoked."
+            level = "success"
     elif action == "create_service_user":
         user_id = _body_string(payload, "user_id")
         if not tenant_id or not user_id:
@@ -1034,6 +1090,16 @@ def _handle_app_post_request(
     )
     if overview is None:
         return (404, {"error": "tenant_not_found"})
+    _attach_selected_detail_analytics(
+        overview,
+        history_paths=history_paths,
+        tenants=tenants,
+        sqlite_path=sqlite_path,
+        store_dsn=store_dsn,
+        tenant_id=tenant_id,
+        selected_repository=_body_string(payload, "repository"),
+        selected_service=_body_string(payload, "service"),
+    )
     overview["ui"] = {
         "message": message,
         "level": level,
@@ -1068,6 +1134,75 @@ def _parse_form_payload(body: str, headers: dict[str, str]) -> dict[str, object]
 def _body_string(payload: dict[str, object], key: str) -> str:
     value = payload.get(key)
     return value.strip() if isinstance(value, str) else ""
+
+
+def _producer_client_record(producer_clients: list[dict[str, object]], client_id: str) -> dict[str, object] | None:
+    return next((item for item in producer_clients if str(item.get("client_id", "")) == client_id), None)
+
+
+def _attach_selected_detail_analytics(
+    overview: dict[str, object],
+    *,
+    history_paths: tuple[str, ...],
+    tenants: dict[str, HistoryTenant],
+    sqlite_path: str,
+    store_dsn: str,
+    tenant_id: str,
+    selected_repository: str,
+    selected_service: str,
+) -> None:
+    tenant = overview.get("tenant", {})
+    if isinstance(tenant, dict):
+        tenant["selected_repository"] = selected_repository
+        tenant["selected_service"] = selected_service
+
+    catalog = overview.get("catalog", {})
+    services = catalog.get("services", []) if isinstance(catalog, dict) else []
+    latest_by_repository = ((overview.get("analytics") or {}).get("policy_rollout") or {}).get("latest_by_repository", []) if isinstance(overview.get("analytics"), dict) else []
+
+    selected_repository_value = selected_repository
+    if not selected_repository_value and latest_by_repository:
+        selected_repository_value = str(latest_by_repository[0].get("repository", ""))
+
+    selected_service_value = selected_service
+    if not selected_service_value and services:
+        selected_service_value = str(services[0].get("service_id", ""))
+
+    selected_service_record = next((item for item in services if str(item.get("service_id", "")) == selected_service_value), None)
+    service_repository = str(selected_service_record.get("repository", "")) if isinstance(selected_service_record, dict) else ""
+
+    repository_analytics = (
+        _analyze_request(
+            history_paths=history_paths,
+            tenants=tenants,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=tenant_id,
+            repository=selected_repository_value,
+        )
+        if selected_repository_value
+        else None
+    )
+    service_analytics = (
+        _analyze_request(
+            history_paths=history_paths,
+            tenants=tenants,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=tenant_id,
+            repository=service_repository,
+        )
+        if service_repository
+        else None
+    )
+
+    overview["detail"] = {
+        "selected_repository": selected_repository_value,
+        "selected_service": selected_service_value,
+        "service_repository": service_repository,
+        "repository_analytics": repository_analytics,
+        "service_analytics": service_analytics,
+    }
 
 
 def _parse_limit(raw: str) -> int:
@@ -1301,6 +1436,7 @@ def render_app_html(
     projects = catalog.get("projects", []) if isinstance(catalog, dict) else []
     services = catalog.get("services", []) if isinstance(catalog, dict) else []
     latest_by_repository = ((analytics.get("policy_rollout") or {}).get("latest_by_repository", [])) if isinstance(analytics, dict) else []
+    detail = payload.get("detail", {}) if isinstance(payload, dict) else {}
     blocking_categories = analytics.get("top_blocking_categories", []) if isinstance(analytics, dict) else []
     schedule_runs = [
         item for item in materializations if isinstance(item, dict) and str(item.get("run_id", "")).startswith("nightly-")
@@ -1378,14 +1514,16 @@ def render_app_html(
         f"<li><a href='/api/{_html_escape(api_version)}/app?tenant={tenant_query}&service={quote(str(item.get('service_id', '')))}'>{_html_escape(str(item.get('service_id', '')))}</a><div class='hint'>{_html_escape(str(item.get('repository', '')))} / {_html_escape(str(item.get('service_criticality', '')) or 'unknown')}</div></li>"
         for item in services[:8]
     ) or "<li>No services recorded</li>"
-    selected_repository = str(tenant.get("selected_repository", "")).strip()
-    selected_service = str(tenant.get("selected_service", "")).strip()
+    selected_repository = str((detail.get("selected_repository") if isinstance(detail, dict) else "") or tenant.get("selected_repository", "")).strip()
+    selected_service = str((detail.get("selected_service") if isinstance(detail, dict) else "") or tenant.get("selected_service", "")).strip()
     repository_detail = next((item for item in latest_by_repository if str(item.get("repository", "")) == selected_repository), None)
     if repository_detail is None and latest_by_repository:
         repository_detail = latest_by_repository[0]
     service_detail = next((item for item in services if str(item.get("service_id", "")) == selected_service), None)
     if service_detail is None and services:
         service_detail = services[0]
+    repository_analytics = detail.get("repository_analytics") if isinstance(detail, dict) else None
+    service_analytics = detail.get("service_analytics") if isinstance(detail, dict) else None
     repository_detail_html = "<p class='hint'>Select a repository to inspect its latest decision state.</p>"
     if isinstance(repository_detail, dict):
         repository_detail_html = (
@@ -1409,6 +1547,45 @@ def render_app_html(
             f"<li><strong>Project</strong><div class='hint'>{_html_escape(str(service_detail.get('project_id', '')))}</div></li>"
             f"</ul>"
         )
+    def _detail_analytics_html(detail_payload: object, *, empty_message: str) -> str:
+        if not isinstance(detail_payload, dict):
+            return f"<p class='hint'>{_html_escape(empty_message)}</p>"
+        detail_summary = detail_payload.get("summary", {}) if isinstance(detail_payload.get("summary"), dict) else {}
+        detail_blocks = detail_payload.get("top_blocking_categories", []) if isinstance(detail_payload.get("top_blocking_categories"), list) else []
+        detail_series = ((detail_payload.get("time_series") or {}).get("by_day", [])) if isinstance(detail_payload.get("time_series"), dict) else []
+        detail_verdicts = detail_payload.get("by_verdict", {}) if isinstance(detail_payload.get("by_verdict"), dict) else {}
+        block_items = "".join(
+            f"<li>{_html_escape(str(item.get('name', '')))} <span class='count'>{_html_escape(str(item.get('count', '0')))}</span></li>"
+            for item in detail_blocks[:4]
+        ) or "<li>No blocking categories recorded</li>"
+        series_items = "".join(
+            f"<li>{_html_escape(str(item.get('day', '')))} <span class='count'>{_html_escape(str(item.get('events', '0')))}</span></li>"
+            for item in detail_series[-4:]
+        ) or "<li>No time-series points recorded</li>"
+        verdict_items = ", ".join(f"{key}={value}" for key, value in detail_verdicts.items()) or "none"
+        return (
+            f"<div class='card' style='margin-top:1rem; background:#fcfffd;'>"
+            f"<h3 class='section-title' style='margin-top:0;'>History Slice</h3>"
+            f"<div class='two-col'>"
+            f"<div><div class='hint'><strong>Events:</strong> {_html_escape(str(detail_summary.get('events', 0)))}</div>"
+            f"<div class='hint'><strong>Repositories:</strong> {_html_escape(str(detail_summary.get('repositories', 0)))}</div>"
+            f"<div class='hint'><strong>Verdicts:</strong> {_html_escape(verdict_items)}</div></div>"
+            f"<div><div class='hint'><strong>Window start:</strong> {_html_escape(str(((detail_summary.get('window') or {}).get('first_generated_at', 'n/a')) if isinstance(detail_summary.get('window'), dict) else 'n/a'))}</div>"
+            f"<div class='hint'><strong>Window end:</strong> {_html_escape(str(((detail_summary.get('window') or {}).get('last_generated_at', 'n/a')) if isinstance(detail_summary.get('window'), dict) else 'n/a'))}</div></div>"
+            f"</div>"
+            f"<div class='two-col' style='margin-top:1rem;'><div><h3 class='section-title' style='margin-top:0;'>Blocking Trend</h3><ul>{block_items}</ul></div>"
+            f"<div><h3 class='section-title' style='margin-top:0;'>Recent Event Days</h3><ul>{series_items}</ul></div></div>"
+            f"</div>"
+        )
+    producer_ops_items = "".join(
+        f"<li><strong>{_html_escape(str(item.get('client_id', '')))}</strong> <span class='mono'>{_html_escape(str(item.get('token_prefix', '')))}...</span>"
+        f"<div class='hint'>{_html_escape(str(item.get('status', 'active')))} / {_html_escape(str(item.get('roles_csv', '')) or 'ingestor')}</div>"
+        f"<div style='display:flex; gap:.5rem; margin-top:.55rem; flex-wrap:wrap;'>"
+        f"<form method='post' action='/api/{_html_escape(api_version)}/app'><input type='hidden' name='action' value='rotate_producer_client'><input type='hidden' name='tenant_id' value='{_html_escape(tenant_value)}'><input type='hidden' name='client_id' value='{_html_escape(str(item.get('client_id', '')))}'><button type='submit'>Rotate Token</button></form>"
+        f"<form method='post' action='/api/{_html_escape(api_version)}/app'><input type='hidden' name='action' value='revoke_producer_client'><input type='hidden' name='tenant_id' value='{_html_escape(tenant_value)}'><input type='hidden' name='client_id' value='{_html_escape(str(item.get('client_id', '')))}'><button type='submit' style='background:#8b2d1f;'>Revoke</button></form>"
+        f"</div></li>"
+        for item in producer_clients[:6]
+    ) or "<li>No producer clients yet</li>"
     ui = payload.get("ui", {}) if isinstance(payload, dict) else {}
     flash = ""
     if isinstance(ui, dict) and ui.get("message"):
@@ -1628,12 +1805,13 @@ def render_app_html(
           </ul>
         </div>
         <div class="card">
-          <h2 class="section-title">Current Control Signals</h2>
-          <div class="section-kicker">Fast read of what is live for this tenant.</div>
+          <h2 class="section-title">Second Tenant Playbook</h2>
+          <div class="section-kicker">Use this when onboarding the next org, not just the first one.</div>
           <ul>
-            <li><strong>Latest repo decision</strong><div class="hint">{_html_escape(str((latest_by_repository[0] if latest_by_repository else {}).get('repository', 'none')))} / {_html_escape(str((latest_by_repository[0] if latest_by_repository else {}).get('verdict', 'none')))}</div></li>
-            <li><strong>Latest materialization</strong><div class="hint">{_html_escape(str((materializations[0] if materializations else {}).get('run_id', 'none')))}</div></li>
-            <li><strong>Latest session</strong><div class="hint">{_html_escape(str((sessions[0] if sessions else {}).get('session_id', 'none')))}</div></li>
+            <li><strong>Tenant skeleton</strong><div class="hint">Create a second tenant ID such as <span class="mono">beta</span> before sharing producer credentials.</div></li>
+            <li><strong>Dedicated producer</strong><div class="hint">Issue a separate CI ingestor per repo or team so rotation and revocation stay isolated.</div></li>
+            <li><strong>Service mapping</strong><div class="hint">Verify the first decision event contains organization, project, service owner, and criticality metadata.</div></li>
+            <li><strong>Operator access</strong><div class="hint">Create at least one named service user before sharing the app URL with a new team.</div></li>
           </ul>
         </div>
       </div>
@@ -1653,8 +1831,9 @@ def render_app_html(
             <ul>{blocking_items}</ul>
           </div>
           <div class="card">
-            <h2 class="section-title">Producer Clients</h2>
-            <ul>{producer_items}</ul>
+            <h2 class="section-title">Producer Token Controls</h2>
+            <div class="section-kicker">Rotate active credentials and revoke stale ones without leaving the app.</div>
+            <ul>{producer_ops_items}</ul>
           </div>
         </div>
       </div>
@@ -1688,6 +1867,7 @@ def render_app_html(
             <div>
               <h3 class="section-title" style="margin-top:0;">Selected Repository</h3>
               {repository_detail_html}
+              {_detail_analytics_html(repository_analytics, empty_message="No repository history slice yet. Send more decisions for this repository to unlock trends.")}
             </div>
           </div>
         </div>
@@ -1702,6 +1882,7 @@ def render_app_html(
             <div>
               <h3 class="section-title" style="margin-top:0;">Selected Service</h3>
               {service_detail_html}
+              {_detail_analytics_html(service_analytics, empty_message="No service-linked history slice yet. The selected service needs repository-backed decision events.")}
             </div>
           </div>
         </div>
