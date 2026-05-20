@@ -650,6 +650,8 @@ def test_decision_history_service_admin_and_session_surfaces(tmp_path) -> None:
     assert "Repository Drilldown" in app["html"]
     assert "Producer Token Controls" in app["html"]
     assert "Second Tenant Playbook" in app["html"]
+    assert "Connect First Repo" in app["html"]
+    assert "Auth Hardening" in app["html"]
 
 
 def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path) -> None:
@@ -718,6 +720,20 @@ def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path)
         headers={"Authorization": "Bearer admin"},
         scoped_tokens=scoped,
     )
+    repo_page_status, repo_page = resolve_history_request(
+        "/api/v1/app/repository?tenant=acme&repository=acme/service-a",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens=scoped,
+    )
+    service_page_status, service_page = resolve_history_request(
+        "/api/v1/app/service?tenant=acme&service=service-a",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens=scoped,
+    )
 
     assert create_tenant_status == 200
     assert "Tenant acme provisioned." in tenant_app["html"]
@@ -739,6 +755,12 @@ def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path)
     assert "Second Tenant Playbook" in secret_app["html"]
     assert clients_status == 200
     assert clients["data"]["producer_clients"][0]["status"] == "revoked"
+    assert clients["data"]["producer_clients"][0]["last_issued_at"]
+    assert repo_page_status == 200
+    assert "Dedicated repository page" in repo_page["data"]["html"]
+    assert "History Summary" in repo_page["data"]["html"]
+    assert service_page_status == 200
+    assert "Dedicated service page" in service_page["data"]["html"]
 
 
 def _build_test_jwt(*, secret: str, payload: dict[str, object]) -> str:

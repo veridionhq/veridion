@@ -29,6 +29,7 @@ from veridion.action.decision_history_store import (
     list_catalog_models,
     list_managed_tenants,
     list_materialization_runs,
+    list_producer_client_audit,
     list_producer_clients,
     list_provider_secret_refs,
     list_service_sessions,
@@ -241,6 +242,7 @@ def resolve_history_request(
             headers=headers or {},
             api_version=api_version or API_VERSION,
             service_name=service_name,
+            jwt_config=jwt_config or JWTAuthConfig(),
         )
         return _respond(status, payload, route=route, api_version=api_version, identity=identity)
     if route == "/tenants":
@@ -285,6 +287,7 @@ def resolve_history_request(
             since=params.get("since"),
             until=params.get("until"),
             identity=identity,
+            jwt_config=jwt_config,
         )
         if overview is None:
             return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
@@ -297,10 +300,53 @@ def resolve_history_request(
             tenant_id=params.get("tenant", ""),
             selected_repository=params.get("repository", ""),
             selected_service=params.get("service", ""),
+            selected_producer_client=params.get("producer_client", ""),
         )
         return _respond(
             200,
             {"html": render_app_html(overview, api_version=api_version or API_VERSION, identity=identity, service_name=service_name)},
+            route=route,
+            api_version=api_version,
+            identity=identity,
+        )
+    if route == "/app/repository" or route == "/app/service":
+        overview = _build_overview_payload(
+            history_paths=history_paths,
+            tenants=tenant_lookup,
+            schedules=schedule_lookup,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            materialization_root=materialization_root,
+            tenant_id=params.get("tenant", ""),
+            since=params.get("since"),
+            until=params.get("until"),
+            identity=identity,
+            jwt_config=jwt_config,
+        )
+        if overview is None:
+            return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
+        _attach_selected_detail_analytics(
+            overview,
+            history_paths=history_paths,
+            tenants=tenant_lookup,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=params.get("tenant", ""),
+            selected_repository=params.get("repository", ""),
+            selected_service=params.get("service", ""),
+            selected_producer_client=params.get("producer_client", ""),
+        )
+        return _respond(
+            200,
+            {
+                "html": render_focus_page_html(
+                    overview,
+                    api_version=api_version or API_VERSION,
+                    identity=identity,
+                    service_name=service_name,
+                    kind="repository" if route.endswith("/repository") else "service",
+                )
+            },
             route=route,
             api_version=api_version,
             identity=identity,
@@ -370,6 +416,7 @@ def resolve_history_request(
             since=params.get("since"),
             until=params.get("until"),
             identity=identity,
+            jwt_config=jwt_config,
             analytics=analytics,
         )
         return _respond(
@@ -401,6 +448,7 @@ def resolve_history_request(
             since=params.get("since"),
             until=params.get("until"),
             identity=identity,
+            jwt_config=jwt_config,
         )
         if payload is None:
             return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
@@ -413,6 +461,7 @@ def resolve_history_request(
             tenant_id=params.get("tenant", ""),
             selected_repository=params.get("repository", ""),
             selected_service=params.get("service", ""),
+            selected_producer_client=params.get("producer_client", ""),
         )
         return _respond(200, payload, route=route, api_version=api_version, identity=identity)
     if route == "/materializations":
@@ -636,6 +685,7 @@ def _build_overview_payload(
     since: str | None,
     until: str | None,
     identity: HistoryToken | None,
+    jwt_config: JWTAuthConfig,
     analytics: dict[str, object] | None = None,
 ) -> dict[str, object] | None:
     analytics_payload = analytics or _analyze_request(
@@ -694,6 +744,11 @@ def _build_overview_payload(
             "materialization_root": materialization_root,
             "history_paths": list(history_paths),
             "has_persistent_store": bool(sqlite_path or store_dsn),
+            "jwt_issuer": jwt_config.issuer,
+            "jwt_audience": jwt_config.audience,
+            "jwks_url": jwt_config.jwks_url,
+            "oidc_discovery_url": jwt_config.oidc_discovery_url,
+            "jwt_enabled": bool(jwt_auth_enabled(jwt_config)),
         },
         "catalog": _catalog_payload(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id),
         "admin": {
@@ -721,6 +776,7 @@ def _handle_post_request(
     headers: dict[str, str],
     api_version: str,
     service_name: str,
+    jwt_config: JWTAuthConfig,
 ) -> tuple[int, dict[str, object]]:
     if path == "/app":
         return _handle_app_post_request(
@@ -736,6 +792,7 @@ def _handle_post_request(
             scoped_token=scoped_token,
             api_version=api_version,
             service_name=service_name,
+            jwt_config=jwt_config,
         )
     if path == "/admin/tenants":
         try:
@@ -949,6 +1006,7 @@ def _handle_app_post_request(
     scoped_token: HistoryToken | None,
     api_version: str,
     service_name: str,
+    jwt_config: JWTAuthConfig,
 ) -> tuple[int, dict[str, object]]:
     payload = _parse_form_payload(body, headers)
     action = _body_string(payload, "action")
@@ -1087,6 +1145,7 @@ def _handle_app_post_request(
         since=None,
         until=None,
         identity=scoped_token,
+        jwt_config=jwt_config,
     )
     if overview is None:
         return (404, {"error": "tenant_not_found"})
@@ -1099,6 +1158,7 @@ def _handle_app_post_request(
         tenant_id=tenant_id,
         selected_repository=_body_string(payload, "repository"),
         selected_service=_body_string(payload, "service"),
+        selected_producer_client=_body_string(payload, "producer_client"),
     )
     overview["ui"] = {
         "message": message,
@@ -1150,15 +1210,19 @@ def _attach_selected_detail_analytics(
     tenant_id: str,
     selected_repository: str,
     selected_service: str,
+    selected_producer_client: str,
 ) -> None:
     tenant = overview.get("tenant", {})
     if isinstance(tenant, dict):
         tenant["selected_repository"] = selected_repository
         tenant["selected_service"] = selected_service
+        tenant["selected_producer_client"] = selected_producer_client
 
     catalog = overview.get("catalog", {})
     services = catalog.get("services", []) if isinstance(catalog, dict) else []
     latest_by_repository = ((overview.get("analytics") or {}).get("policy_rollout") or {}).get("latest_by_repository", []) if isinstance(overview.get("analytics"), dict) else []
+    admin = overview.get("admin", {})
+    producer_clients = admin.get("producer_clients", []) if isinstance(admin, dict) else []
 
     selected_repository_value = selected_repository
     if not selected_repository_value and latest_by_repository:
@@ -1195,13 +1259,23 @@ def _attach_selected_detail_analytics(
         if service_repository
         else None
     )
+    selected_producer_value = selected_producer_client
+    if not selected_producer_value and producer_clients:
+        selected_producer_value = str(producer_clients[0].get("client_id", ""))
+    producer_audit = (
+        list(list_producer_client_audit(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id, client_id=selected_producer_value, limit=10))
+        if selected_producer_value and (sqlite_path or store_dsn)
+        else []
+    )
 
     overview["detail"] = {
         "selected_repository": selected_repository_value,
         "selected_service": selected_service_value,
+        "selected_producer_client": selected_producer_value,
         "service_repository": service_repository,
         "repository_analytics": repository_analytics,
         "service_analytics": service_analytics,
+        "producer_audit": producer_audit,
     }
 
 
@@ -1463,6 +1537,11 @@ def render_app_html(
     store_backend = _html_escape(str(status_store.get("backend", "file")))
     schema_version = _html_escape(str(status_store.get("schema_version", "0")))
     has_persistent_store = "Yes" if bool(service.get("has_persistent_store")) else "No"
+    jwt_enabled = bool(service.get("jwt_enabled"))
+    jwt_issuer = _html_escape(str(service.get("jwt_issuer", "")) or "not configured")
+    jwt_audience = _html_escape(str(service.get("jwt_audience", "")) or "not configured")
+    jwks_url = _html_escape(str(service.get("jwks_url", "")) or "not configured")
+    oidc_discovery_url = _html_escape(str(service.get("oidc_discovery_url", "")) or "not configured")
     history_paths = service.get("history_paths", []) if isinstance(service, dict) else []
     onboarding_items = "".join(
         f"<li><strong>{_html_escape(label)}</strong> <span class='status {'ready' if ready else 'todo'}'>{'ready' if ready else 'next'}</span><div class='hint'>{_html_escape(detail)}</div></li>"
@@ -1506,16 +1585,17 @@ def render_app_html(
     ) or "<li>No sessions recorded</li>"
     tenant_value = str(tenant.get("tenant_id", "")).strip()
     tenant_query = quote(tenant_value) if tenant_value else ""
-    repository_link_items = "".join(
-        f"<li><a href='/api/{_html_escape(api_version)}/app?tenant={tenant_query}&repository={quote(str(item.get('repository', '')))}'>{_html_escape(str(item.get('repository', '')))}</a><div class='hint'>{_html_escape(str(item.get('verdict', '')))} / {_html_escape(str(item.get('gate_status', '')))}</div></li>"
-        for item in latest_by_repository[:8]
-    ) or "<li>No repository activity yet</li>"
     service_link_items = "".join(
-        f"<li><a href='/api/{_html_escape(api_version)}/app?tenant={tenant_query}&service={quote(str(item.get('service_id', '')))}'>{_html_escape(str(item.get('service_id', '')))}</a><div class='hint'>{_html_escape(str(item.get('repository', '')))} / {_html_escape(str(item.get('service_criticality', '')) or 'unknown')}</div></li>"
+        f"<li><a href='/api/{_html_escape(api_version)}/app?tenant={tenant_query}&service={quote(str(item.get('service_id', '')))}'>{_html_escape(str(item.get('service_id', '')))}</a> · <a href='/api/{_html_escape(api_version)}/app/service?tenant={tenant_query}&service={quote(str(item.get('service_id', '')))}'>open page</a><div class='hint'>{_html_escape(str(item.get('repository', '')))} / {_html_escape(str(item.get('service_criticality', '')) or 'unknown')}</div></li>"
         for item in services[:8]
     ) or "<li>No services recorded</li>"
+    repository_link_items = "".join(
+        f"<li><a href='/api/{_html_escape(api_version)}/app?tenant={tenant_query}&repository={quote(str(item.get('repository', '')))}'>{_html_escape(str(item.get('repository', '')))}</a> · <a href='/api/{_html_escape(api_version)}/app/repository?tenant={tenant_query}&repository={quote(str(item.get('repository', '')))}'>open page</a><div class='hint'>{_html_escape(str(item.get('verdict', '')))} / {_html_escape(str(item.get('gate_status', '')))}</div></li>"
+        for item in latest_by_repository[:8]
+    ) or "<li>No repository activity yet</li>"
     selected_repository = str((detail.get("selected_repository") if isinstance(detail, dict) else "") or tenant.get("selected_repository", "")).strip()
     selected_service = str((detail.get("selected_service") if isinstance(detail, dict) else "") or tenant.get("selected_service", "")).strip()
+    selected_producer_client = str((detail.get("selected_producer_client") if isinstance(detail, dict) else "") or tenant.get("selected_producer_client", "")).strip()
     repository_detail = next((item for item in latest_by_repository if str(item.get("repository", "")) == selected_repository), None)
     if repository_detail is None and latest_by_repository:
         repository_detail = latest_by_repository[0]
@@ -1524,6 +1604,10 @@ def render_app_html(
         service_detail = services[0]
     repository_analytics = detail.get("repository_analytics") if isinstance(detail, dict) else None
     service_analytics = detail.get("service_analytics") if isinstance(detail, dict) else None
+    producer_audit = detail.get("producer_audit", []) if isinstance(detail, dict) else []
+    selected_producer = next((item for item in producer_clients if str(item.get("client_id", "")) == selected_producer_client), None)
+    if selected_producer is None and producer_clients:
+        selected_producer = producer_clients[0]
     repository_detail_html = "<p class='hint'>Select a repository to inspect its latest decision state.</p>"
     if isinstance(repository_detail, dict):
         repository_detail_html = (
@@ -1578,14 +1662,48 @@ def render_app_html(
             f"</div>"
         )
     producer_ops_items = "".join(
-        f"<li><strong>{_html_escape(str(item.get('client_id', '')))}</strong> <span class='mono'>{_html_escape(str(item.get('token_prefix', '')))}...</span>"
+        f"<li><strong>{_html_escape(str(item.get('client_id', '')))}</strong> <span class='mono'>{_html_escape(str(item.get('token_prefix', '')))}...</span> · <a href='/api/{_html_escape(api_version)}/app?tenant={tenant_query}&producer_client={quote(str(item.get('client_id', '')))}'>inspect</a>"
         f"<div class='hint'>{_html_escape(str(item.get('status', 'active')))} / {_html_escape(str(item.get('roles_csv', '')) or 'ingestor')}</div>"
+        f"<div class='hint'>issued {_html_escape(str(item.get('last_issued_at', '') or 'n/a'))} / used {_html_escape(str(item.get('last_used_at', '') or 'never'))}</div>"
         f"<div style='display:flex; gap:.5rem; margin-top:.55rem; flex-wrap:wrap;'>"
         f"<form method='post' action='/api/{_html_escape(api_version)}/app'><input type='hidden' name='action' value='rotate_producer_client'><input type='hidden' name='tenant_id' value='{_html_escape(tenant_value)}'><input type='hidden' name='client_id' value='{_html_escape(str(item.get('client_id', '')))}'><button type='submit'>Rotate Token</button></form>"
         f"<form method='post' action='/api/{_html_escape(api_version)}/app'><input type='hidden' name='action' value='revoke_producer_client'><input type='hidden' name='tenant_id' value='{_html_escape(tenant_value)}'><input type='hidden' name='client_id' value='{_html_escape(str(item.get('client_id', '')))}'><button type='submit' style='background:#8b2d1f;'>Revoke</button></form>"
         f"</div></li>"
         for item in producer_clients[:6]
     ) or "<li>No producer clients yet</li>"
+    producer_audit_items = "".join(
+        f"<li><strong>{_html_escape(str(item.get('action', '')))}</strong><div class='hint'>{_html_escape(str(item.get('created_at', '')))} / {_html_escape(str(item.get('detail', '')))}</div></li>"
+        for item in producer_audit[:6]
+    ) or "<li>No producer audit events recorded</li>"
+    selected_producer_html = "<p class='hint'>Select a producer client to inspect last-used and rotation history.</p>"
+    if isinstance(selected_producer, dict):
+        selected_producer_html = (
+            f"<ul>"
+            f"<li><strong>Client</strong><div class='hint mono'>{_html_escape(str(selected_producer.get('client_id', '')))}</div></li>"
+            f"<li><strong>Status</strong><div class='hint'>{_html_escape(str(selected_producer.get('status', 'active')))}</div></li>"
+            f"<li><strong>Roles</strong><div class='hint'>{_html_escape(str(selected_producer.get('roles_csv', '')))}</div></li>"
+            f"<li><strong>Last issued</strong><div class='hint'>{_html_escape(str(selected_producer.get('last_issued_at', '') or 'n/a'))}</div></li>"
+            f"<li><strong>Last rotated</strong><div class='hint'>{_html_escape(str(selected_producer.get('last_rotated_at', '') or 'never'))}</div></li>"
+            f"<li><strong>Last used</strong><div class='hint'>{_html_escape(str(selected_producer.get('last_used_at', '') or 'never'))}</div></li>"
+            f"<li><strong>Revoked at</strong><div class='hint'>{_html_escape(str(selected_producer.get('revoked_at', '') or 'active'))}</div></li>"
+            f"</ul>"
+        )
+    connect_repo_steps = (
+        "<ul>"
+        "<li><strong>Repo variables</strong><div class='hint mono'>VERIDION_HOSTED_SERVICE_URL</div><div class='hint mono'>VERIDION_HOSTED_TENANT_ID</div></li>"
+        "<li><strong>Repo secret</strong><div class='hint mono'>VERIDION_HOSTED_INGESTOR_TOKEN</div></li>"
+        "<li><strong>Expected path</strong><div class='hint'>Enable the hosted producer workflow or the internal decision sink so CI POSTs to <span class='mono'>/api/v1/events</span>.</div></li>"
+        "</ul>"
+    )
+    auth_hardening_items = (
+        "<ul>"
+        f"<li><strong>JWT enabled</strong><div class='hint'>{'yes' if jwt_enabled else 'no'}</div></li>"
+        f"<li><strong>Issuer</strong><div class='hint mono'>{jwt_issuer}</div></li>"
+        f"<li><strong>Audience</strong><div class='hint mono'>{jwt_audience}</div></li>"
+        f"<li><strong>JWKS URL</strong><div class='hint mono'>{jwks_url}</div></li>"
+        f"<li><strong>OIDC discovery</strong><div class='hint mono'>{oidc_discovery_url}</div></li>"
+        "</ul>"
+    )
     ui = payload.get("ui", {}) if isinstance(payload, dict) else {}
     flash = ""
     if isinstance(ui, dict) and ui.get("message"):
@@ -1816,6 +1934,29 @@ def render_app_html(
         </div>
       </div>
 
+      <div class="triple">
+        <div class="card">
+          <h2 class="section-title">Connect First Repo</h2>
+          <div class="section-kicker">Exact GitHub settings needed for the next repository onboarding.</div>
+          {connect_repo_steps}
+        </div>
+        <div class="card">
+          <h2 class="section-title">Auth Hardening</h2>
+          <div class="section-kicker">Move operators off bootstrap tokens and onto JWT/JWKS-backed identities.</div>
+          {auth_hardening_items}
+          <div class="hint" style="margin-top:.75rem;">Keep the bootstrap bearer only for break-glass admin access. Day-to-day operators should arrive through JWT or OIDC-backed sessions.</div>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Current Control Signals</h2>
+          <div class="section-kicker">Fast read of what is live for this tenant.</div>
+          <ul>
+            <li><strong>Latest repo decision</strong><div class="hint">{_html_escape(str((latest_by_repository[0] if latest_by_repository else {}).get('repository', 'none')))} / {_html_escape(str((latest_by_repository[0] if latest_by_repository else {}).get('verdict', 'none')))}</div></li>
+            <li><strong>Latest materialization</strong><div class="hint">{_html_escape(str((materializations[0] if materializations else {}).get('run_id', 'none')))}</div></li>
+            <li><strong>Latest session</strong><div class="hint">{_html_escape(str((sessions[0] if sessions else {}).get('session_id', 'none')))}</div></li>
+          </ul>
+        </div>
+      </div>
+
       <div class="section-grid">
         <div class="card">
           <h2 class="section-title">Recent Repository Decisions</h2>
@@ -1833,7 +1974,17 @@ def render_app_html(
           <div class="card">
             <h2 class="section-title">Producer Token Controls</h2>
             <div class="section-kicker">Rotate active credentials and revoke stale ones without leaving the app.</div>
-            <ul>{producer_ops_items}</ul>
+            <div class="two-col">
+              <div>
+                <ul>{producer_ops_items}</ul>
+              </div>
+              <div>
+                <h3 class="section-title" style="margin-top:0;">Selected Producer</h3>
+                {selected_producer_html}
+                <h3 class="section-title" style="margin-top:1rem;">Audit Trail</h3>
+                <ul>{producer_audit_items}</ul>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1923,6 +2074,123 @@ def render_app_html(
       </div>
 
       <div class="footer">Hosted alpha UX is now centered on onboarding, live intake, and worker health. The next layer should turn these static operator cues into writable forms and deeper repo/service drilldowns.</div>
+    </div>
+  </body>
+</html>"""
+
+
+def render_focus_page_html(
+    payload: dict[str, object],
+    *,
+    api_version: str,
+    identity: HistoryToken | None,
+    service_name: str,
+    kind: str,
+) -> str:
+    tenant = payload.get("tenant", {}) if isinstance(payload, dict) else {}
+    detail = payload.get("detail", {}) if isinstance(payload, dict) else {}
+    principal = identity.principal_name or identity.token_id if identity is not None else "anonymous"
+    repository_analytics = detail.get("repository_analytics") if isinstance(detail, dict) else None
+    service_analytics = detail.get("service_analytics") if isinstance(detail, dict) else None
+    selected_repository = str((detail.get("selected_repository") if isinstance(detail, dict) else "") or tenant.get("selected_repository", "")).strip()
+    selected_service = str((detail.get("selected_service") if isinstance(detail, dict) else "") or tenant.get("selected_service", "")).strip()
+    catalog = payload.get("catalog", {}) if isinstance(payload, dict) else {}
+    services = catalog.get("services", []) if isinstance(catalog, dict) else []
+    latest_by_repository = ((payload.get("analytics") or {}).get("policy_rollout") or {}).get("latest_by_repository", []) if isinstance(payload.get("analytics"), dict) else []
+    repository_detail = next((item for item in latest_by_repository if str(item.get("repository", "")) == selected_repository), None)
+    service_detail = next((item for item in services if str(item.get("service_id", "")) == selected_service), None)
+    focus_title = selected_repository if kind == "repository" else selected_service
+    focus_title = focus_title or ("Repository" if kind == "repository" else "Service")
+    tenant_value = quote(str(tenant.get("tenant_id", "")).strip())
+
+    def _focus_analytics(detail_payload: object) -> str:
+        if not isinstance(detail_payload, dict):
+            return "<p class='hint'>No history available yet for this selection.</p>"
+        summary = detail_payload.get("summary", {}) if isinstance(detail_payload.get("summary"), dict) else {}
+        series = ((detail_payload.get("time_series") or {}).get("by_day", [])) if isinstance(detail_payload.get("time_series"), dict) else []
+        blocks = detail_payload.get("top_blocking_categories", []) if isinstance(detail_payload.get("top_blocking_categories"), list) else []
+        series_items = "".join(
+            f"<li>{_html_escape(str(item.get('day', '')))}<span class='count'>{_html_escape(str(item.get('events', '0')))}</span></li>"
+            for item in series[-6:]
+        ) or "<li>No time-series points recorded</li>"
+        block_items = "".join(
+            f"<li>{_html_escape(str(item.get('name', '')))}<span class='count'>{_html_escape(str(item.get('count', '0')))}</span></li>"
+            for item in blocks[:6]
+        ) or "<li>No blocking categories recorded</li>"
+        return (
+            f"<div class='card'><h2 class='section-title'>History Summary</h2>"
+            f"<ul><li><strong>Events</strong><span class='count'>{_html_escape(str(summary.get('events', 0)))}</span></li>"
+            f"<li><strong>Repositories</strong><span class='count'>{_html_escape(str(summary.get('repositories', 0)))}</span></li>"
+            f"<li><strong>Blocked decisions</strong><span class='count'>{_html_escape(str(summary.get('blocked_events', 0)))}</span></li></ul></div>"
+            f"<div class='card'><h2 class='section-title'>Recent Event Days</h2><ul>{series_items}</ul></div>"
+            f"<div class='card'><h2 class='section-title'>Blocking Categories</h2><ul>{block_items}</ul></div>"
+        )
+
+    focus_meta = ""
+    if kind == "repository" and isinstance(repository_detail, dict):
+        focus_meta = (
+            f"<ul><li><strong>Repository</strong><div class='hint mono'>{_html_escape(str(repository_detail.get('repository', '')))}</div></li>"
+            f"<li><strong>Verdict</strong><div class='hint'>{_html_escape(str(repository_detail.get('verdict', '')))}</div></li>"
+            f"<li><strong>Gate</strong><div class='hint'>{_html_escape(str(repository_detail.get('gate_status', '')))}</div></li>"
+            f"<li><strong>Pack</strong><div class='hint'>{_html_escape(str(repository_detail.get('pack_id', '')))} / {_html_escape(str(repository_detail.get('pack_version', '')))}</div></li></ul>"
+        )
+    elif kind == "service" and isinstance(service_detail, dict):
+        focus_meta = (
+            f"<ul><li><strong>Service</strong><div class='hint mono'>{_html_escape(str(service_detail.get('service_id', '')))}</div></li>"
+            f"<li><strong>Repository</strong><div class='hint mono'>{_html_escape(str(service_detail.get('repository', '')))}</div></li>"
+            f"<li><strong>Owner</strong><div class='hint'>{_html_escape(str(service_detail.get('service_owner', '')) or 'unassigned')}</div></li>"
+            f"<li><strong>Owning team</strong><div class='hint'>{_html_escape(str(service_detail.get('owning_team', '')) or 'unassigned')}</div></li>"
+            f"<li><strong>Criticality</strong><div class='hint'>{_html_escape(str(service_detail.get('service_criticality', '')) or 'unknown')}</div></li></ul>"
+        )
+    else:
+        focus_meta = "<p class='hint'>No focused selection found.</p>"
+
+    return f"""<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>{_html_escape(service_name)} {kind.title()}</title>
+    <style>
+      :root {{ --bg:#f3f6f4; --panel:#fffdf8; --line:#d7ddd4; --ink:#12231d; --muted:#5d6e65; --accent:#176b52; }}
+      body {{ margin:0; font-family:Georgia, "Iowan Old Style", "Palatino Linotype", serif; background:var(--bg); color:var(--ink); }}
+      .shell {{ max-width:1180px; margin:0 auto; padding:2rem 1.25rem 3rem; }}
+      .hero, .grid {{ display:grid; gap:1rem; }}
+      .hero {{ grid-template-columns:1fr .8fr; }}
+      .grid {{ grid-template-columns:1fr 1fr 1fr; margin-top:1rem; }}
+      .card {{ background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:1rem; box-shadow:0 12px 32px rgba(18,35,29,.06); }}
+      .section-title {{ margin:0 0 .85rem 0; font-size:1rem; }}
+      .hint {{ color:var(--muted); font-size:.92rem; margin-top:.2rem; }}
+      .count {{ float:right; color:var(--muted); font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }}
+      .mono {{ font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }}
+      ul {{ margin:0; padding-left:1rem; }}
+      a {{ color:var(--accent); text-decoration:none; }}
+      @media (max-width: 1080px) {{ .hero, .grid {{ grid-template-columns:1fr; }} }}
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="hero">
+        <div class="card">
+          <div class="hint">Tenant {_html_escape(str(tenant.get('tenant_id', '')) or 'all')} / Identity {_html_escape(principal)} / API {_html_escape(api_version)}</div>
+          <h1 style="margin:.35rem 0 0 0;">{_html_escape(focus_title)}</h1>
+          <div class="hint" style="margin-top:.5rem;">Dedicated {kind} page for operator review and historical analysis.</div>
+        </div>
+        <div class="card">
+          <h2 class="section-title">Navigation</h2>
+          <ul>
+            <li><a href="/api/{_html_escape(api_version)}/app?tenant={tenant_value}">Back to tenant dashboard</a></li>
+            <li><a href="/api/{_html_escape(api_version)}/app/repository?tenant={tenant_value}&repository={quote(selected_repository)}">Repository page</a></li>
+            <li><a href="/api/{_html_escape(api_version)}/app/service?tenant={tenant_value}&service={quote(selected_service)}">Service page</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <h2 class="section-title">Current State</h2>
+          {focus_meta}
+        </div>
+        {_focus_analytics(repository_analytics if kind == 'repository' else service_analytics)}
+      </div>
     </div>
   </body>
 </html>"""
