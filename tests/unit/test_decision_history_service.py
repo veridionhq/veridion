@@ -828,12 +828,13 @@ def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path)
     assert "Rotate Token" in secret_app["html"]
     assert "Second Tenant Playbook" in secret_app["html"]
     assert "Generate Repo Plan" in connect_app["html"]
-    assert "Listening for the first hosted decision event from CI." in connect_app["html"]
+    assert "Producer github-actions is revoked" in connect_app["html"]
     assert "Recover With Fresh Token" in connect_app["html"]
     assert "VERIDION_HOSTED_INGESTOR_TOKEN" in connect_app["html"]
     assert "Operator Observability" in connect_app["html"]
     assert "Provision Second Tenant" in connect_app["html"]
     assert "Troubleshoot Missing Events" in connect_app["html"]
+    assert "Rotate the producer to reveal a fresh token" in connect_app["html"]
     assert clients_status == 200
     assert clients["data"]["producer_clients"][0]["status"] == "revoked"
     assert clients["data"]["producer_clients"][0]["last_issued_at"]
