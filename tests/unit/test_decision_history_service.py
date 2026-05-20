@@ -214,6 +214,95 @@ def test_decision_history_service_app_login_uses_session_cookie(tmp_path) -> Non
     assert "Control Plane Audit" in app_payload["html"]
 
 
+def test_decision_history_service_browser_session_can_submit_onboarding_forms(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    scoped = {"admin": HistoryToken(token="admin", tenants=("acme",), roles=("admin",), principal_name="Admin One", token_id="admin-1")}
+
+    resolve_history_request(
+        "/api/v1/admin/tenants",
+        method="POST",
+        body=json.dumps({"tenant_id": "acme", "display_name": "Acme", "organization_name": "Acme Org"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens=scoped,
+    )
+
+    login_status, login_payload = resolve_history_request(
+        "/api/v1/app/login",
+        method="POST",
+        body="tenant_id=acme&token=admin&next=%2Fapi%2Fv1%2Fapp%3Ftenant%3Dacme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        scoped_tokens=scoped,
+    )
+    cookie_header = str(login_payload.get("__headers", {}).get("Set-Cookie", ""))
+    producer_status, producer_payload = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=create_producer_client&tenant_id=acme&client_id=github-actions&display_name=GitHub+Actions&roles_csv=ingestor&status=active",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Content-Type": "application/x-www-form-urlencoded", "Cookie": cookie_header},
+        scoped_tokens=scoped,
+    )
+    clients_status, clients_payload = resolve_history_request(
+        "/api/v1/admin/producer-clients?tenant=acme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Cookie": cookie_header},
+        scoped_tokens=scoped,
+    )
+
+    assert login_status == 200
+    assert producer_status == 200
+    assert "Producer client github-actions created." in producer_payload["html"]
+    assert "Producer token issued once." in producer_payload["html"]
+    assert clients_status == 200
+    assert clients_payload["data"]["producer_clients"][0]["client_id"] == "github-actions"
+    assert clients_payload["identity"]["principal_name"] == "Admin One"
+
+
+def test_decision_history_service_admin_producer_routes_round_trip(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    scoped = {"admin": HistoryToken(token="admin", tenants=("acme",), roles=("admin",), principal_name="Admin One", token_id="admin-1")}
+
+    resolve_history_request(
+        "/api/v1/admin/tenants",
+        method="POST",
+        body=json.dumps({"tenant_id": "acme", "display_name": "Acme", "organization_name": "Acme Org"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens=scoped,
+    )
+
+    create_status, create_payload = resolve_history_request(
+        "/api/v1/admin/producer-clients",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "client_id": "github-actions", "display_name": "GitHub Actions"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens=scoped,
+    )
+    list_status, list_payload = resolve_history_request(
+        "/api/v1/admin/producer-clients?tenant=acme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens=scoped,
+    )
+
+    assert create_status == 201
+    assert create_payload["data"]["producer_client"]["client_id"] == "github-actions"
+    assert create_payload["identity"]["principal_name"] == "Admin One"
+    assert list_status == 200
+    assert list_payload["data"]["producer_clients"][0]["client_id"] == "github-actions"
+    assert list_payload["identity"]["principal_name"] == "Admin One"
+
+
 def test_decision_history_service_uses_sqlite_store_and_scoped_tokens(tmp_path) -> None:
     sqlite_path = tmp_path / "history.db"
     acme_history = tmp_path / "acme.ndjson"
