@@ -257,18 +257,19 @@ resource "aws_lb" "service" {
 }
 
 resource "aws_lb_target_group" "service" {
-  name        = replace(substr("${local.prefix}-tg", 0, 32), "_", "-")
-  port        = 8787
-  protocol    = "HTTP"
-  target_type = "ip"
-  vpc_id      = local.chosen_vpc_id
+  name                         = replace(substr("${local.prefix}-tg", 0, 32), "_", "-")
+  port                         = 8787
+  protocol                     = "HTTP"
+  target_type                  = "ip"
+  vpc_id                       = local.chosen_vpc_id
+  deregistration_delay         = var.alb_target_deregistration_delay_seconds
 
   health_check {
     path                = "/healthz"
     matcher             = "200"
-    interval            = 30
-    healthy_threshold   = 2
-    unhealthy_threshold = 3
+    interval            = var.alb_health_check_interval_seconds
+    healthy_threshold   = var.alb_health_check_healthy_threshold
+    unhealthy_threshold = var.alb_health_check_unhealthy_threshold
   }
 }
 

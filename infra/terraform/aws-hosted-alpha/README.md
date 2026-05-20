@@ -27,6 +27,10 @@ Use these defaults first:
 - `worker_cpu = 256`
 - `worker_memory = 512`
 - `log_retention_in_days = 7`
+- `alb_target_deregistration_delay_seconds = 15`
+- `alb_health_check_interval_seconds = 10`
+- `alb_health_check_healthy_threshold = 1`
+- `alb_health_check_unhealthy_threshold = 2`
 
 Why:
 
@@ -34,6 +38,7 @@ Why:
 - public-subnet Fargate tasks can still keep RDS private while avoiding NAT entirely
 - the Veridion API and scheduler are light enough to start on the smallest Fargate shape here
 - seven-day log retention is enough for an alpha without paying to keep two weeks by default
+- a shorter ALB health window and drain delay materially reduce deploy cutover time during alpha iteration
 
 Move away from this cheaper mode only if:
 
