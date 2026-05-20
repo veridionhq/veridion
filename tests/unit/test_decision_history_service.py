@@ -710,8 +710,11 @@ def test_decision_history_service_admin_and_session_surfaces(tmp_path) -> None:
     assert "Second Tenant Playbook" in app["html"]
     assert "Connect First Repo" in app["html"]
     assert "Auth Hardening" in app["html"]
+    assert "Operator Observability" in app["html"]
+    assert "Provision Second Tenant" in app["html"]
     assert "First hosted decision received." in connected["html"]
     assert "Recover With Fresh Token" in connected["html"]
+    assert "Open repository page" in connected["html"]
 
 
 def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path) -> None:
@@ -827,14 +830,19 @@ def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path)
     assert "Listening for the first hosted decision event from CI." in connect_app["html"]
     assert "Recover With Fresh Token" in connect_app["html"]
     assert "VERIDION_HOSTED_INGESTOR_TOKEN" in connect_app["html"]
+    assert "Operator Observability" in connect_app["html"]
+    assert "Provision Second Tenant" in connect_app["html"]
     assert clients_status == 200
     assert clients["data"]["producer_clients"][0]["status"] == "revoked"
     assert clients["data"]["producer_clients"][0]["last_issued_at"]
     assert repo_page_status == 200
     assert "Dedicated repository page" in repo_page["data"]["html"]
     assert "History Summary" in repo_page["data"]["html"]
+    assert "Recent Decisions" in repo_page["data"]["html"]
+    assert "Next action" in repo_page["data"]["html"]
     assert service_page_status == 200
     assert "Dedicated service page" in service_page["data"]["html"]
+    assert "Recent Decisions" in service_page["data"]["html"]
 
 
 def _build_test_jwt(*, secret: str, payload: dict[str, object]) -> str:
