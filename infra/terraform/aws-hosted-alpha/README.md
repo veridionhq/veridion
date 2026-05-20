@@ -29,7 +29,7 @@ Use these defaults first:
 - `log_retention_in_days = 7`
 - `alb_target_deregistration_delay_seconds = 15`
 - `alb_health_check_interval_seconds = 10`
-- `alb_health_check_healthy_threshold = 1`
+- `alb_health_check_healthy_threshold = 2`
 - `alb_health_check_unhealthy_threshold = 2`
 
 Why:

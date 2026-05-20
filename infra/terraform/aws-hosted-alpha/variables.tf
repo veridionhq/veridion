@@ -89,7 +89,7 @@ variable "alb_health_check_interval_seconds" {
 
 variable "alb_health_check_healthy_threshold" {
   type    = number
-  default = 1
+  default = 2
 }
 
 variable "alb_health_check_unhealthy_threshold" {
