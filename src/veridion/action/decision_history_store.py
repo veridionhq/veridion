@@ -312,6 +312,9 @@ class HistoryStore:
     def list_sessions(self, *, tenant_id: str, limit: int = 20) -> tuple[dict[str, str], ...]:  # pragma: no cover - interface
         raise NotImplementedError
 
+    def get_session(self, *, session_id: str) -> dict[str, str] | None:  # pragma: no cover - interface
+        raise NotImplementedError
+
     def create_producer_client(
         self,
         *,
@@ -664,6 +667,13 @@ class SQLiteHistoryStore(HistoryStore):
             (tenant_id, limit),
         ).fetchall()
         return tuple(_service_session_row(row) for row in rows)
+
+    def get_session(self, *, session_id: str) -> dict[str, str] | None:
+        row = self.connection.execute(
+            "SELECT session_id, tenant_id, user_id, principal_name, auth_type, roles_csv, status, created_at, expires_at FROM service_sessions WHERE session_id = ? LIMIT 1",
+            (session_id,),
+        ).fetchone()
+        return _service_session_row(row) if row else None
 
     def create_producer_client(self, *, tenant_id: str, client_id: str, display_name: str, roles_csv: str, status: str) -> dict[str, str]:
         token = secrets.token_urlsafe(24)
@@ -1109,6 +1119,15 @@ class PostgresHistoryStore(HistoryStore):
             )
             rows = cursor.fetchall()
         return tuple(_service_session_row(row) for row in rows)
+
+    def get_session(self, *, session_id: str) -> dict[str, str] | None:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT session_id, tenant_id, user_id, principal_name, auth_type, roles_csv, status, created_at, expires_at FROM service_sessions WHERE session_id = %s LIMIT 1",
+                (session_id,),
+            )
+            row = cursor.fetchone()
+        return _service_session_row(row) if row else None
 
     def create_producer_client(self, *, tenant_id: str, client_id: str, display_name: str, roles_csv: str, status: str) -> dict[str, str]:
         token = secrets.token_urlsafe(24)
@@ -1894,6 +1913,17 @@ def list_service_sessions(
     ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
     with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
         return store.list_sessions(tenant_id=tenant_id, limit=limit)
+
+
+def get_service_session(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    session_id: str,
+) -> dict[str, str] | None:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        return store.get_session(session_id=session_id)
 
 
 def create_producer_client(

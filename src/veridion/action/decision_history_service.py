@@ -26,6 +26,7 @@ from veridion.action.decision_history_store import (
     analyze_history_store,
     create_producer_client,
     create_service_session,
+    get_service_session,
     get_history_store_status,
     list_catalog_models,
     list_control_plane_audit,
@@ -339,6 +340,7 @@ def resolve_history_request(
             until=params.get("until"),
             identity=identity,
             jwt_config=jwt_config,
+            trusted_header_auth=trusted_header_auth,
         )
         if overview is None:
             return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
@@ -353,9 +355,20 @@ def resolve_history_request(
             selected_service=params.get("service", ""),
             selected_producer_client=params.get("producer_client", ""),
         )
+        browser_headers = _browser_session_response_headers(
+            headers=headers or {},
+            identity=identity,
+            tenant_id=params.get("tenant", ""),
+            auth_tokens=auth_tokens,
+            scoped_tokens=scoped_lookup,
+            jwt_config=jwt_config,
+            trusted_header_auth=trusted_header_auth,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+        )
         return _respond(
             200,
-            {"html": render_app_html(overview, api_version=api_version or API_VERSION, identity=identity, service_name=service_name)},
+            {"html": render_app_html(overview, api_version=api_version or API_VERSION, identity=identity, service_name=service_name), "__headers": browser_headers} if browser_headers else {"html": render_app_html(overview, api_version=api_version or API_VERSION, identity=identity, service_name=service_name)},
             route=route,
             api_version=api_version,
             identity=identity,
@@ -373,6 +386,7 @@ def resolve_history_request(
             until=params.get("until"),
             identity=identity,
             jwt_config=jwt_config,
+            trusted_header_auth=trusted_header_auth,
         )
         if overview is None:
             return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
@@ -387,9 +401,22 @@ def resolve_history_request(
             selected_service=params.get("service", ""),
             selected_producer_client=params.get("producer_client", ""),
         )
+        browser_headers = _browser_session_response_headers(
+            headers=headers or {},
+            identity=identity,
+            tenant_id=params.get("tenant", ""),
+            auth_tokens=auth_tokens,
+            scoped_tokens=scoped_lookup,
+            jwt_config=jwt_config,
+            trusted_header_auth=trusted_header_auth,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+        )
         return _respond(
             200,
-            {
+            {"html": render_focus_page_html(overview, api_version=api_version or API_VERSION, identity=identity, service_name=service_name, kind="repository" if route.endswith("/repository") else "service"), "__headers": browser_headers}
+            if browser_headers
+            else {
                 "html": render_focus_page_html(
                     overview,
                     api_version=api_version or API_VERSION,
@@ -468,6 +495,7 @@ def resolve_history_request(
             until=params.get("until"),
             identity=identity,
             jwt_config=jwt_config,
+            trusted_header_auth=trusted_header_auth,
             analytics=analytics,
         )
         return _respond(
@@ -500,6 +528,7 @@ def resolve_history_request(
             until=params.get("until"),
             identity=identity,
             jwt_config=jwt_config,
+            trusted_header_auth=trusted_header_auth,
         )
         if payload is None:
             return _respond(404, {"error": "tenant_not_found"}, route=route, api_version=api_version, identity=identity)
@@ -746,11 +775,29 @@ def _authorize_request(
     path: str,
     method: str,
 ) -> tuple[tuple[int, dict[str, object]] | None, HistoryToken | None]:
+    scoped: HistoryToken | None = None
     auth_header = headers.get("Authorization", "") or headers.get("authorization", "")
     if not auth_header:
         cookie_token = _cookie_value(headers, APP_SESSION_COOKIE)
         if cookie_token:
             auth_header = f"Bearer {cookie_token}"
+        else:
+            session_id = _cookie_value(headers, APP_SESSION_ID_COOKIE)
+            if session_id:
+                session = get_service_session(sqlite_path=sqlite_path, store_dsn=store_dsn, session_id=session_id)
+                if session is not None and str(session.get("status", "active")) == "active":
+                    scoped = HistoryToken(
+                        token=session_id,
+                        token_id=str(session.get("user_id", "") or session.get("session_id", "")),
+                        principal_name=str(session.get("principal_name", "")),
+                        auth_type=str(session.get("auth_type", "") or "session"),
+                        tenants=(str(session.get("tenant_id", "")),) if str(session.get("tenant_id", "")).strip() else (),
+                        roles=tuple(role.strip() for role in str(session.get("roles_csv", "")).split(",") if role.strip()),
+                        status="active",
+                    )
+                    auth_header = ""
+                else:
+                    scoped = None
     header_identity = resolve_trusted_header_identity(headers=headers, config=trusted_header_auth)
     if not auth_tokens and not scoped_tokens and not jwt_auth_enabled(jwt_config) and header_identity is None:
         return (None, None)
@@ -759,16 +806,19 @@ def _authorize_request(
     else:
         if path in {"/app/login", "/app/logout"}:
             return (None, None)
-        if not auth_header.startswith("Bearer "):
+        if scoped is not None:
+            pass
+        elif not auth_header.startswith("Bearer "):
             return ((401, {"error": "unauthorized"}), None)
-        token = auth_header[len("Bearer ") :].strip()
-        if token in auth_tokens:
-            return (None, None)
-        scoped = resolve_bearer_identity(token=token, scoped_tokens=scoped_tokens, jwt_config=jwt_config)
-        if scoped is None:
-            scoped = resolve_persistent_bearer_identity(sqlite_path=sqlite_path, store_dsn=store_dsn, token=token)
-        if scoped is None:
-            return ((401, {"error": "unauthorized"}), None)
+        else:
+            token = auth_header[len("Bearer ") :].strip()
+            if token in auth_tokens:
+                return (None, None)
+            scoped = resolve_bearer_identity(token=token, scoped_tokens=scoped_tokens, jwt_config=jwt_config)
+            if scoped is None:
+                scoped = resolve_persistent_bearer_identity(sqlite_path=sqlite_path, store_dsn=store_dsn, token=token)
+            if scoped is None:
+                return ((401, {"error": "unauthorized"}), None)
     if scoped.status and scoped.status != "active":
         return ((403, {"error": "identity_inactive"}), scoped)
     # Tenant boundary checks run before role checks so that accessing the wrong
@@ -781,7 +831,7 @@ def _authorize_request(
         return ((403, {"error": "insufficient_role"}), scoped)
     if method != "GET" and path != "/events" and not _has_explicit_role(scoped, "materializer", "admin"):
         return ((403, {"error": "insufficient_role"}), scoped)
-    if path in {"/analytics", "/repositories", "/policy-rollouts", "/dashboard", "/overview", "/materializations", "/materialization-schedules", "/service/status"} and not _has_role(
+    if path in {"/analytics", "/repositories", "/policy-rollouts", "/dashboard", "/overview", "/materializations", "/materialization-schedules", "/service/status", "/app", "/app/repository", "/app/service"} and not _has_role(
         scoped, "reader", "materializer", "admin"
     ):
         return ((403, {"error": "insufficient_role"}), scoped)
@@ -838,6 +888,7 @@ def _build_overview_payload(
     until: str | None,
     identity: HistoryToken | None,
     jwt_config: JWTAuthConfig,
+    trusted_header_auth: TrustedHeaderAuthConfig | None = None,
     analytics: dict[str, object] | None = None,
 ) -> dict[str, object] | None:
     jwt_config = jwt_config or JWTAuthConfig()
@@ -902,6 +953,7 @@ def _build_overview_payload(
             "jwks_url": jwt_config.jwks_url,
             "oidc_discovery_url": jwt_config.oidc_discovery_url,
             "jwt_enabled": bool(jwt_auth_enabled(jwt_config)),
+            "trusted_header_enabled": bool(trusted_header_auth.enabled) if trusted_header_auth is not None else False,
         },
         "catalog": _catalog_payload(sqlite_path=sqlite_path, store_dsn=store_dsn, tenant_id=tenant_id),
         "admin": {
@@ -920,6 +972,7 @@ def _build_overview_payload(
         sessions=admin_payload.get("sessions", []) if isinstance(admin_payload.get("sessions"), list) else [],
         producer_clients=admin_payload.get("producer_clients", []) if isinstance(admin_payload.get("producer_clients"), list) else [],
         service=overview.get("service", {}) if isinstance(overview.get("service"), dict) else {},
+        control_audit=admin_payload.get("control_audit", []) if isinstance(admin_payload.get("control_audit"), list) else [],
     )
     return overview
 
@@ -990,7 +1043,7 @@ def _handle_post_request(
                     message="Signed out.",
                     level="success",
                 ),
-                "__headers": {"Set-Cookie": _clear_session_cookie_header(secure=secure_cookie)},
+                "__headers": {"Set-Cookie": f"{_clear_session_cookie_header(secure=secure_cookie)}, {_clear_session_id_cookie_header(secure=secure_cookie)}"},
             },
         )
     if path == "/app":
@@ -1186,9 +1239,29 @@ def _handle_post_request(
             return (403, {"error": "forbidden"})
         event = payload.get("event")
         if not isinstance(event, dict):
+            _record_control_audit(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                actor=_audit_actor(scoped_token),
+                action="event_ingest_failed",
+                target_kind="repository",
+                target_id="unknown",
+                detail="event payload missing",
+            )
             return (400, {"error": "event_required"})
         repository = event.get("repository", "")
         if not isinstance(repository, str) or not repository.strip():
+            _record_control_audit(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                actor=_audit_actor(scoped_token),
+                action="event_ingest_failed",
+                target_kind="repository",
+                target_id="unknown",
+                detail="repository field missing",
+            )
             return (400, {"error": "repository_required"})
         upsert_decision_event_store(
             sqlite_path=sqlite_path,
@@ -1234,8 +1307,28 @@ def _handle_post_request(
     if schedule_id:
         schedule = schedules.get(schedule_id)
         if schedule is None:
+            _record_control_audit(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                actor=_audit_actor(scoped_token),
+                action="materialization_create_failed",
+                target_kind="materialization_run",
+                target_id=schedule_id,
+                detail="schedule not found",
+            )
             return (404, {"error": "schedule_not_found"})
         if schedule.tenants and tenant_id not in schedule.tenants:
+            _record_control_audit(
+                sqlite_path=sqlite_path,
+                store_dsn=store_dsn,
+                tenant_id=tenant_id,
+                actor=_audit_actor(scoped_token),
+                action="materialization_create_failed",
+                target_kind="materialization_run",
+                target_id=schedule_id,
+                detail="schedule forbidden for tenant",
+            )
             return (403, {"error": "schedule_forbidden"})
         athena_database = athena_database or schedule.athena_database or None
         athena_table = athena_table or schedule.athena_table or "veridion_decision_events"
@@ -1517,6 +1610,7 @@ def _handle_app_post_request(
         until=None,
         identity=scoped_token,
         jwt_config=jwt_config,
+        trusted_header_auth=None,
     )
     if overview is None:
         return (404, {"error": "tenant_not_found"})
@@ -1758,6 +1852,75 @@ def _record_control_audit(
         target_id=target_id,
         detail=detail,
     )
+
+
+def _browser_session_response_headers(
+    *,
+    headers: dict[str, str],
+    identity: HistoryToken | None,
+    tenant_id: str,
+    auth_tokens: tuple[str, ...],
+    scoped_tokens: dict[str, HistoryToken],
+    jwt_config: JWTAuthConfig,
+    trusted_header_auth: TrustedHeaderAuthConfig | None,
+    sqlite_path: str,
+    store_dsn: str,
+) -> dict[str, str]:
+    if identity is None or _cookie_value(headers, APP_SESSION_COOKIE):
+        return {}
+    auth_header = headers.get("Authorization", "") or headers.get("authorization", "")
+    trusted_header = trusted_header_auth or TrustedHeaderAuthConfig()
+    header_identity = resolve_trusted_header_identity(headers=headers, config=trusted_header)
+    token = ""
+    auth_type = identity.auth_type or "bearer"
+    if header_identity is not None:
+        token = identity.token or ""
+        auth_type = header_identity.auth_type or auth_type
+    elif auth_header.startswith("Bearer "):
+        token = auth_header[len("Bearer ") :].strip()
+    else:
+        resolved = _resolve_browser_session_identity(
+            headers=headers,
+            auth_tokens=auth_tokens,
+            scoped_tokens=scoped_tokens,
+            jwt_config=jwt_config,
+            trusted_header_auth=trusted_header,
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+        )
+        if resolved is None:
+            return {}
+        token = resolved.token
+        auth_type = resolved.auth_type or auth_type
+    secure_cookie = (headers.get("X-Forwarded-Proto", "") or headers.get("x-forwarded-proto", "")).strip().lower() == "https"
+    session_id = f"app-{_materialization_run_id()}"
+    session_tenant = tenant_id or (identity.tenants[0] if identity.tenants else "")
+    if session_tenant:
+        create_service_session(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            session_id=session_id,
+            tenant_id=session_tenant,
+            user_id=identity.token_id or identity.principal_name or "browser-user",
+            principal_name=identity.principal_name or identity.token_id or "browser-user",
+            auth_type=auth_type,
+            roles_csv=",".join(identity.roles),
+            status="active",
+            expires_at="",
+        )
+        _record_control_audit(
+            sqlite_path=sqlite_path,
+            store_dsn=store_dsn,
+            tenant_id=session_tenant,
+            actor=_audit_actor(identity),
+            action="browser_session_bootstrapped",
+            target_kind="browser_session",
+            target_id=session_id,
+            detail=f"auth_type={auth_type};roles={','.join(identity.roles)}",
+        )
+    if token:
+        return {"Set-Cookie": _session_cookie_header(token=token, secure=secure_cookie)}
+    return {"Set-Cookie": _session_id_cookie_header(session_id=session_id, secure=secure_cookie)}
 
 
 def _repository_event_state(
@@ -2081,6 +2244,7 @@ def _observability_payload(
     sessions: list[dict[str, object]],
     producer_clients: list[dict[str, object]],
     service: dict[str, object],
+    control_audit: list[dict[str, object]],
 ) -> dict[str, str]:
     latest_by_repository = ((analytics.get("policy_rollout") or {}).get("latest_by_repository", [])) if isinstance(analytics, dict) else []
     latest_event = latest_by_repository[0] if latest_by_repository and isinstance(latest_by_repository[0], dict) else {}
@@ -2098,7 +2262,15 @@ def _observability_payload(
         if producer_clients
         else {}
     )
-    auth_mode = "jwt-browser-session" if bool(service.get("jwt_enabled")) else "bearer-browser-session"
+    latest_auth_failure = next((item for item in control_audit if str(item.get("action", "")) in {"browser_login_failed", "auth_failed"}), {})
+    latest_ingest_issue = next((item for item in control_audit if str(item.get("action", "")).endswith("_rejected") or str(item.get("action", "")) == "event_ingest_failed"), {})
+    latest_scheduler_issue = next((item for item in control_audit if str(item.get("action", "")).startswith("scheduler_") or str(item.get("action", "")) == "materialization_create_failed"), {})
+    if bool(service.get("trusted_header_enabled")):
+        auth_mode = "trusted-header-browser-session"
+    elif bool(service.get("jwt_enabled")):
+        auth_mode = "jwt-browser-session"
+    else:
+        auth_mode = "bearer-browser-session"
     oidc_ready = bool(str(service.get("oidc_discovery_url", "")).strip())
     ingest_status = "healthy" if str(latest_event.get("generated_at", "")).strip() else "missing"
     scheduler_status = "healthy" if str(latest_materialization.get("generated_at", "")).strip() else "missing"
@@ -2116,6 +2288,12 @@ def _observability_payload(
         "ingest_status": ingest_status,
         "scheduler_status": scheduler_status,
         "producer_status": producer_status,
+        "last_auth_failure_at": str(latest_auth_failure.get("created_at", "")),
+        "last_auth_failure_detail": str(latest_auth_failure.get("detail", "")),
+        "last_ingest_issue_at": str(latest_ingest_issue.get("created_at", "")),
+        "last_ingest_issue_detail": str(latest_ingest_issue.get("detail", "")),
+        "last_scheduler_issue_at": str(latest_scheduler_issue.get("created_at", "")),
+        "last_scheduler_issue_detail": str(latest_scheduler_issue.get("detail", "")),
         "auth_recommendation": "OIDC or JWT-backed operator sign-in is ready." if oidc_ready or bool(service.get("jwt_enabled")) else "Use the bearer session bridge for now, then move operators onto JWT or OIDC.",
     }
 
@@ -2964,6 +3142,9 @@ def render_app_html(
             f"<li><strong>Scheduler health</strong><div class='hint'>{_html_escape(str(observability.get('scheduler_status', 'unknown')))} / {_html_escape(str(observability.get('last_materialization_at', '') or 'n/a'))} / {_html_escape(str(observability.get('last_materialization_run', '') or 'none'))}</div></li>"
             f"<li><strong>Producer health</strong><div class='hint'>{_html_escape(str(observability.get('producer_status', 'unknown')))} / {_html_escape(str(observability.get('last_producer_use_at', '') or 'never'))} / {_html_escape(str(observability.get('last_producer_client', '') or 'none'))}</div></li>"
             f"<li><strong>Last operator session</strong><div class='hint'>{_html_escape(str(observability.get('last_session_at', '') or 'n/a'))} / {_html_escape(str(observability.get('last_session_principal', '') or 'none'))}</div></li>"
+            f"<li><strong>Latest auth failure</strong><div class='hint'>{_html_escape(str(observability.get('last_auth_failure_at', '') or 'n/a'))} / {_html_escape(str(observability.get('last_auth_failure_detail', '') or 'none'))}</div></li>"
+            f"<li><strong>Latest ingest issue</strong><div class='hint'>{_html_escape(str(observability.get('last_ingest_issue_at', '') or 'n/a'))} / {_html_escape(str(observability.get('last_ingest_issue_detail', '') or 'none'))}</div></li>"
+            f"<li><strong>Latest scheduler issue</strong><div class='hint'>{_html_escape(str(observability.get('last_scheduler_issue_at', '') or 'n/a'))} / {_html_escape(str(observability.get('last_scheduler_issue_detail', '') or 'none'))}</div></li>"
         )
         if isinstance(observability, dict)
         else "<li>No observability data available yet</li>"

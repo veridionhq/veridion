@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import sqlite3
 
 from veridion.action.decision_history_config import HistoryTenant, HistoryToken, JWTAuthConfig, MaterializationSchedule, TrustedHeaderAuthConfig
 from veridion.action.decision_history_store import list_control_plane_audit, upsert_history_store
@@ -492,6 +493,60 @@ def test_decision_history_service_repository_connect_state_matrix(tmp_path) -> N
     assert len(onboarding_audit) >= 4
 
 
+def test_decision_history_service_repository_connect_surfaces_missing_token_and_required_fields(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    admin_token = "admin"
+    scoped = {admin_token: HistoryToken(token=admin_token, tenants=("acme",), roles=("admin",), principal_name="Admin One", token_id="admin-1")}
+
+    resolve_history_request(
+        "/api/v1/admin/tenants",
+        method="POST",
+        body=json.dumps({"tenant_id": "acme", "display_name": "Acme", "organization_name": "Acme Org"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {admin_token}"},
+        scoped_tokens=scoped,
+    )
+    create_status, _ = resolve_history_request(
+        "/api/v1/admin/producer-clients",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "client_id": "github-actions", "display_name": "GitHub Actions"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {admin_token}"},
+        scoped_tokens=scoped,
+    )
+    with sqlite3.connect(sqlite_path) as connection:
+        connection.execute("UPDATE producer_clients SET token_prefix = '' WHERE tenant_id = ? AND client_id = ?", ("acme", "github-actions"))
+        connection.commit()
+
+    missing_token_status, missing_token_payload = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=connect_repository&tenant_id=acme&repository=acme%2Fservice-a&service=service-a&organization=acme&project_id=acme%2Fservice-a&service_owner=payments-owner&owning_team=payments&service_criticality=high&producer_client=github-actions",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {admin_token}", "Content-Type": "application/x-www-form-urlencoded"},
+        scoped_tokens=scoped,
+    )
+    missing_fields_status, missing_fields_payload = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=connect_repository&tenant_id=acme&repository=acme%2Fservice-a",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {admin_token}", "Content-Type": "application/x-www-form-urlencoded"},
+        scoped_tokens=scoped,
+    )
+
+    assert create_status == 201
+    assert missing_token_status == 200
+    assert "no token prefix is stored" in missing_token_payload["html"]
+    assert "Rotate the producer or create a new one" in missing_token_payload["html"]
+    assert missing_fields_status == 200
+    assert "Tenant, repository, and service are required." in missing_fields_payload["html"]
+
+
 def test_decision_history_service_control_plane_audit_tracks_hosted_actions(tmp_path) -> None:
     sqlite_path = tmp_path / "history.db"
     materialization_root = tmp_path / "materialized"
@@ -618,6 +673,92 @@ def test_decision_history_service_control_plane_audit_tracks_hosted_actions(tmp_
     assert "Control Plane Audit" in app_payload["html"]
     assert "event_ingested" in app_payload["html"]
     assert {"tenant_provisioned", "service_user_upserted", "provider_secret_upserted", "producer_created", "event_ingested", "materialization_created"}.issubset(audit_actions)
+
+
+def test_decision_history_service_renders_runtime_failure_observability(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    scoped = {"admin": HistoryToken(token="admin", tenants=("acme",), roles=("admin",), principal_name="Admin One", token_id="admin-1")}
+    materialization_root = tmp_path / "materialized"
+    config_path = tmp_path / "config.json"
+    schedules = {
+        "nightly": MaterializationSchedule(
+            schedule_id="nightly",
+            cron="0 3 * * *",
+            tenants=("acme",),
+            athena_database="analytics",
+            athena_s3_location_template="s3://bucket/{tenant_id}/",
+        )
+    }
+    config_path.write_text(
+        json.dumps(
+            {
+                "sqlite_path": str(sqlite_path),
+                "materialization_root": str(materialization_root),
+                "tenants": [{"tenant_id": "acme", "history_paths": []}],
+                "schedules": [{"schedule_id": "nightly", "cron": "0 3 * * *", "tenants": ["acme"]}],
+            }
+        )
+    )
+
+    resolve_history_request(
+        "/api/v1/admin/tenants",
+        method="POST",
+        body=json.dumps({"tenant_id": "acme", "display_name": "Acme", "organization_name": "Acme Org"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens=scoped,
+    )
+    failed_login_status, _ = resolve_history_request(
+        "/api/v1/app/login",
+        method="POST",
+        body="tenant_id=acme&token=bad-token&next=%2Fapi%2Fv1%2Fapp%3Ftenant%3Dacme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        scoped_tokens=scoped,
+    )
+    ingest_failure_status, _ = resolve_history_request(
+        "/api/v1/events",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "event": {"generated_at": "2026-05-20T12:00:00Z"}}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens=scoped,
+    )
+    materialization_failure_status, _ = resolve_history_request(
+        "/api/v1/materializations",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "schedule_id": "missing-schedule"}),
+        history_paths=(),
+        tenants={"acme": HistoryTenant(tenant_id="acme", history_paths=())},
+        sqlite_path=str(sqlite_path),
+        materialization_root=str(materialization_root),
+        config_path=str(config_path),
+        schedules=schedules,
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens=scoped,
+    )
+
+    status, payload = resolve_history_request(
+        "/api/v1/app?tenant=acme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens=scoped,
+    )
+
+    assert failed_login_status == 200
+    assert ingest_failure_status == 400
+    assert materialization_failure_status == 404
+    assert status == 200
+    assert "Latest auth failure" in payload["html"]
+    assert "token or tenant scope rejected" in payload["html"]
+    assert "Latest ingest issue" in payload["html"]
+    assert "repository field missing" in payload["html"]
+    assert "Latest scheduler issue" in payload["html"]
+    assert "schedule not found" in payload["html"]
 
 
 def test_decision_history_service_uses_sqlite_store_and_scoped_tokens(tmp_path) -> None:
@@ -783,6 +924,57 @@ def test_decision_history_service_enforces_roles_and_tracks_materializations(tmp
     assert schedules_payload["data"]["schedules"][0]["schedule_id"] == "nightly"
 
 
+def test_decision_history_service_enforces_roles_across_app_and_admin_surfaces(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    tenants = {"acme": HistoryTenant(tenant_id="acme", history_paths=())}
+
+    resolve_history_request(
+        "/api/v1/admin/tenants",
+        method="POST",
+        body=json.dumps({"tenant_id": "acme", "display_name": "Acme", "organization_name": "Acme Org"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens={"admin": HistoryToken(token="admin", tenants=("acme",), roles=("admin",), principal_name="Admin One", token_id="admin-1")},
+    )
+
+    reader_app_post_status, reader_app_post = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=create_producer_client&tenant_id=acme&client_id=github-actions&display_name=GitHub+Actions&roles_csv=ingestor&status=active",
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer reader", "Content-Type": "application/x-www-form-urlencoded"},
+        scoped_tokens={"reader": HistoryToken(token="reader", tenants=("acme",), roles=("reader",), principal_name="Reader One", token_id="reader-1")},
+    )
+    materializer_admin_status, materializer_admin = resolve_history_request(
+        "/api/v1/admin/producer-clients",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "client_id": "ci-acme", "display_name": "CI Acme"}),
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer materializer"},
+        scoped_tokens={"materializer": HistoryToken(token="materializer", tenants=("acme",), roles=("materializer",), principal_name="Mat One", token_id="mat-1")},
+    )
+    ingestor_app_get_status, ingestor_app_get = resolve_history_request(
+        "/api/v1/app?tenant=acme",
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer ingestor"},
+        scoped_tokens={"ingestor": HistoryToken(token="ingestor", tenants=("acme",), roles=("ingestor",), principal_name="Ing One", token_id="ing-1")},
+    )
+
+    assert reader_app_post_status == 403
+    assert reader_app_post["data"]["error"] == "insufficient_role"
+    assert materializer_admin_status == 403
+    assert materializer_admin["data"]["error"] == "insufficient_role"
+    assert ingestor_app_get_status == 403
+    assert ingestor_app_get["data"]["error"] == "insufficient_role"
+
+
 def test_decision_history_service_rejects_inactive_identity(tmp_path) -> None:
     history_path = tmp_path / "history.ndjson"
     history_path.write_text(
@@ -919,6 +1111,93 @@ def test_decision_history_service_accepts_trusted_header_identity(tmp_path) -> N
     assert status == 200
     assert payload["identity"]["auth_type"] == "trusted_header"
     assert payload["identity"]["principal_name"] == "alice@example.com"
+
+
+def test_decision_history_service_bootstraps_browser_session_from_trusted_headers(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    resolve_history_request(
+        "/api/v1/admin/tenants",
+        method="POST",
+        body=json.dumps({"tenant_id": "acme", "display_name": "Acme", "organization_name": "Acme Org"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens={"admin": HistoryToken(token="admin", tenants=("acme",), roles=("admin",), principal_name="Admin One", token_id="admin-1")},
+    )
+
+    status, payload = resolve_history_request(
+        "/api/v1/app?tenant=acme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={
+            "X-Veridion-Auth-Secret": "secret",
+            "X-Veridion-Principal": "alice@example.com",
+            "X-Veridion-Token-Id": "tok_hdr",
+            "X-Veridion-Roles": "reader",
+            "X-Veridion-Tenants": "acme",
+        },
+        trusted_header_auth=TrustedHeaderAuthConfig(enabled=True, shared_secret="secret"),
+    )
+    cookie_header = str(payload.get("__headers", {}).get("Set-Cookie", ""))
+    replay_status, replay_payload = resolve_history_request(
+        "/api/v1/app?tenant=acme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Cookie": cookie_header},
+        trusted_header_auth=TrustedHeaderAuthConfig(enabled=True, shared_secret="secret"),
+    )
+
+    audit_actions = {str(item.get("action", "")) for item in list_control_plane_audit(sqlite_path=str(sqlite_path), tenant_id="acme")}
+
+    assert status == 200
+    assert "Onboarding Checklist" in payload["html"]
+    assert "trusted-header-browser-session" in payload["html"]
+    assert replay_status == 200
+    assert "Onboarding Checklist" in replay_payload["html"]
+    assert "veridion_app_bearer=" in cookie_header or "veridion_app_session_id=" in cookie_header
+    assert "browser_session_bootstrapped" in audit_actions
+
+
+def test_decision_history_service_bootstraps_browser_session_from_jwt(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    resolve_history_request(
+        "/api/v1/admin/tenants",
+        method="POST",
+        body=json.dumps({"tenant_id": "acme", "display_name": "Acme", "organization_name": "Acme Org"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens={"admin": HistoryToken(token="admin", tenants=("acme",), roles=("admin",), principal_name="Admin One", token_id="admin-1")},
+    )
+    jwt_token = _build_test_jwt(
+        secret="super-secret",
+        payload={
+            "iss": "https://issuer.example",
+            "aud": "veridion-history",
+            "sub": "svc-acme",
+            "jti": "jwt-1",
+            "roles": ["reader"],
+            "tenants": ["acme"],
+            "principal_name": "JWT Operator",
+        },
+    )
+
+    status, payload = resolve_history_request(
+        "/api/v1/app?tenant=acme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {jwt_token}"},
+        jwt_config=JWTAuthConfig(
+            issuer="https://issuer.example",
+            audience="veridion-history",
+            shared_secret="super-secret",
+        ),
+    )
+
+    assert status == 200
+    assert "Onboarding Checklist" in payload["html"]
+    assert "jwt-browser-session" in payload["html"]
+    assert "veridion_app_bearer=" in str(payload.get("__headers", {}).get("Set-Cookie", ""))
 
 
 def test_decision_history_service_exposes_overview_and_identity_endpoints(tmp_path) -> None:
