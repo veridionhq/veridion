@@ -4,7 +4,7 @@ import hmac
 import json
 
 from veridion.action.decision_history_config import HistoryTenant, HistoryToken, JWTAuthConfig, MaterializationSchedule, TrustedHeaderAuthConfig
-from veridion.action.decision_history_store import upsert_history_store
+from veridion.action.decision_history_store import list_control_plane_audit, upsert_history_store
 from veridion.action.decision_history_service import resolve_history_request
 
 
@@ -301,6 +301,323 @@ def test_decision_history_service_admin_producer_routes_round_trip(tmp_path) -> 
     assert list_status == 200
     assert list_payload["data"]["producer_clients"][0]["client_id"] == "github-actions"
     assert list_payload["identity"]["principal_name"] == "Admin One"
+
+
+def test_decision_history_service_browser_session_login_logout_records_audit(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    scoped = {"admin": HistoryToken(token="admin", tenants=("acme",), roles=("admin",), principal_name="Admin One", token_id="admin-1")}
+
+    resolve_history_request(
+        "/api/v1/admin/tenants",
+        method="POST",
+        body=json.dumps({"tenant_id": "acme", "display_name": "Acme", "organization_name": "Acme Org"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": "Bearer admin"},
+        scoped_tokens=scoped,
+    )
+
+    failed_status, failed_payload = resolve_history_request(
+        "/api/v1/app/login",
+        method="POST",
+        body="tenant_id=acme&token=bad-token&next=%2Fapi%2Fv1%2Fapp%3Ftenant%3Dacme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        scoped_tokens=scoped,
+    )
+    login_status, login_payload = resolve_history_request(
+        "/api/v1/app/login",
+        method="POST",
+        body="tenant_id=acme&token=Bearer%20admin&next=%2Fapi%2Fv1%2Fapp%3Ftenant%3Dacme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        scoped_tokens=scoped,
+    )
+    cookie_header = str(login_payload.get("__headers", {}).get("Set-Cookie", ""))
+    logout_status, logout_payload = resolve_history_request(
+        "/api/v1/app/logout",
+        method="POST",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Cookie": cookie_header},
+        scoped_tokens=scoped,
+    )
+
+    audit = list_control_plane_audit(sqlite_path=str(sqlite_path), tenant_id="acme")
+    audit_actions = {str(item.get("action", "")) for item in audit}
+
+    assert failed_status == 200
+    assert "Sign-in failed." in failed_payload["html"]
+    assert login_status == 200
+    assert "Signed in. Redirecting to the hosted app." in login_payload["html"]
+    assert "veridion_app_bearer=" in cookie_header
+    assert logout_status == 200
+    assert "Signed out." in logout_payload["html"]
+    assert "veridion_app_bearer=" in str(logout_payload.get("__headers", {}).get("Set-Cookie", ""))
+    assert "Max-Age=0" in str(logout_payload.get("__headers", {}).get("Set-Cookie", ""))
+    assert {"browser_login_failed", "browser_login_succeeded", "browser_logout"}.issubset(audit_actions)
+
+
+def test_decision_history_service_repository_connect_state_matrix(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    admin_token = "admin"
+    scoped = {admin_token: HistoryToken(token=admin_token, tenants=("acme",), roles=("admin",), principal_name="Admin One", token_id="admin-1")}
+
+    resolve_history_request(
+        "/api/v1/admin/tenants",
+        method="POST",
+        body=json.dumps({"tenant_id": "acme", "display_name": "Acme", "organization_name": "Acme Org"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {admin_token}"},
+        scoped_tokens=scoped,
+    )
+
+    blocked_status, blocked_payload = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=connect_repository&tenant_id=acme&repository=acme%2Fservice-a&service=service-a&organization=acme&project_id=acme%2Fservice-a&service_owner=payments-owner&owning_team=payments&service_criticality=high",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {admin_token}", "Content-Type": "application/x-www-form-urlencoded"},
+        scoped_tokens=scoped,
+    )
+    create_status, create_payload = resolve_history_request(
+        "/api/v1/admin/producer-clients",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "client_id": "github-actions", "display_name": "GitHub Actions"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {admin_token}"},
+        scoped_tokens=scoped,
+    )
+    producer_token = str(create_payload["data"]["producer_client"]["token"])
+    waiting_status, waiting_payload = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=connect_repository&tenant_id=acme&repository=acme%2Fservice-a&service=service-a&organization=acme&project_id=acme%2Fservice-a&service_owner=payments-owner&owning_team=payments&service_criticality=high&producer_client=github-actions",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {admin_token}", "Content-Type": "application/x-www-form-urlencoded"},
+        scoped_tokens=scoped,
+    )
+    wrong_ingest_status, wrong_ingest_payload = resolve_history_request(
+        "/api/v1/events",
+        method="POST",
+        body=json.dumps(
+            {
+                "tenant": "acme",
+                "event": {
+                    "generated_at": "2026-05-20T12:00:00Z",
+                    "repository": "acme/service-b",
+                    "organization": "acme",
+                    "project": "acme/service-b",
+                    "service": "service-b",
+                    "decision": {"verdict": "NO GO", "gate_status": "block", "blocking_categories": ["public_exposure"]},
+                    "automation": {"approval_gate_status": "blocked", "stale_approvals": []},
+                    "policy": {"pack_id": "application-team", "pack_version": "1", "rollout_stage": "general"},
+                    "trust_context": {"service_owner": "payments-owner", "owning_team": "payments", "service_criticality": "high"},
+                },
+            }
+        ),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {producer_token}"},
+        scoped_tokens=scoped,
+    )
+    warning_status, warning_payload = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=connect_repository&tenant_id=acme&repository=acme%2Fservice-a&service=service-a&organization=acme&project_id=acme%2Fservice-a&service_owner=payments-owner&owning_team=payments&service_criticality=high&producer_client=github-actions",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {admin_token}", "Content-Type": "application/x-www-form-urlencoded"},
+        scoped_tokens=scoped,
+    )
+    correct_ingest_status, correct_ingest_payload = resolve_history_request(
+        "/api/v1/events",
+        method="POST",
+        body=json.dumps(
+            {
+                "tenant": "acme",
+                "event": {
+                    "generated_at": "2026-05-20T12:05:00Z",
+                    "repository": "acme/service-a",
+                    "organization": "acme",
+                    "project": "acme/service-a",
+                    "service": "service-a",
+                    "decision": {"verdict": "CONDITIONAL GO", "gate_status": "review", "blocking_categories": ["public_exposure"]},
+                    "automation": {"approval_gate_status": "blocked", "stale_approvals": []},
+                    "policy": {"pack_id": "platform-team", "pack_version": "1", "rollout_stage": "general"},
+                    "trust_context": {"service_owner": "payments-owner", "owning_team": "payments", "service_criticality": "critical"},
+                },
+            }
+        ),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {producer_token}"},
+        scoped_tokens=scoped,
+    )
+    success_status, success_payload = resolve_history_request(
+        "/api/v1/app",
+        method="POST",
+        body="action=connect_repository&tenant_id=acme&repository=acme%2Fservice-a&service=service-a&organization=acme&project_id=acme%2Fservice-a&service_owner=payments-owner&owning_team=payments&service_criticality=high&producer_client=github-actions",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {admin_token}", "Content-Type": "application/x-www-form-urlencoded"},
+        scoped_tokens=scoped,
+    )
+
+    onboarding_audit = [
+        item for item in list_control_plane_audit(sqlite_path=str(sqlite_path), tenant_id="acme") if str(item.get("action", "")) == "repository_onboarding_prepared"
+    ]
+
+    assert blocked_status == 200
+    assert "No producer client is selected for this repository yet." in blocked_payload["html"]
+    assert create_status == 201
+    assert create_payload["data"]["producer_client"]["client_id"] == "github-actions"
+    assert waiting_status == 200
+    assert "Listening for the first hosted decision event from CI." in waiting_payload["html"]
+    assert wrong_ingest_status == 202
+    assert wrong_ingest_payload["data"]["repository"] == "acme/service-b"
+    assert warning_status == 200
+    assert "latest one landed for acme/service-b, not acme/service-a" in warning_payload["html"]
+    assert correct_ingest_status == 202
+    assert correct_ingest_payload["data"]["repository"] == "acme/service-a"
+    assert success_status == 200
+    assert "First hosted decision received." in success_payload["html"]
+    assert "Open repository page" in success_payload["html"]
+    assert len(onboarding_audit) >= 4
+
+
+def test_decision_history_service_control_plane_audit_tracks_hosted_actions(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    materialization_root = tmp_path / "materialized"
+    config_path = tmp_path / "config.json"
+    admin_token = "admin"
+    scoped = {admin_token: HistoryToken(token=admin_token, tenants=("acme",), roles=("admin", "materializer"), principal_name="Admin One", token_id="admin-1")}
+    schedules = {
+        "nightly": MaterializationSchedule(
+            schedule_id="nightly",
+            cron="0 3 * * *",
+            tenants=("acme",),
+            athena_database="analytics",
+            athena_s3_location_template="s3://bucket/{tenant_id}/",
+        )
+    }
+    tenants = {"acme": HistoryTenant(tenant_id="acme", history_paths=())}
+    config_path.write_text(
+        json.dumps(
+            {
+                "sqlite_path": str(sqlite_path),
+                "materialization_root": str(materialization_root),
+                "tenants": [{"tenant_id": "acme", "history_paths": []}],
+                "schedules": [
+                    {
+                        "schedule_id": "nightly",
+                        "cron": "0 3 * * *",
+                        "tenants": ["acme"],
+                        "athena_database": "analytics",
+                        "athena_s3_location_template": "s3://bucket/{tenant_id}/",
+                    }
+                ],
+            }
+        )
+    )
+
+    resolve_history_request(
+        "/api/v1/admin/tenants",
+        method="POST",
+        body=json.dumps({"tenant_id": "acme", "display_name": "Acme", "organization_name": "Acme Org"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {admin_token}"},
+        scoped_tokens=scoped,
+    )
+    resolve_history_request(
+        "/api/v1/admin/users",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "user_id": "alice", "principal_name": "Alice Doe", "roles_csv": "reader,admin"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {admin_token}"},
+        scoped_tokens=scoped,
+    )
+    resolve_history_request(
+        "/api/v1/admin/provider-secrets",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "secret_name": "pagerduty-token", "provider": "pagerduty", "secret_ref": "aws-sm://pagerduty/acme"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {admin_token}"},
+        scoped_tokens=scoped,
+    )
+    create_status, create_payload = resolve_history_request(
+        "/api/v1/admin/producer-clients",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "client_id": "github-actions", "display_name": "GitHub Actions"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {admin_token}"},
+        scoped_tokens=scoped,
+    )
+    producer_token = str(create_payload["data"]["producer_client"]["token"])
+    resolve_history_request(
+        "/api/v1/events",
+        method="POST",
+        body=json.dumps(
+            {
+                "tenant": "acme",
+                "event": {
+                    "generated_at": "2026-05-20T12:15:00Z",
+                    "repository": "acme/service-a",
+                    "organization": "acme",
+                    "project": "acme/service-a",
+                    "service": "service-a",
+                    "decision": {"verdict": "NO GO", "gate_status": "block", "blocking_categories": ["public_exposure"]},
+                    "automation": {"approval_gate_status": "blocked", "stale_approvals": []},
+                    "policy": {"pack_id": "platform-team", "pack_version": "1", "rollout_stage": "general"},
+                    "trust_context": {"service_owner": "payments-owner", "owning_team": "payments", "service_criticality": "critical"},
+                },
+            }
+        ),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {producer_token}"},
+        scoped_tokens=scoped,
+    )
+    materialization_status, materialization_payload = resolve_history_request(
+        "/api/v1/materializations",
+        method="POST",
+        body=json.dumps({"tenant": "acme", "run_id": "run-audit-1", "schedule_id": "nightly"}),
+        history_paths=(),
+        tenants=tenants,
+        sqlite_path=str(sqlite_path),
+        materialization_root=str(materialization_root),
+        config_path=str(config_path),
+        schedules=schedules,
+        headers={"Authorization": f"Bearer {admin_token}"},
+        scoped_tokens=scoped,
+    )
+    app_status, app_payload = resolve_history_request(
+        "/api/v1/app?tenant=acme",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers={"Authorization": f"Bearer {admin_token}"},
+        scoped_tokens=scoped,
+    )
+
+    audit_actions = {str(item.get("action", "")) for item in list_control_plane_audit(sqlite_path=str(sqlite_path), tenant_id="acme")}
+
+    assert create_status == 201
+    assert materialization_status == 201
+    assert materialization_payload["data"]["materialization"]["run_id"] == "run-audit-1"
+    assert app_status == 200
+    assert "Control Plane Audit" in app_payload["html"]
+    assert "event_ingested" in app_payload["html"]
+    assert {"tenant_provisioned", "service_user_upserted", "provider_secret_upserted", "producer_created", "event_ingested", "materialization_created"}.issubset(audit_actions)
 
 
 def test_decision_history_service_uses_sqlite_store_and_scoped_tokens(tmp_path) -> None:
