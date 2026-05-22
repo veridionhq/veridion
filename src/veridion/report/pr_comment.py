@@ -24,6 +24,7 @@ MAX_REQUIRED_NEXT_STEP_ITEMS = 6
 MAX_ADVISORY_GUIDANCE_ITEMS = 4
 CLEAN_REVIEW_HEADLINE = "no new findings were introduced, but this release still requires approvals and operational checks"
 BASELINE_UNTRUSTED_HEADLINE = "baseline attribution is incomplete, so findings in changed files are being treated as change-relevant rather than proven introduced"
+BASELINE_UNVERIFIED_HEADLINE = "introduced-vs-existing attribution could not be verified for this run"
 REQUIRED_NEXT_STEP_PREFIXES = (
     "Block release",
     "Run staging smoke tests",
@@ -122,7 +123,7 @@ def render_pr_comment_result(
     if key_context:
         lines.extend(_section("Key Context", key_context))
     if attribution_untrusted:
-        lines.extend(_section("Baseline Attribution", ("baseline scanner evidence is incomplete for this run; findings in changed files are treated as change-relevant until the baseline is repaired",)))
+        lines.extend(_section("Baseline Attribution", _baseline_attribution_lines(bundle)))
     if bundle.summary.suppressed_findings or bundle.summary.expired_suppressions:
         lines.extend(_section("Accepted Risk", _format_suppressions(bundle)))
 
@@ -219,7 +220,7 @@ def _default_driver_summary(
     baseline_untrusted = BASELINE_UNTRUSTED_HEADLINE in decision.reasons
     requires_release_gates = "release still requires explicit approvals or operational checks" in decision.reasons
     if baseline_untrusted:
-        return (BASELINE_UNTRUSTED_HEADLINE,)
+        return (BASELINE_UNTRUSTED_HEADLINE, BASELINE_UNVERIFIED_HEADLINE)
     if no_introduced_findings and requires_release_gates:
         return (CLEAN_REVIEW_HEADLINE,)
     if no_introduced_findings:
@@ -260,10 +261,23 @@ def _merge_headline_summary(
         return rendered_primary_drivers or fallback
     if not rendered_primary_drivers:
         return fallback
+    if fallback[0] != BASELINE_UNTRUSTED_HEADLINE:
+        headline = fallback[0]
+        merged = [headline]
+        headline_key = _normalize_driver_line(headline)
+        subsumed_driver_keys = _subsumed_driver_keys(headline_key)
+        for line in rendered_primary_drivers:
+            normalized_line = _normalize_driver_line(line)
+            if normalized_line == headline_key or normalized_line in subsumed_driver_keys:
+                continue
+            if line not in merged:
+                merged.append(line)
+        return tuple(merged)
     headline = fallback[0]
-    merged = [headline]
+    merged = list(fallback)
     headline_key = _normalize_driver_line(headline)
     subsumed_driver_keys = _subsumed_driver_keys(headline_key)
+    subsumed_driver_keys.update(_normalize_driver_line(line) for line in fallback[1:])
     for line in rendered_primary_drivers:
         normalized_line = _normalize_driver_line(line)
         if normalized_line == headline_key or normalized_line in subsumed_driver_keys:
@@ -278,6 +292,11 @@ def _subsumed_driver_keys(headline_key: str) -> set[str]:
         return {
             "no introduced findings detected",
             "release still requires explicit approvals or operational checks",
+        }
+    if headline_key == _normalize_driver_line(BASELINE_UNTRUSTED_HEADLINE):
+        return {
+            "no introduced findings detected",
+            _normalize_driver_line(BASELINE_UNVERIFIED_HEADLINE),
         }
     return set()
 
@@ -605,6 +624,24 @@ def _select_next_steps(
     required_next_steps: tuple[str, ...],
     advisory_guidance: tuple[str, ...],
 ) -> tuple[str, ...]:
+    if not bundle.summary.baseline_attribution_trusted and bundle.summary.change_relevant_findings:
+        pool = required_next_steps + advisory_guidance
+        ranked_prefixes = (
+            "Repair or refresh baseline scanner outputs",
+            "Review change-relevant findings manually",
+            "Run staging smoke tests",
+            "Use a staged rollout",
+            "Require and verify a rollback path",
+            "Verify rollback ownership and on-call coverage",
+        )
+        ranked: list[str] = []
+        for prefix in ranked_prefixes:
+            for item in pool:
+                if item.startswith(prefix) and item not in ranked:
+                    ranked.append(item)
+                    break
+        if ranked:
+            return tuple(ranked[:4])
     if bundle.summary.introduced_findings == 0 and decision.decision == "CONDITIONAL GO":
         ranked_prefixes = (
             "Run staging smoke tests",
@@ -627,6 +664,21 @@ def _select_next_steps(
         if ranked:
             return tuple(ranked[:4])
     return required_next_steps or advisory_guidance or ("Proceed with normal review and deployment checks",)
+
+
+def _baseline_attribution_lines(bundle: AnalysisBundle) -> tuple[str, ...]:
+    lines = [
+        "baseline scanner evidence is incomplete for this run; findings in changed files are treated as change-relevant until the baseline is repaired"
+    ]
+    if (
+        bundle.summary.existing_findings == 0
+        and bundle.summary.unattributed_findings > 0
+        and bundle.summary.changed_files >= 25
+    ):
+        lines.append(
+            "baseline produced zero reusable matches across a broad diff; a base-ref mismatch or finding-normalization mismatch is likely"
+        )
+    return tuple(lines)
 
 
 def _is_clean_review_case(bundle: AnalysisBundle, decision: PolicyDecision) -> bool:

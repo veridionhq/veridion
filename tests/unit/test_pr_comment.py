@@ -141,6 +141,8 @@ def test_render_pr_comment_downgrades_to_change_relevant_when_baseline_is_missin
     assert "### Change-relevant threats" in comment
     assert "### Key threats" not in comment
     assert "baseline attribution is incomplete" in comment
+    assert "no introduced findings detected" not in comment
+    assert "- Repair or refresh baseline scanner outputs before treating changed-file findings as newly introduced risk" in comment
     assert "introduces high code risk" not in comment
 
 
@@ -210,7 +212,11 @@ def test_render_pr_comment_downgrades_suspicious_present_baseline_to_change_rele
 
     assert "**Summary:** Change-relevant findings: 1 | Existing findings: 0 | Unattributed findings: 1 | Suppressed findings: 0 | Changed files: 61" in comment
     assert "### Baseline Attribution" in comment
+    assert "base-ref mismatch or finding-normalization mismatch is likely" in comment
     assert "### Change-relevant threats" in comment
+    assert "no introduced findings detected" not in comment
+    assert "introduced-vs-existing attribution could not be verified for this run" in comment
+    assert comment.index("Repair or refresh baseline scanner outputs before treating changed-file findings as newly introduced risk") < comment.index("Review change-relevant findings manually until baseline attribution is repaired")
     assert "introduces high code risk" not in comment
 
 
