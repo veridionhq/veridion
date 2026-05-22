@@ -72,6 +72,31 @@ variable "ecr_repository_name" {
   default = ""
 }
 
+variable "ecr_expire_untagged_after_days" {
+  type    = number
+  default = 1
+}
+
+variable "alb_target_deregistration_delay_seconds" {
+  type    = number
+  default = 15
+}
+
+variable "alb_health_check_interval_seconds" {
+  type    = number
+  default = 10
+}
+
+variable "alb_health_check_healthy_threshold" {
+  type    = number
+  default = 2
+}
+
+variable "alb_health_check_unhealthy_threshold" {
+  type    = number
+  default = 2
+}
+
 variable "create_network" {
   type    = bool
   default = true

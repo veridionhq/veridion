@@ -12,7 +12,7 @@ from veridion.change_context import parse_unified_diff
 from veridion.context import resolve_operational_context, resolve_operational_context_artifact
 from veridion.decision_contract import build_decision_contract, evaluate_gate
 from veridion.policy import evaluate_release, parse_policy_pack_yaml
-from veridion.report import explain_introduced_threats
+from veridion.report import explain_change_relevant_threats, explain_introduced_threats
 from veridion.suppression import parse_suppressions_payload
 
 
@@ -36,8 +36,8 @@ def main(argv: list[str] | None = None) -> int:
     diff_text = Path(args.diff_path).read_text()
     current_reports = _parse_report_mappings(args.report)
     baseline_reports = _parse_report_mappings(args.baseline_report)
-    current_findings = _load_findings(current_reports)
-    baseline_findings = _load_findings(baseline_reports)
+    current_findings, _ = _load_findings(current_reports)
+    baseline_findings, _ = _load_findings(baseline_reports)
     change_context = parse_unified_diff(diff_text)
     operational_context_text = Path(args.operational_context_path).read_text() if args.operational_context_path else None
     metadata_text = Path(args.metadata_path).read_text() if args.metadata_path else None
@@ -76,7 +76,11 @@ def main(argv: list[str] | None = None) -> int:
         suppression_rules=suppression_rules,
     )
 
-    threats = explain_introduced_threats(bundle)
+    threats = (
+        explain_change_relevant_threats(bundle)
+        if not bundle.summary.baseline_attribution_trusted
+        else explain_introduced_threats(bundle)
+    )
     results: list[dict[str, object]] = []
     for name, path in policy_sets:
         pack = parse_policy_pack_yaml(Path(path).read_text())
@@ -115,7 +119,10 @@ def main(argv: list[str] | None = None) -> int:
         "summary": {
             "changed_files": bundle.summary.changed_files,
             "introduced_findings": bundle.summary.introduced_findings,
+            "change_relevant_findings": bundle.summary.change_relevant_findings,
             "unattributed_findings": bundle.summary.unattributed_findings,
+            "baseline_attribution_trusted": bundle.summary.baseline_attribution_trusted,
+            "baseline_attribution_mode": bundle.summary.baseline_attribution_mode,
         },
         "results": results,
     }

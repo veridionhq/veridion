@@ -36,6 +36,7 @@ class ActionResult:
     comment_summary_provider: str
     comment_summary_model: str
     decision_contract: dict[str, object]
+    report_diagnostics: dict[str, object]
     gate_status: str
     decision_allowed: bool
     allowed_decisions: tuple[str, ...]
@@ -62,6 +63,7 @@ class ActionResult:
                 "error": self.comment_summary_error,
             },
             "decision_contract": self.decision_contract,
+            "report_diagnostics": self.report_diagnostics,
             "comment_identifier": self.comment_identifier,
         }
 
@@ -86,8 +88,8 @@ def run_action(
 ) -> ActionResult:
     """Run the full RDI pipeline from file-backed action inputs."""
 
-    current_findings = _load_findings(current_reports)
-    baseline_findings = _load_findings(baseline_reports or {})
+    current_findings, current_report_diagnostics = _load_findings(current_reports)
+    baseline_findings, baseline_report_diagnostics = _load_findings(baseline_reports or {})
     change_context = parse_unified_diff(diff_text)
     policy_pack = parse_policy_pack_yaml(policy_text) if policy_text else None
     policy = policy_pack.config if policy_pack else PolicyConfig()
@@ -156,6 +158,13 @@ def run_action(
         gate=gate,
         policy_pack_metadata=policy_pack.metadata if policy_pack else None,
     )
+    report_diagnostics = _build_report_diagnostics(
+        current_reports=current_reports,
+        baseline_reports=baseline_reports or {},
+        current_report_diagnostics=current_report_diagnostics,
+        baseline_report_diagnostics=baseline_report_diagnostics,
+        bundle=bundle,
+    )
 
     return ActionResult(
         bundle=bundle,
@@ -166,6 +175,7 @@ def run_action(
         comment_summary_provider=rendered_comment.summary_trace.provider,
         comment_summary_model=rendered_comment.summary_trace.model,
         decision_contract=decision_contract,
+        report_diagnostics=report_diagnostics,
         gate_status=gate.status,
         decision_allowed=gate.decision_allowed,
         allowed_decisions=gate.allowed_decisions,
@@ -275,15 +285,64 @@ def _parse_report_mappings(values: list[str]) -> dict[str, str]:
     return mappings
 
 
-def _load_findings(report_paths: dict[str, str]) -> list[NormalizedFinding]:
+def _load_findings(report_paths: dict[str, str]) -> tuple[list[NormalizedFinding], dict[str, dict[str, object]]]:
     findings: list[NormalizedFinding] = []
+    diagnostics: dict[str, dict[str, object]] = {}
     for tool_name, path in report_paths.items():
         try:
             report = json.loads(Path(path).read_text())
         except Exception as exc:
             raise RuntimeError(f"failed to load {tool_name} report from {path}") from exc
-        findings.extend(normalize_report(tool_name, report))
-    return findings
+        normalized = normalize_report(tool_name, report)
+        findings.extend(normalized)
+        diagnostics[tool_name] = {
+            "path": path,
+            "normalized_findings": len([finding for finding in normalized if not finding.is_inventory_only]),
+            "inventory_records": len([finding for finding in normalized if finding.is_inventory_only]),
+        }
+    return findings, diagnostics
+
+
+def _build_report_diagnostics(
+    *,
+    current_reports: dict[str, str],
+    baseline_reports: dict[str, str],
+    current_report_diagnostics: dict[str, dict[str, object]],
+    baseline_report_diagnostics: dict[str, dict[str, object]],
+    bundle: AnalysisBundle,
+) -> dict[str, object]:
+    current_tools = tuple(sorted(current_reports))
+    baseline_tools = tuple(sorted(baseline_reports))
+    missing_baseline_tools = tuple(tool for tool in current_tools if tool not in baseline_reports)
+    zero_finding_baseline_tools = tuple(
+        tool
+        for tool, item in sorted(baseline_report_diagnostics.items())
+        if int(item.get("normalized_findings", 0)) == 0
+    )
+    existing_match_counts: dict[str, int] = {}
+    change_relevant_counts: dict[str, int] = {}
+    unattributed_counts: dict[str, int] = {}
+    for finding in bundle.baseline_comparison.existing:
+        existing_match_counts[finding.source] = existing_match_counts.get(finding.source, 0) + 1
+    for finding in bundle.baseline_comparison.change_relevant:
+        change_relevant_counts[finding.source] = change_relevant_counts.get(finding.source, 0) + 1
+    for finding in bundle.baseline_comparison.unattributed:
+        unattributed_counts[finding.source] = unattributed_counts.get(finding.source, 0) + 1
+    return {
+        "attribution_trusted": bundle.summary.baseline_attribution_trusted,
+        "attribution_mode": bundle.summary.baseline_attribution_mode,
+        "likely_cause": bundle.summary.baseline_attribution_likely_cause,
+        "changed_files": bundle.summary.changed_files,
+        "current_report_tools": list(current_tools),
+        "baseline_report_tools": list(baseline_tools),
+        "missing_baseline_tools": list(missing_baseline_tools),
+        "zero_finding_baseline_tools": list(zero_finding_baseline_tools),
+        "current_reports": current_report_diagnostics,
+        "baseline_reports": baseline_report_diagnostics,
+        "existing_match_counts_by_source": dict(sorted(existing_match_counts.items())),
+        "change_relevant_counts_by_source": dict(sorted(change_relevant_counts.items())),
+        "unattributed_counts_by_source": dict(sorted(unattributed_counts.items())),
+    }
 
 
 def _parse_optional_json_text(text: str | None, *, label: str) -> dict[str, object]:
@@ -328,6 +387,9 @@ def _write_github_outputs(
         f"blocking_reasons_json={json.dumps(result.decision_contract['reasons']['blocking'])}",
         f"blocking_categories_json={json.dumps(result.decision_contract['decision']['blocking_categories'])}",
         f"accepted_risk_present={str(bool(result.bundle.summary.suppressed_findings)).lower()}",
+        f"baseline_attribution_trusted={str(result.bundle.summary.baseline_attribution_trusted).lower()}",
+        f"baseline_attribution_mode={result.bundle.summary.baseline_attribution_mode}",
+        f"report_diagnostics_json={json.dumps(result.report_diagnostics)}",
     ]
     if result.decision.required_approvals:
         lines.append(f"required_approvals={','.join(result.decision.required_approvals)}")

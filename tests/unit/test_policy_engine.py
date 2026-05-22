@@ -5,7 +5,7 @@ from veridion.change_context import parse_unified_diff
 from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
 from veridion.context import HistoricalSignals, RuntimeSignals, TrustBaseline, derive_runtime_signals
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
-from veridion.policy import evaluate_release, parse_policy_yaml
+from veridion.policy import PolicyConfig, evaluate_release, parse_policy_yaml
 from veridion.suppression import parse_suppressions_payload
 
 
@@ -112,6 +112,115 @@ def test_evaluate_release_applies_required_approvals_and_recommendations() -> No
         "Review newly introduced dependencies and lockfile updates",
         "Prioritize remediation for introduced high-severity findings",
     )
+
+
+def test_evaluate_release_downgrades_changed_file_findings_when_baseline_is_missing() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.new",
+                title="New issue",
+                severity="high",
+                location=NormalizedLocation(path="app/routes.py", start_line=12, end_line=12),
+            )
+        ],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="app/routes.py",
+                    change_type="modified",
+                    added_lines=2,
+                    removed_lines=1,
+                    signals=("application_code",),
+                    previous_path="app/routes.py",
+                ),
+            )
+        ),
+        trust_baseline=TrustBaseline(
+            repo_stability="watch",
+            service_stability="fragile",
+            test_coverage_level="low",
+            rollback_readiness="partial",
+        ),
+    )
+
+    decision = evaluate_release(bundle, PolicyConfig())
+
+    assert decision.decision == "CONDITIONAL GO"
+    assert "baseline attribution is incomplete, so findings in changed files are being treated as change-relevant rather than proven introduced" in decision.reasons
+    assert "Repair or refresh baseline scanner outputs before treating changed-file findings as newly introduced risk" in decision.recommendations
+    assert "Review change-relevant findings manually until baseline attribution is repaired" in decision.recommendations
+
+
+def test_evaluate_release_downgrades_suspicious_present_baseline_to_change_relevant() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.new",
+                title="New issue",
+                severity="high",
+                location=NormalizedLocation(path="app/routes.py", start_line=12, end_line=12),
+            ),
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.unrelated",
+                title="Unrelated issue",
+                severity="medium",
+                location=NormalizedLocation(path="scripts/maintenance.py", start_line=8, end_line=8),
+            ),
+        ],
+        baseline_findings=[
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.baseline",
+                title="Existing issue elsewhere",
+                severity="low",
+                location=NormalizedLocation(path="legacy/unused.py", start_line=1, end_line=1),
+            )
+        ],
+        change_context=ParsedChangeContext(
+            files=tuple(
+                ParsedFileChange(
+                    path=f"app/file_{index}.py",
+                    change_type="modified",
+                    added_lines=2,
+                    removed_lines=1,
+                    signals=("application_code",),
+                    previous_path=f"app/file_{index}.py",
+                )
+                for index in range(60)
+            )
+            + (
+                ParsedFileChange(
+                    path="app/routes.py",
+                    change_type="modified",
+                    added_lines=2,
+                    removed_lines=1,
+                    signals=("application_code",),
+                    previous_path="app/routes.py",
+                ),
+            )
+        ),
+        trust_baseline=TrustBaseline(
+            repo_stability="watch",
+            service_stability="fragile",
+            test_coverage_level="low",
+            rollback_readiness="partial",
+        ),
+    )
+
+    decision = evaluate_release(bundle, PolicyConfig())
+
+    assert decision.decision == "CONDITIONAL GO"
+    assert "baseline attribution is incomplete, so findings in changed files are being treated as change-relevant rather than proven introduced" in decision.reasons
+    assert "Repair or refresh baseline scanner outputs before treating changed-file findings as newly introduced risk" in decision.recommendations
 
 
 def test_evaluate_release_escalates_conditional_go_when_policy_disallows_it() -> None:
@@ -1017,7 +1126,16 @@ def _bundle_with_single_high_code_issue():
                 location=NormalizedLocation(path="app/routes.py", start_line=12, end_line=12),
             )
         ],
-        baseline_findings=[],
+        baseline_findings=[
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.existing",
+                title="Existing baseline issue",
+                severity="low",
+                location=NormalizedLocation(path="app/other.py", start_line=3, end_line=3),
+            )
+        ],
         change_context=ParsedChangeContext(
             files=(
                 ParsedFileChange(

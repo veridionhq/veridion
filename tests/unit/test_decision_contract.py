@@ -1,4 +1,5 @@
 import json
+from datetime import date, timedelta
 
 from veridion.analysis import build_analysis_bundle
 from veridion.action.runner import _parse_allowed_decisions, _write_github_outputs, run_action
@@ -147,6 +148,7 @@ def test_decision_contract_surfaces_runtime_release_gates() -> None:
 
 
 def test_decision_contract_surfaces_accepted_risk_lifecycle() -> None:
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
     bundle = build_analysis_bundle(
         current_findings=[
             NormalizedFinding(
@@ -179,7 +181,7 @@ def test_decision_contract_surfaces_accepted_risk_lifecycle() -> None:
                         "created_at": "2026-05-01T00:00:00Z",
                         "reviewed_at": "2026-05-02T00:00:00Z",
                         "renewal_of": "AR-100",
-                        "expires_on": "2026-05-20",
+                        "expires_on": tomorrow,
                     }
                 ],
             }

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -113,7 +114,7 @@ def materialize_decision_history(
                 output_path=warehouse_dir / f"{tenant.tenant_id}.athena.json",
                 database=athena_database,
                 table=athena_table,
-                s3_location=athena_s3_location_template.format(tenant_id=tenant.tenant_id),
+                s3_location=athena_s3_location_template.replace("{tenant_id}", tenant.tenant_id),
                 since=since,
             )
             record_materialization_run(
@@ -128,7 +129,7 @@ def materialize_decision_history(
                 until=until,
                 athena_database=athena_database,
                 athena_table=athena_table,
-                athena_s3_location=athena_s3_location_template.format(tenant_id=tenant.tenant_id),
+                athena_s3_location=athena_s3_location_template.replace("{tenant_id}", tenant.tenant_id),
             )
     elif config and (config.sqlite_path or config.store_dsn):
         generated_at = _now_iso()
@@ -149,9 +150,13 @@ def materialize_decision_history(
                 athena_s3_location="",
             )
 
+    tmp_dir = root / ".latest-new"
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir)
+    shutil.copytree(run_dir, tmp_dir)
     if latest_dir.exists():
         shutil.rmtree(latest_dir)
-    shutil.copytree(run_dir, latest_dir)
+    os.rename(tmp_dir, latest_dir)
     return run_dir
 
 

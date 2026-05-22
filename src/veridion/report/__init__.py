@@ -9,7 +9,7 @@ from veridion.report.pr_comment import (
     wrap_pr_comment,
 )
 from veridion.report.pr_lifecycle import CommentRecord, select_comment_upsert
-from veridion.report.threats import ThreatExplanation, explain_introduced_threats, render_threat_line
+from veridion.report.threats import ThreatExplanation, explain_change_relevant_threats, explain_introduced_threats, render_threat_line
 
 __all__ = [
     "COMMENT_MARKER_END",
@@ -17,6 +17,7 @@ __all__ = [
     "CommentRecord",
     "RenderedComment",
     "ThreatExplanation",
+    "explain_change_relevant_threats",
     "explain_introduced_threats",
     "render_pr_comment",
     "render_pr_comment_result",

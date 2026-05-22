@@ -87,7 +87,11 @@ def test_build_analysis_bundle_assembles_deterministic_summary_and_partitions() 
     assert bundle.summary.total_findings == 3
     assert bundle.summary.introduced_findings == 2
     assert bundle.summary.existing_findings == 1
+    assert bundle.summary.change_relevant_findings == 0
     assert bundle.summary.unattributed_findings == 0
+    assert bundle.summary.baseline_attribution_trusted is True
+    assert bundle.summary.baseline_attribution_mode == "trusted"
+    assert bundle.summary.baseline_attribution_likely_cause == ""
     assert bundle.summary.changed_files == 3
     assert bundle.summary.dependency_changes is True
     assert bundle.summary.lockfile_changes is True
@@ -210,13 +214,21 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
         "baseline_comparison": {
             "introduced": [],
             "existing": [],
+            "change_relevant": [],
             "unattributed": [],
+            "attribution_trusted": True,
+            "attribution_mode": "trusted",
+            "attribution_likely_cause": "",
         },
         "summary": {
             "total_findings": 0,
             "introduced_findings": 0,
             "existing_findings": 0,
+            "change_relevant_findings": 0,
             "unattributed_findings": 0,
+            "baseline_attribution_trusted": True,
+            "baseline_attribution_mode": "trusted",
+            "baseline_attribution_likely_cause": "",
             "changed_files": 0,
             "dependency_changes": False,
             "lockfile_changes": False,
@@ -245,6 +257,103 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "introduced_by_finding_type": {},
         },
     }
+
+
+def test_build_analysis_bundle_surfaces_change_relevant_findings_when_baseline_is_missing() -> None:
+    current = [
+        NormalizedFinding(
+            source="semgrep",
+            finding_type="code",
+            rule_id="python.audit.new",
+            title="New issue",
+            severity="high",
+            location=NormalizedLocation(path="app/routes.py", start_line=12, end_line=12),
+        ),
+    ]
+    change_context = ParsedChangeContext(
+        files=(
+            ParsedFileChange(
+                path="app/routes.py",
+                change_type="modified",
+                added_lines=2,
+                removed_lines=1,
+                signals=("application_code",),
+                previous_path="app/routes.py",
+            ),
+        )
+    )
+
+    bundle = build_analysis_bundle(current, [], change_context)
+
+    assert bundle.summary.introduced_findings == 0
+    assert bundle.summary.change_relevant_findings == 1
+    assert bundle.summary.baseline_attribution_trusted is False
+    assert bundle.summary.baseline_attribution_mode == "missing_baseline"
+    assert bundle.summary.baseline_attribution_likely_cause == "baseline_reports_missing_or_empty"
+    assert tuple(finding.rule_id for finding in bundle.baseline_comparison.change_relevant) == ("python.audit.new",)
+
+
+def test_build_analysis_bundle_downgrades_suspicious_present_baseline_to_change_relevant() -> None:
+    current = [
+        NormalizedFinding(
+            source="semgrep",
+            finding_type="code",
+            rule_id="python.audit.new",
+            title="New issue",
+            severity="high",
+            location=NormalizedLocation(path="app/routes.py", start_line=12, end_line=12),
+        ),
+        NormalizedFinding(
+            source="semgrep",
+            finding_type="code",
+            rule_id="python.audit.unrelated",
+            title="Unrelated issue",
+            severity="medium",
+            location=NormalizedLocation(path="scripts/maintenance.py", start_line=8, end_line=8),
+        ),
+    ]
+    baseline = [
+        NormalizedFinding(
+            source="semgrep",
+            finding_type="code",
+            rule_id="python.audit.baseline",
+            title="Existing issue elsewhere",
+            severity="low",
+            location=NormalizedLocation(path="legacy/unused.py", start_line=1, end_line=1),
+        ),
+    ]
+    change_context = ParsedChangeContext(
+        files=tuple(
+            ParsedFileChange(
+                path=f"app/file_{index}.py",
+                change_type="modified",
+                added_lines=2,
+                removed_lines=1,
+                signals=("application_code",),
+                previous_path=f"app/file_{index}.py",
+            )
+            for index in range(60)
+        )
+        + (
+            ParsedFileChange(
+                path="app/routes.py",
+                change_type="modified",
+                added_lines=2,
+                removed_lines=1,
+                signals=("application_code",),
+                previous_path="app/routes.py",
+            ),
+        )
+    )
+
+    bundle = build_analysis_bundle(current, baseline, change_context)
+
+    assert bundle.summary.introduced_findings == 0
+    assert bundle.summary.change_relevant_findings == 1
+    assert bundle.summary.unattributed_findings == 1
+    assert bundle.summary.baseline_attribution_trusted is False
+    assert bundle.summary.baseline_attribution_mode == "suspicious_present_baseline"
+    assert bundle.summary.baseline_attribution_likely_cause == "base_ref_or_normalization_mismatch"
 
 
 def test_build_analysis_bundle_surfaces_ai_attribution_summary() -> None:

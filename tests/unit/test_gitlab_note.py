@@ -61,7 +61,7 @@ def test_upsert_merge_request_note_updates_existing_note(monkeypatch: pytest.Mon
 def test_gitlab_request_wraps_http_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = b'{"message":"rate limit exceeded"}'
 
-    def fail(req):
+    def fail(req, **kwargs):
         raise __import__("urllib.error").error.HTTPError(
             req.full_url,
             429,

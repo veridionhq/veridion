@@ -34,6 +34,7 @@ jobs:
       HOSTED_ECS_SERVICE: ${{ vars.HOSTED_ECS_SERVICE }}
       HOSTED_ECS_WORKER_SERVICE: ${{ vars.HOSTED_ECS_WORKER_SERVICE }}
       IMAGE_TAG: alpha
+      SHA_TAG: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,6 +42,12 @@ jobs:
         run: |
           [[ -n "${ECR_REPOSITORY_URL}" ]] || { echo "ECR_REPOSITORY_URL repo variable is required"; exit 1; }
           [[ -n "${AWS_GITHUB_ACTIONS_ROLE_ARN}" ]] || { echo "AWS_GITHUB_ACTIONS_ROLE_ARN repo variable or secret is required"; exit 1; }
+
+      - name: Validate deploy configuration
+        run: |
+          [[ -n "${AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN}" ]] || { echo "AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN repo variable or secret is required"; exit 1; }
+          [[ -n "${HOSTED_ECS_CLUSTER}" ]] || { echo "HOSTED_ECS_CLUSTER repo variable is required"; exit 1; }
+          [[ -n "${HOSTED_ECS_SERVICE}" ]] || { echo "HOSTED_ECS_SERVICE repo variable is required"; exit 1; }
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -60,33 +67,139 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ env.ECR_REPOSITORY_URL }}:${{ env.IMAGE_TAG }}
+          tags: |
+            ${{ env.ECR_REPOSITORY_URL }}:${{ env.IMAGE_TAG }}
+            ${{ env.ECR_REPOSITORY_URL }}:${{ env.SHA_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Configure AWS deploy credentials
-        if: ${{ env.AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN != '' && env.HOSTED_ECS_CLUSTER != '' && env.HOSTED_ECS_SERVICE != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN }}
 
-      - name: Roll hosted ECS services
-        if: ${{ env.AWS_GITHUB_ACTIONS_DEPLOY_ROLE_ARN != '' && env.HOSTED_ECS_CLUSTER != '' && env.HOSTED_ECS_SERVICE != '' }}
+      - name: Deploy hosted ECS services with immutable image
         shell: bash
         run: |
           set -euo pipefail
-          aws ecs update-service \
-            --region "${AWS_REGION}" \
-            --cluster "${HOSTED_ECS_CLUSTER}" \
-            --service "${HOSTED_ECS_SERVICE}" \
-            --force-new-deployment
-          if [[ -n "${HOSTED_ECS_WORKER_SERVICE}" ]]; then
+
+          IMAGE_URI="${ECR_REPOSITORY_URL}:${SHA_TAG}"
+
+          wait_for_service_image() {
+            local service_name="$1"
+            local container_name="$2"
+            local expected_image="$3"
+            local deadline
+            local service_json
+            local desired_count
+            local rollout_state
+            local deployed_task_def
+            local deployed_image
+
+            deadline=$((SECONDS + 240))
+            while (( SECONDS < deadline )); do
+              service_json="$(aws ecs describe-services --region "${AWS_REGION}" --cluster "${HOSTED_ECS_CLUSTER}" --services "${service_name}")"
+              desired_count="$(printf '%s' "${service_json}" | jq -r '.services[0].desiredCount')"
+              rollout_state="$(printf '%s' "${service_json}" | jq -r '.services[0].deployments[0].rolloutState')"
+              deployed_task_def="$(printf '%s' "${service_json}" | jq -r '.services[0].taskDefinition')"
+              deployed_image="$(
+                aws ecs describe-task-definition \
+                  --region "${AWS_REGION}" \
+                  --task-definition "${deployed_task_def}" \
+                  | jq -r --arg container "${container_name}" '.taskDefinition.containerDefinitions[] | select(.name == $container) | .image'
+              )"
+
+              if [[ "${deployed_image}" == "${expected_image}" ]]; then
+                if [[ "${desired_count}" == "0" ]]; then
+                  return 0
+                fi
+                if [[ "${rollout_state}" == "COMPLETED" ]]; then
+                  return 0
+                fi
+              fi
+
+              sleep 10
+            done
+
+            echo "deploy verification timed out for ${service_name}"
+            echo "expected image: ${expected_image}"
+            echo "last task definition: ${deployed_task_def}"
+            echo "last deployed image: ${deployed_image}"
+            echo "last rollout state: ${rollout_state}"
+            echo "last desired count: ${desired_count}"
+            exit 1
+          }
+
+          deploy_service() {
+            local service_name="$1"
+            local container_name="$2"
+            local service_json
+            local desired_count
+            local current_task_def
+            local current_image
+            local task_json
+            local rendered_td
+            local new_task_def_arn
+
+            service_json="$(aws ecs describe-services --region "${AWS_REGION}" --cluster "${HOSTED_ECS_CLUSTER}" --services "${service_name}")"
+            desired_count="$(printf '%s' "${service_json}" | jq -r '.services[0].desiredCount')"
+            current_task_def="$(printf '%s' "${service_json}" | jq -r '.services[0].taskDefinition')"
+            task_json="$(aws ecs describe-task-definition --region "${AWS_REGION}" --task-definition "${current_task_def}")"
+            current_image="$(printf '%s' "${task_json}" | jq -r --arg container "${container_name}" '.taskDefinition.containerDefinitions[] | select(.name == $container) | .image')"
+
+            if [[ "${current_image}" == "${IMAGE_URI}" ]]; then
+              echo "${service_name} already serves ${IMAGE_URI}; skipping task definition registration"
+              return 0
+            fi
+
+            if [[ "${service_name}" == "${HOSTED_ECS_WORKER_SERVICE}" && "${desired_count}" == "0" ]]; then
+              echo "${service_name} is scaled to zero; skipping deploy update"
+              return 0
+            fi
+
+            rendered_td="$(printf '%s' "${task_json}" | jq --arg image "${IMAGE_URI}" --arg container "${container_name}" '
+              .taskDefinition
+              | {
+                  family,
+                  taskRoleArn,
+                  executionRoleArn,
+                  networkMode,
+                  containerDefinitions,
+                  volumes,
+                  placementConstraints,
+                  requiresCompatibilities,
+                  cpu,
+                  memory,
+                  runtimePlatform,
+                  ephemeralStorage,
+                  pidMode,
+                  ipcMode,
+                  proxyConfiguration,
+                  inferenceAccelerators
+                }
+              | .containerDefinitions |= map(if .name == $container then .image = $image else . end)
+              | with_entries(select(.value != null and .value != []))
+            ')"
+
+            new_task_def_arn="$(
+              aws ecs register-task-definition \
+                --region "${AWS_REGION}" \
+                --cli-input-json "${rendered_td}" \
+                | jq -r '.taskDefinition.taskDefinitionArn'
+            )"
+
             aws ecs update-service \
               --region "${AWS_REGION}" \
               --cluster "${HOSTED_ECS_CLUSTER}" \
-              --service "${HOSTED_ECS_WORKER_SERVICE}" \
-              --force-new-deployment
+              --service "${service_name}" \
+              --task-definition "${new_task_def_arn}"
+            wait_for_service_image "${service_name}" "${container_name}" "${IMAGE_URI}"
+          }
+
+          deploy_service "${HOSTED_ECS_SERVICE}" "history-service"
+          if [[ -n "${HOSTED_ECS_WORKER_SERVICE}" ]]; then
+            deploy_service "${HOSTED_ECS_WORKER_SERVICE}" "scheduler-worker"
           fi
 
   publish-main:
@@ -100,6 +213,7 @@ jobs:
       ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
       AWS_GITHUB_ACTIONS_ROLE_ARN: ${{ vars.AWS_GITHUB_ACTIONS_ROLE_ARN != '' && vars.AWS_GITHUB_ACTIONS_ROLE_ARN || secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
       IMAGE_TAG: latest
+      SHA_TAG: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -126,7 +240,9 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ env.ECR_REPOSITORY_URL }}:${{ env.IMAGE_TAG }}
+          tags: |
+            ${{ env.ECR_REPOSITORY_URL }}:${{ env.IMAGE_TAG }}
+            ${{ env.ECR_REPOSITORY_URL }}:${{ env.SHA_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -141,6 +257,7 @@ jobs:
       ECR_REPOSITORY_URL: ${{ vars.ECR_REPOSITORY_URL }}
       AWS_GITHUB_ACTIONS_ROLE_ARN: ${{ vars.AWS_GITHUB_ACTIONS_ROLE_ARN != '' && vars.AWS_GITHUB_ACTIONS_ROLE_ARN || secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
       IMAGE_TAG: ${{ inputs.image_tag }}
+      SHA_TAG: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -167,6 +284,8 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ env.ECR_REPOSITORY_URL }}:${{ env.IMAGE_TAG }}
+          tags: |
+            ${{ env.ECR_REPOSITORY_URL }}:${{ env.IMAGE_TAG }}
+            ${{ env.ECR_REPOSITORY_URL }}:${{ env.SHA_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

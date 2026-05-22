@@ -27,6 +27,10 @@ Use these defaults first:
 - `worker_cpu = 256`
 - `worker_memory = 512`
 - `log_retention_in_days = 7`
+- `alb_target_deregistration_delay_seconds = 15`
+- `alb_health_check_interval_seconds = 10`
+- `alb_health_check_healthy_threshold = 2`
+- `alb_health_check_unhealthy_threshold = 2`
 
 Why:
 
@@ -34,6 +38,7 @@ Why:
 - public-subnet Fargate tasks can still keep RDS private while avoiding NAT entirely
 - the Veridion API and scheduler are light enough to start on the smallest Fargate shape here
 - seven-day log retention is enough for an alpha without paying to keep two weeks by default
+- a shorter ALB health window and drain delay materially reduce deploy cutover time during alpha iteration
 
 Move away from this cheaper mode only if:
 
@@ -109,7 +114,23 @@ For automatic ECS rollout after the `develop` image publish:
 4. Set repository variable `HOSTED_ECS_SERVICE` to `veridion-alpha-service`.
 5. Optionally set `HOSTED_ECS_WORKER_SERVICE` when the worker is enabled.
 
-That lets `.github/workflows/hosted-image.yml` force a new ECS deployment after pushing `:alpha`.
+That lets `.github/workflows/hosted-image.yml`:
+
+- publish the mutable branch tag (`:alpha` on `develop`, `:latest` on `main`)
+- publish an immutable commit tag (`:${GITHUB_SHA}`)
+- register a fresh ECS task definition revision pinned to the immutable commit tag
+- update the ECS service to that exact task definition
+
+This avoids the race where ECS force-redeploys against a task definition that still references a mutable tag.
+
+ECR cleanup behavior:
+
+- old untagged digests are expected when a mutable alias such as `:alpha` or `:latest` moves to a newer manifest
+- Terraform now applies an ECR lifecycle policy to expire untagged images after `ecr_expire_untagged_after_days`
+
+Default lifecycle values:
+
+- `ecr_expire_untagged_after_days = 1`
 
 4. Scale the ECS services up by setting:
 

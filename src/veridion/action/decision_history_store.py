@@ -15,12 +15,14 @@ from veridion.action.athena_queries import build_athena_query_pack
 from veridion.action.decision_history_config import HistoryToken
 from veridion.action.decision_history import _load_history, analyze_history_events
 
-STORE_SCHEMA_VERSION = 4
+STORE_SCHEMA_VERSION = 6
 STORE_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("001_decision_events", "core decision event history"),
     ("002_materialization_runs", "managed materialization tracking"),
     ("003_catalog_models", "tenant org/project/service catalog"),
     ("004_control_plane_state", "tenant admin, secret, session, and producer state"),
+    ("005_producer_client_audit", "producer token lifecycle metadata and audit trail"),
+    ("006_control_plane_audit", "operator auth and admin action audit trail"),
 )
 
 
@@ -310,6 +312,9 @@ class HistoryStore:
     def list_sessions(self, *, tenant_id: str, limit: int = 20) -> tuple[dict[str, str], ...]:  # pragma: no cover - interface
         raise NotImplementedError
 
+    def get_session(self, *, session_id: str) -> dict[str, str] | None:  # pragma: no cover - interface
+        raise NotImplementedError
+
     def create_producer_client(
         self,
         *,
@@ -321,10 +326,36 @@ class HistoryStore:
     ) -> dict[str, str]:  # pragma: no cover - interface
         raise NotImplementedError
 
+    def update_producer_client_status(self, *, tenant_id: str, client_id: str, status: str) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
     def list_producer_clients(self, *, tenant_id: str) -> tuple[dict[str, str], ...]:  # pragma: no cover - interface
         raise NotImplementedError
 
+    def list_producer_client_audit(self, *, tenant_id: str, client_id: str, limit: int = 20) -> tuple[dict[str, str], ...]:  # pragma: no cover - interface
+        raise NotImplementedError
+
     def resolve_producer_token(self, *, token: str) -> HistoryToken | None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def record_control_plane_audit(
+        self,
+        *,
+        tenant_id: str,
+        actor: str,
+        action: str,
+        target_kind: str,
+        target_id: str,
+        detail: str,
+    ) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def list_control_plane_audit(
+        self,
+        *,
+        tenant_id: str,
+        limit: int = 20,
+    ) -> tuple[dict[str, str], ...]:  # pragma: no cover - interface
         raise NotImplementedError
 
     def load_events(
@@ -637,6 +668,13 @@ class SQLiteHistoryStore(HistoryStore):
         ).fetchall()
         return tuple(_service_session_row(row) for row in rows)
 
+    def get_session(self, *, session_id: str) -> dict[str, str] | None:
+        row = self.connection.execute(
+            "SELECT session_id, tenant_id, user_id, principal_name, auth_type, roles_csv, status, created_at, expires_at FROM service_sessions WHERE session_id = ? LIMIT 1",
+            (session_id,),
+        ).fetchone()
+        return _service_session_row(row) if row else None
+
     def create_producer_client(self, *, tenant_id: str, client_id: str, display_name: str, roles_csv: str, status: str) -> dict[str, str]:
         token = secrets.token_urlsafe(24)
         token_hash = _token_hash(token)
@@ -644,10 +682,29 @@ class SQLiteHistoryStore(HistoryStore):
         self.connection.execute(
             """
             INSERT OR REPLACE INTO producer_clients
-            (tenant_id, client_id, display_name, token_hash, token_prefix, roles_csv, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM producer_clients WHERE tenant_id = ? AND client_id = ?), CURRENT_TIMESTAMP))
+            (tenant_id, client_id, display_name, token_hash, token_prefix, roles_csv, status, created_at, last_issued_at, last_rotated_at, revoked_at, last_used_at)
+            VALUES (
+              ?, ?, ?, ?, ?, ?, ?,
+              COALESCE((SELECT created_at FROM producer_clients WHERE tenant_id = ? AND client_id = ?), CURRENT_TIMESTAMP),
+              CURRENT_TIMESTAMP,
+              CASE WHEN EXISTS(SELECT 1 FROM producer_clients WHERE tenant_id = ? AND client_id = ?) THEN CURRENT_TIMESTAMP ELSE '' END,
+              '',
+              COALESCE((SELECT last_used_at FROM producer_clients WHERE tenant_id = ? AND client_id = ?), '')
+            )
             """,
-            (tenant_id, client_id, display_name, token_hash, token_prefix, roles_csv, status, tenant_id, client_id),
+            (tenant_id, client_id, display_name, token_hash, token_prefix, roles_csv, status, tenant_id, client_id, tenant_id, client_id, tenant_id, client_id),
+        )
+        action = "rotated" if self.connection.execute(
+            "SELECT 1 FROM producer_client_audit WHERE tenant_id = ? AND client_id = ? LIMIT 1",
+            (tenant_id, client_id),
+        ).fetchone() else "created"
+        self.connection.execute(
+            """
+            INSERT INTO producer_client_audit
+            (tenant_id, client_id, action, actor, detail, created_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (tenant_id, client_id, action, "system", f"status={status};roles={roles_csv};prefix={token_prefix}"),
         )
         return {
             "tenant_id": tenant_id,
@@ -659,12 +716,50 @@ class SQLiteHistoryStore(HistoryStore):
             "status": status,
         }
 
+    def update_producer_client_status(self, *, tenant_id: str, client_id: str, status: str) -> None:
+        self.connection.execute(
+            "UPDATE producer_clients SET status = ?, revoked_at = CASE WHEN ? = 'revoked' THEN CURRENT_TIMESTAMP ELSE revoked_at END WHERE tenant_id = ? AND client_id = ?",
+            (status, status, tenant_id, client_id),
+        )
+        self.connection.execute(
+            """
+            INSERT INTO producer_client_audit
+            (tenant_id, client_id, action, actor, detail, created_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (tenant_id, client_id, "status_changed", "system", f"status={status}"),
+        )
+
     def list_producer_clients(self, *, tenant_id: str) -> tuple[dict[str, str], ...]:
         rows = self.connection.execute(
-            "SELECT tenant_id, client_id, display_name, token_prefix, roles_csv, status, created_at FROM producer_clients WHERE tenant_id = ? ORDER BY client_id ASC",
+            "SELECT tenant_id, client_id, display_name, token_prefix, roles_csv, status, created_at, last_issued_at, last_rotated_at, last_used_at, revoked_at FROM producer_clients WHERE tenant_id = ? ORDER BY client_id ASC",
             (tenant_id,),
         ).fetchall()
         return tuple(_producer_client_row(row) for row in rows)
+
+    def list_producer_client_audit(self, *, tenant_id: str, client_id: str, limit: int = 20) -> tuple[dict[str, str], ...]:
+        rows = self.connection.execute(
+            "SELECT tenant_id, client_id, action, actor, detail, created_at FROM producer_client_audit WHERE tenant_id = ? AND client_id = ? ORDER BY created_at DESC LIMIT ?",
+            (tenant_id, client_id, limit),
+        ).fetchall()
+        return tuple(_producer_client_audit_row(row) for row in rows)
+
+    def record_control_plane_audit(self, *, tenant_id: str, actor: str, action: str, target_kind: str, target_id: str, detail: str) -> None:
+        self.connection.execute(
+            """
+            INSERT INTO control_plane_audit
+            (tenant_id, actor, action, target_kind, target_id, detail, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (tenant_id, actor, action, target_kind, target_id, detail),
+        )
+
+    def list_control_plane_audit(self, *, tenant_id: str, limit: int = 20) -> tuple[dict[str, str], ...]:
+        rows = self.connection.execute(
+            "SELECT tenant_id, actor, action, target_kind, target_id, detail, created_at FROM control_plane_audit WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?",
+            (tenant_id, limit),
+        ).fetchall()
+        return tuple(_control_plane_audit_row(row) for row in rows)
 
     def resolve_producer_token(self, *, token: str) -> HistoryToken | None:
         row = self.connection.execute(
@@ -673,6 +768,19 @@ class SQLiteHistoryStore(HistoryStore):
         ).fetchone()
         if row is None or not secrets.compare_digest(str(row[3]), _token_hash(token)):
             return None
+        self.connection.execute(
+            "UPDATE producer_clients SET last_used_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND client_id = ?",
+            (str(row[0]), str(row[1])),
+        )
+        self.connection.execute(
+            """
+            INSERT INTO producer_client_audit
+            (tenant_id, client_id, action, actor, detail, created_at)
+            VALUES (?, ?, 'used', ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (str(row[0]), str(row[1]), str(row[1]), "producer token resolved"),
+        )
+        self.connection.commit()
         roles = tuple(item for item in str(row[4]).split(",") if item)
         return HistoryToken(
             token=token,
@@ -1012,19 +1120,60 @@ class PostgresHistoryStore(HistoryStore):
             rows = cursor.fetchall()
         return tuple(_service_session_row(row) for row in rows)
 
+    def get_session(self, *, session_id: str) -> dict[str, str] | None:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT session_id, tenant_id, user_id, principal_name, auth_type, roles_csv, status, created_at, expires_at FROM service_sessions WHERE session_id = %s LIMIT 1",
+                (session_id,),
+            )
+            row = cursor.fetchone()
+        return _service_session_row(row) if row else None
+
     def create_producer_client(self, *, tenant_id: str, client_id: str, display_name: str, roles_csv: str, status: str) -> dict[str, str]:
         token = secrets.token_urlsafe(24)
         token_hash = _token_hash(token)
         token_prefix = token[:8]
         with self.connection.cursor() as cursor:
             cursor.execute(
+                "SELECT EXISTS(SELECT 1 FROM producer_clients WHERE tenant_id = %s AND client_id = %s)",
+                (tenant_id, client_id),
+            )
+            row = cursor.fetchone()
+        existed = bool(row and row[0])
+        with self.connection.cursor() as cursor:
+            cursor.execute(
                 """
-                INSERT INTO producer_clients (tenant_id, client_id, display_name, token_hash, token_prefix, roles_csv, status, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                INSERT INTO producer_clients
+                (tenant_id, client_id, display_name, token_hash, token_prefix, roles_csv, status, created_at, last_issued_at, last_rotated_at, revoked_at, last_used_at)
+                VALUES (
+                  %s, %s, %s, %s, %s, %s, %s,
+                  CURRENT_TIMESTAMP,
+                  CURRENT_TIMESTAMP,
+                  CASE WHEN %s THEN CURRENT_TIMESTAMP ELSE '' END,
+                  '',
+                  ''
+                )
                 ON CONFLICT (tenant_id, client_id)
-                DO UPDATE SET display_name = EXCLUDED.display_name, token_hash = EXCLUDED.token_hash, token_prefix = EXCLUDED.token_prefix, roles_csv = EXCLUDED.roles_csv, status = EXCLUDED.status
+                DO UPDATE SET
+                  display_name = EXCLUDED.display_name,
+                  token_hash = EXCLUDED.token_hash,
+                  token_prefix = EXCLUDED.token_prefix,
+                  roles_csv = EXCLUDED.roles_csv,
+                  status = EXCLUDED.status,
+                  last_issued_at = CURRENT_TIMESTAMP,
+                  last_rotated_at = CASE WHEN %s THEN CURRENT_TIMESTAMP ELSE producer_clients.last_rotated_at END,
+                  revoked_at = '',
+                  last_used_at = producer_clients.last_used_at
                 """,
-                (tenant_id, client_id, display_name, token_hash, token_prefix, roles_csv, status),
+                (tenant_id, client_id, display_name, token_hash, token_prefix, roles_csv, status, existed, existed),
+            )
+            cursor.execute(
+                """
+                INSERT INTO producer_client_audit
+                (tenant_id, client_id, action, actor, detail, created_at)
+                VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                """,
+                (tenant_id, client_id, "rotated" if existed else "created", "system", f"status={status};roles={roles_csv};prefix={token_prefix}"),
             )
         return {
             "tenant_id": tenant_id,
@@ -1036,14 +1185,58 @@ class PostgresHistoryStore(HistoryStore):
             "status": status,
         }
 
+    def update_producer_client_status(self, *, tenant_id: str, client_id: str, status: str) -> None:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE producer_clients SET status = %s, revoked_at = CASE WHEN %s = 'revoked' THEN CURRENT_TIMESTAMP ELSE revoked_at END WHERE tenant_id = %s AND client_id = %s",
+                (status, status, tenant_id, client_id),
+            )
+            cursor.execute(
+                """
+                INSERT INTO producer_client_audit
+                (tenant_id, client_id, action, actor, detail, created_at)
+                VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                """,
+                (tenant_id, client_id, "status_changed", "system", f"status={status}"),
+            )
+
     def list_producer_clients(self, *, tenant_id: str) -> tuple[dict[str, str], ...]:
         with self.connection.cursor() as cursor:
             cursor.execute(
-                "SELECT tenant_id, client_id, display_name, token_prefix, roles_csv, status, created_at FROM producer_clients WHERE tenant_id = %s ORDER BY client_id ASC",
+                "SELECT tenant_id, client_id, display_name, token_prefix, roles_csv, status, created_at, last_issued_at, last_rotated_at, last_used_at, revoked_at FROM producer_clients WHERE tenant_id = %s ORDER BY client_id ASC",
                 (tenant_id,),
             )
             rows = cursor.fetchall()
         return tuple(_producer_client_row(row) for row in rows)
+
+    def list_producer_client_audit(self, *, tenant_id: str, client_id: str, limit: int = 20) -> tuple[dict[str, str], ...]:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT tenant_id, client_id, action, actor, detail, created_at FROM producer_client_audit WHERE tenant_id = %s AND client_id = %s ORDER BY created_at DESC LIMIT %s",
+                (tenant_id, client_id, limit),
+            )
+            rows = cursor.fetchall()
+        return tuple(_producer_client_audit_row(row) for row in rows)
+
+    def record_control_plane_audit(self, *, tenant_id: str, actor: str, action: str, target_kind: str, target_id: str, detail: str) -> None:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO control_plane_audit
+                (tenant_id, actor, action, target_kind, target_id, detail, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                """,
+                (tenant_id, actor, action, target_kind, target_id, detail),
+            )
+
+    def list_control_plane_audit(self, *, tenant_id: str, limit: int = 20) -> tuple[dict[str, str], ...]:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT tenant_id, actor, action, target_kind, target_id, detail, created_at FROM control_plane_audit WHERE tenant_id = %s ORDER BY created_at DESC LIMIT %s",
+                (tenant_id, limit),
+            )
+            rows = cursor.fetchall()
+        return tuple(_control_plane_audit_row(row) for row in rows)
 
     def resolve_producer_token(self, *, token: str) -> HistoryToken | None:
         with self.connection.cursor() as cursor:
@@ -1054,6 +1247,20 @@ class PostgresHistoryStore(HistoryStore):
             row = cursor.fetchone()
         if row is None or not secrets.compare_digest(str(row[3]), _token_hash(token)):
             return None
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE producer_clients SET last_used_at = CURRENT_TIMESTAMP WHERE tenant_id = %s AND client_id = %s",
+                (str(row[0]), str(row[1])),
+            )
+            cursor.execute(
+                """
+                INSERT INTO producer_client_audit
+                (tenant_id, client_id, action, actor, detail, created_at)
+                VALUES (%s, %s, 'used', %s, %s, CURRENT_TIMESTAMP)
+                """,
+                (str(row[0]), str(row[1]), str(row[1]), "producer token resolved"),
+            )
+        self.connection.commit()
         roles = tuple(item for item in str(row[4]).split(",") if item)
         return HistoryToken(
             token=token,
@@ -1218,7 +1425,40 @@ def _apply_sqlite_migrations(connection: sqlite3.Connection) -> None:
             roles_csv TEXT NOT NULL,
             status TEXT NOT NULL,
             created_at TEXT NOT NULL,
+            last_issued_at TEXT NOT NULL DEFAULT '',
+            last_rotated_at TEXT NOT NULL DEFAULT '',
+            last_used_at TEXT NOT NULL DEFAULT '',
+            revoked_at TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (tenant_id, client_id)
+        )
+        """
+    )
+    _sqlite_add_column_if_missing(connection, "producer_clients", "last_issued_at", "TEXT NOT NULL DEFAULT ''")
+    _sqlite_add_column_if_missing(connection, "producer_clients", "last_rotated_at", "TEXT NOT NULL DEFAULT ''")
+    _sqlite_add_column_if_missing(connection, "producer_clients", "last_used_at", "TEXT NOT NULL DEFAULT ''")
+    _sqlite_add_column_if_missing(connection, "producer_clients", "revoked_at", "TEXT NOT NULL DEFAULT ''")
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS producer_client_audit (
+            tenant_id TEXT NOT NULL,
+            client_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            detail TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS control_plane_audit (
+            tenant_id TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            action TEXT NOT NULL,
+            target_kind TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            detail TEXT NOT NULL,
+            created_at TEXT NOT NULL
         )
         """
     )
@@ -1370,7 +1610,40 @@ def _apply_postgres_migrations(connection) -> None:
                 roles_csv TEXT NOT NULL,
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL,
+                last_issued_at TEXT NOT NULL DEFAULT '',
+                last_rotated_at TEXT NOT NULL DEFAULT '',
+                last_used_at TEXT NOT NULL DEFAULT '',
+                revoked_at TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY (tenant_id, client_id)
+            )
+            """
+        )
+        _postgres_add_column_if_missing(cursor, "producer_clients", "last_issued_at", "TEXT NOT NULL DEFAULT ''")
+        _postgres_add_column_if_missing(cursor, "producer_clients", "last_rotated_at", "TEXT NOT NULL DEFAULT ''")
+        _postgres_add_column_if_missing(cursor, "producer_clients", "last_used_at", "TEXT NOT NULL DEFAULT ''")
+        _postgres_add_column_if_missing(cursor, "producer_clients", "revoked_at", "TEXT NOT NULL DEFAULT ''")
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS producer_client_audit (
+                tenant_id TEXT NOT NULL,
+                client_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                detail TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS control_plane_audit (
+                tenant_id TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                action TEXT NOT NULL,
+                target_kind TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                detail TEXT NOT NULL,
+                created_at TEXT NOT NULL
             )
             """
         )
@@ -1413,6 +1686,17 @@ def _record_migrations_postgres(connection) -> None:
                 """,
                 (migration_id, description),
             )
+
+
+def _sqlite_add_column_if_missing(connection: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {str(row[1]) for row in connection.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column in columns:
+        return
+    connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def _postgres_add_column_if_missing(cursor, table: str, column: str, definition: str) -> None:
+    cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {definition}")
 
 
 def _count_sqlite_rows(connection: sqlite3.Connection, table: str, *, tenant_id: str) -> int:
@@ -1631,6 +1915,17 @@ def list_service_sessions(
         return store.list_sessions(tenant_id=tenant_id, limit=limit)
 
 
+def get_service_session(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    session_id: str,
+) -> dict[str, str] | None:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        return store.get_session(session_id=session_id)
+
+
 def create_producer_client(
     *,
     sqlite_path: str | Path = "",
@@ -1652,6 +1947,73 @@ def create_producer_client(
         )
         store.commit()
         return result
+
+
+def update_producer_client_status(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str,
+    client_id: str,
+    status: str,
+) -> None:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        store.update_producer_client_status(
+            tenant_id=tenant_id,
+            client_id=client_id,
+            status=status,
+        )
+        store.commit()
+
+
+def list_producer_client_audit(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str,
+    client_id: str,
+    limit: int = 20,
+) -> tuple[dict[str, str], ...]:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        return store.list_producer_client_audit(tenant_id=tenant_id, client_id=client_id, limit=limit)
+
+
+def record_control_plane_audit(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str,
+    actor: str,
+    action: str,
+    target_kind: str,
+    target_id: str,
+    detail: str,
+) -> None:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        store.record_control_plane_audit(
+            tenant_id=tenant_id,
+            actor=actor,
+            action=action,
+            target_kind=target_kind,
+            target_id=target_id,
+            detail=detail,
+        )
+        store.commit()
+
+
+def list_control_plane_audit(
+    *,
+    sqlite_path: str | Path = "",
+    store_dsn: str = "",
+    tenant_id: str,
+    limit: int = 20,
+) -> tuple[dict[str, str], ...]:
+    ensure_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn)
+    with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
+        return store.list_control_plane_audit(tenant_id=tenant_id, limit=limit)
 
 
 def list_producer_clients(
@@ -1869,6 +2231,33 @@ def _producer_client_row(row: tuple[object, ...]) -> dict[str, str]:
         "token_prefix": str(row[3]),
         "roles_csv": str(row[4]),
         "status": str(row[5]),
+        "created_at": str(row[6]),
+        "last_issued_at": str(row[7]),
+        "last_rotated_at": str(row[8]),
+        "last_used_at": str(row[9]),
+        "revoked_at": str(row[10]),
+    }
+
+
+def _producer_client_audit_row(row: tuple[object, ...]) -> dict[str, str]:
+    return {
+        "tenant_id": str(row[0]),
+        "client_id": str(row[1]),
+        "action": str(row[2]),
+        "actor": str(row[3]),
+        "detail": str(row[4]),
+        "created_at": str(row[5]),
+    }
+
+
+def _control_plane_audit_row(row: tuple[object, ...]) -> dict[str, str]:
+    return {
+        "tenant_id": str(row[0]),
+        "actor": str(row[1]),
+        "action": str(row[2]),
+        "target_kind": str(row[3]),
+        "target_id": str(row[4]),
+        "detail": str(row[5]),
         "created_at": str(row[6]),
     }
 

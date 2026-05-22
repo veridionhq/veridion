@@ -165,7 +165,7 @@ def _gitlab_request(
 
     req = request.Request(url=url, data=data, headers=headers, method=method)
     try:
-        with request.urlopen(req) as response:
+        with request.urlopen(req, timeout=30) as response:
             payload = response.read().decode("utf-8")
         try:
             return json.loads(payload) if payload else {}

@@ -156,6 +156,8 @@ def fetch_rollback_payload(*, provider: str, base_url: str, token: str) -> dict[
 
 
 def _fetch_json(url: str, *, token: str) -> dict[str, object]:
+    if not url.startswith("https://"):
+        raise RuntimeError(f"provider URL must use https://: {url!r}")
     headers = {"Accept": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"

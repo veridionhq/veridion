@@ -6,8 +6,13 @@ import base64
 import hashlib
 import hmac
 import json
+import time
 from pathlib import Path
 from urllib import error, request
+
+# JWKS responses are cached to avoid a remote fetch on every authenticated request.
+_JWKS_CACHE: dict[str, tuple[dict[str, object], float]] = {}
+_JWKS_CACHE_TTL = 300.0  # seconds
 
 from veridion.action.decision_history_config import HistoryToken, JWTAuthConfig, TrustedHeaderAuthConfig
 
@@ -67,6 +72,9 @@ def _resolve_jwt_identity(*, token: str, jwt_config: JWTAuthConfig) -> HistoryTo
     except Exception:
         return None
     if not isinstance(header, dict) or not isinstance(payload, dict):
+        return None
+    exp = payload.get("exp")
+    if isinstance(exp, (int, float)) and exp < time.time():
         return None
     algorithm = str(header.get("alg", "")).upper()
     if algorithm == "HS256":
@@ -167,21 +175,33 @@ def _load_jwks(jwt_config: JWTAuthConfig) -> dict[str, object] | None:
         payload = json.loads(Path(jwt_config.jwks_path).read_text())
         return payload if isinstance(payload, dict) else None
     if jwt_config.jwks_url:
-        try:
-            with request.urlopen(jwt_config.jwks_url, timeout=15) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
-                payload = json.loads(response.read().decode("utf-8"))
-        except (error.URLError, error.HTTPError, json.JSONDecodeError):
+        if not jwt_config.jwks_url.startswith("https://"):
             return None
-        return payload if isinstance(payload, dict) else None
+        return _fetch_json_cached(jwt_config.jwks_url)
     if jwt_config.oidc_discovery_url:
-        discovery = _fetch_json(jwt_config.oidc_discovery_url)
+        if not jwt_config.oidc_discovery_url.startswith("https://"):
+            return None
+        discovery = _fetch_json_cached(jwt_config.oidc_discovery_url)
         if discovery is None:
             return None
         jwks_uri = str(discovery.get("jwks_uri", "")) if isinstance(discovery, dict) else ""
-        if not jwks_uri:
+        if not jwks_uri or not jwks_uri.startswith("https://"):
             return None
-        return _fetch_json(jwks_uri)
+        return _fetch_json_cached(jwks_uri)
     return None
+
+
+def _fetch_json_cached(url: str) -> dict[str, object] | None:
+    entry = _JWKS_CACHE.get(url)
+    now = time.monotonic()
+    if entry is not None:
+        payload, expires_at = entry
+        if now < expires_at:
+            return payload
+    payload = _fetch_json(url)
+    if payload is not None:
+        _JWKS_CACHE[url] = (payload, now + _JWKS_CACHE_TTL)
+    return payload
 
 
 def _select_jwk(jwks: dict[str, object], kid: str) -> dict[str, object] | None:

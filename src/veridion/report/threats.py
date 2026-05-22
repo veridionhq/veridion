@@ -71,6 +71,37 @@ def explain_introduced_threats(bundle: AnalysisBundle) -> tuple[ThreatExplanatio
     )
 
 
+def explain_change_relevant_threats(bundle: AnalysisBundle) -> tuple[ThreatExplanation, ...]:
+    """Build deterministic threat explanations from change-relevant findings."""
+
+    synthetic_bundle = AnalysisBundle(
+        current_findings=bundle.current_findings,
+        baseline_findings=bundle.baseline_findings,
+        current_inventory=bundle.current_inventory,
+        baseline_inventory=bundle.baseline_inventory,
+        ai_attribution=bundle.ai_attribution,
+        historical_signals=bundle.historical_signals,
+        runtime_signals=bundle.runtime_signals,
+        ownership_signals=bundle.ownership_signals,
+        trust_profile_metadata=bundle.trust_profile_metadata,
+        trust_baseline=bundle.trust_baseline,
+        trust_memory_signals=bundle.trust_memory_signals,
+        suppression_report=bundle.suppression_report,
+        change_context=bundle.change_context,
+        baseline_comparison=type(bundle.baseline_comparison)(
+            introduced=bundle.baseline_comparison.change_relevant,
+            existing=bundle.baseline_comparison.existing,
+            change_relevant=bundle.baseline_comparison.change_relevant,
+            unattributed=bundle.baseline_comparison.unattributed,
+            attribution_trusted=bundle.baseline_comparison.attribution_trusted,
+            attribution_mode=bundle.baseline_comparison.attribution_mode,
+            attribution_likely_cause=bundle.baseline_comparison.attribution_likely_cause,
+        ),
+        summary=bundle.summary,
+    )
+    return explain_introduced_threats(synthetic_bundle)
+
+
 def render_threat_line(explanation: ThreatExplanation) -> str:
     """Render a short threat line for comment output."""
 

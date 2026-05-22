@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
+
+_REPO_RE = re.compile(r"^[A-Za-z0-9_./@\-]+$")
+_ISO_SAFE_RE = re.compile(r"^[0-9T:Z.+\-]+$")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -115,8 +119,12 @@ def _create_external_table(qualified_table: str, s3_location: str) -> str:
 def _query_where(*, repository: str, since: str) -> str:
     clauses: list[str] = []
     if repository:
+        if not _REPO_RE.match(repository):
+            raise ValueError(f"repository contains unsafe characters: {repository!r}")
         clauses.append(f"repo = '{repository.replace('/', '_')}'")
     if since:
+        if not _ISO_SAFE_RE.match(since):
+            raise ValueError(f"since contains unsafe characters: {since!r}")
         clauses.append(
             "from_iso8601_timestamp(json_extract_scalar(payload, '$.generated_at')) >= "
             f"from_iso8601_timestamp('{since}')"

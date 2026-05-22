@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
+import logging
+import signal
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+
+_stop_event = threading.Event()
+_logger = logging.getLogger(__name__)
 
 from veridion.action.decision_history_config import HistoryServiceConfig, MaterializationSchedule, load_history_service_config
 from veridion.action.decision_history_materialize import materialize_decision_history
@@ -79,34 +86,43 @@ def run_scheduler_loop(
     state = _load_scheduler_state(state_path)
     runs: list[dict[str, object]] = []
     iterations = 0
-    while True:
-        now = datetime.now(timezone.utc)
-        due_now = tuple(
-            schedule
-            for schedule in config.schedules
-            if schedule.enabled
-            and (not schedule_ids or schedule.schedule_id in schedule_ids)
-            and schedule_is_due(schedule.cron, now)
-            and state.get(schedule.schedule_id) != _state_bucket(now)
-        )
-        if due_now:
-            payload = run_configured_history_schedules(
-                config=config,
-                config_path=config_path,
-                output_root=output_root,
-                at=now,
-                schedule_ids=tuple(schedule.schedule_id for schedule in due_now),
-                run_all=True,
-                dry_run=dry_run,
+    _stop_event.clear()
+    try:
+        signal.signal(signal.SIGTERM, lambda *_: _stop_event.set())
+        signal.signal(signal.SIGINT, lambda *_: _stop_event.set())
+    except (OSError, ValueError):
+        pass  # not in main thread on some platforms
+    while not _stop_event.is_set():
+        try:
+            now = datetime.now(timezone.utc)
+            due_now = tuple(
+                schedule
+                for schedule in config.schedules
+                if schedule.enabled
+                and (not schedule_ids or schedule.schedule_id in schedule_ids)
+                and schedule_is_due(schedule.cron, now)
+                and state.get(schedule.schedule_id) != _state_bucket(now)
             )
-            runs.extend(payload["runs"])
-            for schedule in due_now:
-                state[schedule.schedule_id] = _state_bucket(now)
-            _write_scheduler_state(state_path, state)
+            if due_now:
+                payload = run_configured_history_schedules(
+                    config=config,
+                    config_path=config_path,
+                    output_root=output_root,
+                    at=now,
+                    schedule_ids=tuple(schedule.schedule_id for schedule in due_now),
+                    run_all=True,
+                    dry_run=dry_run,
+                )
+                runs.extend(payload["runs"])
+                for schedule in due_now:
+                    state[schedule.schedule_id] = _state_bucket(now)
+                _write_scheduler_state(state_path, state)
+        except Exception as exc:
+            _logger.error("scheduler iteration failed: %s", exc)
         iterations += 1
         if max_iterations and iterations >= max_iterations:
             break
-        time.sleep(poll_interval_seconds)
+        _stop_event.wait(timeout=poll_interval_seconds)
     return {
         "schema_version": 1,
         "source": "veridion.action.decision_history_scheduler.loop@1",
@@ -207,6 +223,10 @@ def _cron_field_matches(field: str, value: int) -> bool:
                 end = int(end_raw)
                 if start <= value <= end and (value - start) % step == 0:
                     return True
+            elif base.isdigit():
+                start = int(base)
+                if value >= start and (value - start) % step == 0:
+                    return True
             continue
         if "-" in token:
             start_raw, end_raw = token.split("-", 1)
@@ -231,7 +251,12 @@ def _parse_at(raw: str | None) -> datetime:
 def _load_scheduler_state(path: Path) -> dict[str, str]:
     if not path.exists():
         return {}
-    payload = json.loads(path.read_text())
+    with open(path) as f:
+        fcntl.flock(f, fcntl.LOCK_SH)
+        try:
+            payload = json.loads(f.read())
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
     if not isinstance(payload, dict):
         return {}
     return {str(key): str(value) for key, value in payload.items()}
@@ -239,7 +264,12 @@ def _load_scheduler_state(path: Path) -> dict[str, str]:
 
 def _write_scheduler_state(path: Path, payload: dict[str, str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2) + "\n")
+    with open(path, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            f.write(json.dumps(payload, indent=2) + "\n")
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def _state_bucket(at: datetime) -> str:

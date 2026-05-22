@@ -5,6 +5,19 @@ from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.risk import extract_risk_features, score_analysis_bundle
 
 
+def _trusted_baseline() -> list[NormalizedFinding]:
+    return [
+        NormalizedFinding(
+            source="semgrep",
+            finding_type="code",
+            rule_id="python.audit.baseline",
+            title="Existing baseline issue",
+            severity="low",
+            location=NormalizedLocation(path="app/existing.py", start_line=1, end_line=1),
+        )
+    ]
+
+
 def test_extract_risk_features_counts_introduced_findings_and_context() -> None:
     bundle = _bundle_with_high_code_and_dependency_risk()
 
@@ -122,7 +135,7 @@ def test_score_analysis_bundle_returns_no_go_for_critical_introduced_risk() -> N
                 location=NormalizedLocation(path="/workspace/requirements.txt"),
             )
         ],
-        baseline_findings=[],
+        baseline_findings=_trusted_baseline(),
         change_context=ParsedChangeContext(
             files=(
                 ParsedFileChange(
@@ -160,7 +173,7 @@ def test_score_analysis_bundle_emits_reason_for_medium_findings() -> None:
                 location=NormalizedLocation(path="app/routes.py", start_line=12, end_line=12),
             )
         ],
-        baseline_findings=[],
+        baseline_findings=_trusted_baseline(),
         change_context=ParsedChangeContext(
             files=(
                 ParsedFileChange(
@@ -192,7 +205,7 @@ def test_score_analysis_bundle_applies_contextual_risk_penalties() -> None:
                 location=NormalizedLocation(path="app/routes.py", start_line=12, end_line=12),
             )
         ],
-        baseline_findings=[],
+        baseline_findings=_trusted_baseline(),
         change_context=ParsedChangeContext(
             files=(
                 ParsedFileChange(
