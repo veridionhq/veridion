@@ -670,14 +670,12 @@ def _baseline_attribution_lines(bundle: AnalysisBundle) -> tuple[str, ...]:
     lines = [
         "baseline scanner evidence is incomplete for this run; findings in changed files are treated as change-relevant until the baseline is repaired"
     ]
-    if (
-        bundle.summary.existing_findings == 0
-        and bundle.summary.unattributed_findings > 0
-        and bundle.summary.changed_files >= 25
-    ):
+    if bundle.summary.baseline_attribution_likely_cause == "base_ref_or_normalization_mismatch":
         lines.append(
             "baseline produced zero reusable matches across a broad diff; a base-ref mismatch or finding-normalization mismatch is likely"
         )
+    elif bundle.summary.baseline_attribution_likely_cause == "baseline_reports_missing_or_empty":
+        lines.append("one or more baseline scanner reports were missing or normalized to zero findings")
     return tuple(lines)
 
 

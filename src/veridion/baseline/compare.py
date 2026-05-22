@@ -17,6 +17,8 @@ class BaselineComparison:
     change_relevant: tuple[NormalizedFinding, ...]
     unattributed: tuple[NormalizedFinding, ...]
     attribution_trusted: bool
+    attribution_mode: str
+    attribution_likely_cause: str
 
 
 def compare_findings_against_baseline(
@@ -29,6 +31,8 @@ def compare_findings_against_baseline(
     baseline_fingerprints = {finding.fingerprint for finding in baseline_findings}
     baseline_dedup_keys = {finding.dedup_key for finding in baseline_findings}
     attribution_trusted = bool(baseline_findings) or not current_findings
+    attribution_mode = "trusted"
+    attribution_likely_cause = ""
     changed_paths = set(change_context.changed_paths)
     changed_paths.update(file.previous_path for file in change_context.files if file.previous_path)
     has_dependency_surface_change = change_context.has_dependency_changes or change_context.has_lockfile_changes
@@ -59,8 +63,13 @@ def compare_findings_against_baseline(
         unattributed=unattributed,
     ):
         attribution_trusted = False
+        attribution_mode = "suspicious_present_baseline"
+        attribution_likely_cause = "base_ref_or_normalization_mismatch"
         change_relevant = [*change_relevant, *introduced]
         introduced = []
+    elif not attribution_trusted:
+        attribution_mode = "missing_baseline"
+        attribution_likely_cause = "baseline_reports_missing_or_empty"
 
     return BaselineComparison(
         introduced=tuple(introduced),
@@ -68,6 +77,8 @@ def compare_findings_against_baseline(
         change_relevant=tuple(change_relevant),
         unattributed=tuple(unattributed),
         attribution_trusted=attribution_trusted,
+        attribution_mode=attribution_mode,
+        attribution_likely_cause=attribution_likely_cause,
     )
 
 

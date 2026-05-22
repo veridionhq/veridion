@@ -92,6 +92,8 @@ def serve_decision_history(
     handler = _build_handler(
         history_paths,
         service_name=config.service_name if config else "Veridion History Service",
+        service_version=config.service_version if config else "",
+        deployment_id=config.deployment_id if config else "",
         tenants=tenant_map(config) if config else {},
         schedules=schedule_map(config) if config else {},
         jwt_config=config.jwt if config else JWTAuthConfig(),
@@ -111,6 +113,8 @@ def _build_handler(
     history_paths: tuple[str, ...],
     *,
     service_name: str,
+    service_version: str,
+    deployment_id: str,
     tenants: dict[str, HistoryTenant],
     schedules: dict[str, MaterializationSchedule],
     jwt_config: JWTAuthConfig,
@@ -128,6 +132,8 @@ def _build_handler(
                 self.path,
                 history_paths=history_paths,
                 service_name=service_name,
+                service_version=service_version,
+                deployment_id=deployment_id,
                 tenants=tenants,
                 schedules=schedules,
                 jwt_config=jwt_config,
@@ -154,6 +160,8 @@ def _build_handler(
                 body=raw.decode("utf-8") if raw else "",
                 history_paths=history_paths,
                 service_name=service_name,
+                service_version=service_version,
+                deployment_id=deployment_id,
                 tenants=tenants,
                 schedules=schedules,
                 jwt_config=jwt_config,
@@ -206,6 +214,8 @@ def resolve_history_request(
     body: str = "",
     history_paths: tuple[str, ...],
     service_name: str = "Veridion History Service",
+    service_version: str = "",
+    deployment_id: str = "",
     tenants: dict[str, HistoryTenant] | None = None,
     schedules: dict[str, MaterializationSchedule] | None = None,
     jwt_config: JWTAuthConfig | None = None,
@@ -259,6 +269,8 @@ def resolve_history_request(
                         tenant_id=params.get("tenant", ""),
                         next_path=path,
                         service_name=service_name,
+                        managed_identity_ready=bool((trusted_header_auth or TrustedHeaderAuthConfig()).enabled) or bool(jwt_auth_enabled(jwt_config or JWTAuthConfig())),
+                        auth_mode_hint=_browser_auth_mode_label(jwt_config or JWTAuthConfig(), trusted_header_auth or TrustedHeaderAuthConfig()),
                     )
                 },
             )
@@ -324,6 +336,8 @@ def resolve_history_request(
                     tenant_id=params.get("tenant", ""),
                     next_path=params.get("next") or f"/api/{api_version or API_VERSION}/app?tenant={params.get('tenant', '')}",
                     service_name=service_name,
+                    managed_identity_ready=bool((trusted_header_auth or TrustedHeaderAuthConfig()).enabled) or bool(jwt_auth_enabled(jwt_config or JWTAuthConfig())),
+                    auth_mode_hint=_browser_auth_mode_label(jwt_config or JWTAuthConfig(), trusted_header_auth or TrustedHeaderAuthConfig()),
                 )
             },
         )
@@ -335,6 +349,8 @@ def resolve_history_request(
             sqlite_path=sqlite_path,
             store_dsn=store_dsn,
             materialization_root=materialization_root,
+            service_version=service_version,
+            deployment_id=deployment_id,
             tenant_id=params.get("tenant", ""),
             since=params.get("since"),
             until=params.get("until"),
@@ -381,6 +397,8 @@ def resolve_history_request(
             sqlite_path=sqlite_path,
             store_dsn=store_dsn,
             materialization_root=materialization_root,
+            service_version=service_version,
+            deployment_id=deployment_id,
             tenant_id=params.get("tenant", ""),
             since=params.get("since"),
             until=params.get("until"),
@@ -490,6 +508,8 @@ def resolve_history_request(
             sqlite_path=sqlite_path,
             store_dsn=store_dsn,
             materialization_root=materialization_root,
+            service_version=service_version,
+            deployment_id=deployment_id,
             tenant_id=params.get("tenant", ""),
             since=params.get("since"),
             until=params.get("until"),
@@ -523,6 +543,8 @@ def resolve_history_request(
             sqlite_path=sqlite_path,
             store_dsn=store_dsn,
             materialization_root=materialization_root,
+            service_version=service_version,
+            deployment_id=deployment_id,
             tenant_id=params.get("tenant", ""),
             since=params.get("since"),
             until=params.get("until"),
@@ -883,6 +905,8 @@ def _build_overview_payload(
     sqlite_path: str,
     store_dsn: str,
     materialization_root: str,
+    service_version: str,
+    deployment_id: str,
     tenant_id: str,
     since: str | None,
     until: str | None,
@@ -948,6 +972,8 @@ def _build_overview_payload(
             "materialization_root": materialization_root,
             "history_paths": list(history_paths),
             "has_persistent_store": bool(sqlite_path or store_dsn),
+            "service_version": service_version,
+            "deployment_id": deployment_id,
             "jwt_issuer": jwt_config.issuer,
             "jwt_audience": jwt_config.audience,
             "jwks_url": jwt_config.jwks_url,
@@ -975,6 +1001,14 @@ def _build_overview_payload(
         control_audit=admin_payload.get("control_audit", []) if isinstance(admin_payload.get("control_audit"), list) else [],
     )
     return overview
+
+
+def _browser_auth_mode_label(jwt_config: JWTAuthConfig, trusted_header_auth: TrustedHeaderAuthConfig) -> str:
+    if trusted_header_auth.enabled:
+        return "Managed browser sign-in through trusted gateway headers is active."
+    if jwt_auth_enabled(jwt_config) or str(jwt_config.oidc_discovery_url).strip():
+        return "Managed browser sign-in through JWT or OIDC is ready."
+    return "Paste an operator token once to bridge into a browser session."
 
 
 def _handle_post_request(
@@ -1605,6 +1639,8 @@ def _handle_app_post_request(
         sqlite_path=sqlite_path,
         store_dsn=store_dsn,
         materialization_root=materialization_root,
+        service_version="",
+        deployment_id="",
         tenant_id=tenant_id,
         since=None,
         until=None,
@@ -2221,6 +2257,30 @@ def _event_pack_summary(event: dict[str, object]) -> str:
     return f"{pack_id} / {pack_version} / {rollout_stage}"
 
 
+def _event_evidence_status(event: dict[str, object]) -> str:
+    gate = _event_gate_status(event).lower()
+    verdict = _event_verdict(event).upper()
+    if gate == "block" or verdict == "NO GO":
+        return "strong blocking signal"
+    if gate == "review":
+        return "reviewable but incomplete"
+    if verdict in {"GO", "CONDITIONAL GO"}:
+        return "actionable release signal"
+    return "limited evidence"
+
+
+def _event_verify_next(event: dict[str, object]) -> str:
+    gate = _event_gate_status(event).lower()
+    blocking_categories = _event_blocking_categories(event)
+    if gate == "block" or _event_verdict(event).upper() == "NO GO":
+        if blocking_categories:
+            return f"Verify remediation for: {', '.join(blocking_categories[:3])}."
+        return "Verify blocker remediation before the next rollout attempt."
+    if gate == "review":
+        return "Verify approvals, reviewer ownership, and rollback readiness before rollout."
+    return "Verify production monitoring and rollback ownership while rollout continues."
+
+
 def _event_detail_html(event: dict[str, object] | None, *, empty_message: str) -> str:
     if not isinstance(event, dict) or not event:
         return f"<p class='hint'>{_html_escape(empty_message)}</p>"
@@ -2229,10 +2289,12 @@ def _event_detail_html(event: dict[str, object] | None, *, empty_message: str) -
     return (
         "<ul>"
         f"<li><strong>Current Decision</strong><div class='hint'>{_html_escape(_event_verdict(event) or 'unknown')} / {_html_escape(_event_gate_status(event) or 'unknown')}</div></li>"
+        f"<li><strong>Evidence Status</strong><div class='hint'>{_html_escape(_event_evidence_status(event))}</div></li>"
         f"<li><strong>Approval State</strong><div class='hint'>{_html_escape(_event_approval_summary(event))}</div></li>"
         f"<li><strong>Policy Pack</strong><div class='hint'>{_html_escape(_event_pack_summary(event))}</div></li>"
         f"<li><strong>Blocking Categories</strong><div class='hint'>{_html_escape(blocking_text)}</div></li>"
         f"<li><strong>Next Action</strong><div class='hint'>{_html_escape(_event_next_action(event))}</div></li>"
+        f"<li><strong>What To Verify</strong><div class='hint'>{_html_escape(_event_verify_next(event))}</div></li>"
         "</ul>"
     )
 
@@ -2294,6 +2356,8 @@ def _observability_payload(
         "last_ingest_issue_detail": str(latest_ingest_issue.get("detail", "")),
         "last_scheduler_issue_at": str(latest_scheduler_issue.get("created_at", "")),
         "last_scheduler_issue_detail": str(latest_scheduler_issue.get("detail", "")),
+        "service_version": str(service.get("service_version", "")),
+        "deployment_id": str(service.get("deployment_id", "")),
         "auth_recommendation": "OIDC or JWT-backed operator sign-in is ready." if oidc_ready or bool(service.get("jwt_enabled")) else "Use the bearer session bridge for now, then move operators onto JWT or OIDC.",
     }
 
@@ -2608,6 +2672,8 @@ def render_app_login_html(
     message: str = "",
     level: str = "info",
     auto_redirect: bool = False,
+    managed_identity_ready: bool = False,
+    auth_mode_hint: str = "",
 ) -> str:
     flash = (
         f"<div class='flash { _html_escape(level) }'>{_html_escape(message)}</div>"
@@ -2624,6 +2690,11 @@ def render_app_login_html(
         "Use the tenant slug tied to your operator access. Tenant-scoped identities are redirected into that tenant automatically after sign-in."
         if tenant_id
         else "If your operator token only belongs to one tenant, the app will route you there after sign-in."
+    )
+    auth_hint = auth_mode_hint or (
+        "Managed browser sign-in through JWT, OIDC, or trusted headers is ready."
+        if managed_identity_ready
+        else "Paste an operator token once to bridge into a browser session."
     )
     return f"""<!doctype html>
 <html lang="en">
@@ -2755,6 +2826,7 @@ def render_app_login_html(
         <button class="btn-primary" type="submit">Sign In</button>
       </form>
       <p class="hint">{_html_escape(tenant_hint)}</p>
+      <p class="hint">{_html_escape(auth_hint)}</p>
       <p class="hint">This form accepts the raw token value. If you paste a value that starts with <span class="mono">Bearer </span>, the app strips the prefix for you.</p>
       <hr class="divider">
       <div class="actions">
@@ -2826,6 +2898,8 @@ def render_app_html(
     schema_version = _html_escape(str(status_store.get("schema_version", "0")))
     has_persistent_store = "Yes" if bool(service.get("has_persistent_store")) else "No"
     jwt_enabled = bool(service.get("jwt_enabled"))
+    service_version = _html_escape(str(service.get("service_version", "")) or "n/a")
+    deployment_id = _html_escape(str(service.get("deployment_id", "")) or "n/a")
     jwt_issuer = _html_escape(str(service.get("jwt_issuer", "")) or "not configured")
     jwt_audience = _html_escape(str(service.get("jwt_audience", "")) or "not configured")
     jwks_url = _html_escape(str(service.get("jwks_url", "")) or "not configured")
@@ -3145,6 +3219,7 @@ def render_app_html(
             f"<li><strong>Latest auth failure</strong><div class='hint'>{_html_escape(str(observability.get('last_auth_failure_at', '') or 'n/a'))} / {_html_escape(str(observability.get('last_auth_failure_detail', '') or 'none'))}</div></li>"
             f"<li><strong>Latest ingest issue</strong><div class='hint'>{_html_escape(str(observability.get('last_ingest_issue_at', '') or 'n/a'))} / {_html_escape(str(observability.get('last_ingest_issue_detail', '') or 'none'))}</div></li>"
             f"<li><strong>Latest scheduler issue</strong><div class='hint'>{_html_escape(str(observability.get('last_scheduler_issue_at', '') or 'n/a'))} / {_html_escape(str(observability.get('last_scheduler_issue_detail', '') or 'none'))}</div></li>"
+            f"<li><strong>Build / deploy</strong><div class='hint mono'>{_html_escape(str(observability.get('service_version', '') or 'n/a'))} / {_html_escape(str(observability.get('deployment_id', '') or 'n/a'))}</div></li>"
         )
         if isinstance(observability, dict)
         else "<li>No observability data available yet</li>"
@@ -3511,6 +3586,8 @@ def render_app_html(
             <li><strong>Latest materialization</strong><div class="hint">{_html_escape(str((materializations[0] if materializations else {}).get('run_id', 'none')))}</div></li>
             <li><strong>Latest session</strong><div class="hint">{_html_escape(str((sessions[0] if sessions else {}).get('session_id', 'none')))}</div></li>
             <li><strong>Auth mode</strong><div class="hint">{_html_escape(str(observability.get('auth_mode', 'unknown')) if isinstance(observability, dict) else 'unknown')}</div></li>
+            <li><strong>Build version</strong><div class="hint mono">{service_version}</div></li>
+            <li><strong>Deployment id</strong><div class="hint mono">{deployment_id}</div></li>
           </ul>
         </div>
       </div>

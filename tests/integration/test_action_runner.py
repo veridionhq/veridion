@@ -75,6 +75,8 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
     assert "Unattributed findings: 0" in result.comment_markdown
     assert result.comment_markdown.startswith("<!-- veridion:rdi:start -->\n")
     assert result.to_dict()["comment_summary"]["mode"] == "deterministic"
+    assert result.to_dict()["report_diagnostics"]["attribution_trusted"] is True
+    assert result.to_dict()["report_diagnostics"]["attribution_mode"] == "trusted"
     decision_contract = result.to_dict()["decision_contract"]
     assert decision_contract["schema_version"] == 1
     assert decision_contract["source"] == "veridion/action"
@@ -119,6 +121,54 @@ def test_action_result_to_dict_is_json_serializable() -> None:
     assert '"decision": "GO"' in rendered
     assert '"comment_identifier": "veridion:rdi"' in rendered
     assert '"decision_contract"' in rendered
+    assert '"report_diagnostics"' in rendered
+
+
+def test_run_action_surfaces_suspicious_baseline_diagnostics() -> None:
+    diff_lines: list[str] = []
+    for index in range(30):
+        diff_lines.extend(
+            [
+                f"diff --git a/app/file_{index}.py b/app/file_{index}.py",
+                f"--- a/app/file_{index}.py",
+                f"+++ b/app/file_{index}.py",
+                "@@ -1 +1 @@",
+                "-pass",
+                "+print('changed')",
+            ]
+        )
+    diff_lines.extend(
+        [
+            "diff --git a/app/routes.py b/app/routes.py",
+            "--- a/app/routes.py",
+            "+++ b/app/routes.py",
+            "@@ -1 +1 @@",
+            "-pass",
+            "+danger()",
+        ]
+    )
+    diff_text = "\n".join(diff_lines)
+    current_reports = {
+        "semgrep": "tests/fixtures/scanners/semgrep_report.json",
+    }
+    baseline_reports = {
+        "semgrep": "tests/fixtures/scanners/semgrep_baseline_empty.json",
+    }
+
+    result = run_action(
+        diff_text=diff_text,
+        current_reports=current_reports,
+        baseline_reports=baseline_reports,
+        policy_text=None,
+    )
+
+    diagnostics = result.to_dict()["report_diagnostics"]
+    assert diagnostics["attribution_trusted"] is False
+    assert diagnostics["attribution_mode"] == "missing_baseline"
+    assert diagnostics["likely_cause"] == "baseline_reports_missing_or_empty"
+    assert diagnostics["zero_finding_baseline_tools"] == ["semgrep"]
+    assert "### Baseline Attribution" in result.comment_markdown
+    assert "one or more baseline scanner reports were missing or normalized to zero findings" in result.comment_markdown
 
 
 def test_run_action_accepts_versioned_operational_context_artifact() -> None:

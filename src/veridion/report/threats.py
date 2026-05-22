@@ -94,6 +94,8 @@ def explain_change_relevant_threats(bundle: AnalysisBundle) -> tuple[ThreatExpla
             change_relevant=bundle.baseline_comparison.change_relevant,
             unattributed=bundle.baseline_comparison.unattributed,
             attribution_trusted=bundle.baseline_comparison.attribution_trusted,
+            attribution_mode=bundle.baseline_comparison.attribution_mode,
+            attribution_likely_cause=bundle.baseline_comparison.attribution_likely_cause,
         ),
         summary=bundle.summary,
     )

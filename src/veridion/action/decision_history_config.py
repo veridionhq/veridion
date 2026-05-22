@@ -66,6 +66,8 @@ class HistoryToken:
 class HistoryServiceConfig:
     tenants: tuple[HistoryTenant, ...]
     service_name: str = "Veridion History Service"
+    service_version: str = ""
+    deployment_id: str = ""
     sqlite_path: str = ""
     store_dsn: str = ""
     materialization_root: str = ""
@@ -107,6 +109,8 @@ def load_history_service_config(path: str | Path) -> HistoryServiceConfig:
     return HistoryServiceConfig(
         tenants=tuple(tenants),
         service_name=_optional_string(payload.get("service_name")) or "Veridion History Service",
+        service_version=_optional_string(payload.get("service_version")),
+        deployment_id=_optional_string(payload.get("deployment_id")),
         sqlite_path=sqlite_path,
         store_dsn=store_dsn,
         materialization_root=_optional_string(payload.get("materialization_root")),

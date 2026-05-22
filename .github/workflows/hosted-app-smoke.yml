@@ -8,8 +8,10 @@ on:
       - main
     paths:
       - ".github/workflows/hosted-app-smoke.yml"
+      - "src/veridion/action/runner.py"
       - "src/veridion/action/decision_history_service.py"
       - "src/veridion/action/decision_history_store.py"
+      - "tests/integration/test_action_runner.py"
       - "tests/unit/test_decision_history_service.py"
   push:
     branches:
@@ -17,8 +19,10 @@ on:
       - main
     paths:
       - ".github/workflows/hosted-app-smoke.yml"
+      - "src/veridion/action/runner.py"
       - "src/veridion/action/decision_history_service.py"
       - "src/veridion/action/decision_history_store.py"
+      - "tests/integration/test_action_runner.py"
       - "tests/unit/test_decision_history_service.py"
 
 jobs:
@@ -39,4 +43,41 @@ jobs:
           python3 -m pip install -e .[dev]
 
       - name: Run hosted control-plane smoke
-        run: python3 -m pytest tests/unit/test_decision_history_service.py -q
+        run: python3 -m pytest tests/unit/test_decision_history_service.py tests/integration/test_action_runner.py -q
+
+      - name: Build hosted smoke artifact
+        run: |
+          mkdir -p smoke-artifacts
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from veridion.action.runner import run_action
+
+          diff_text = Path("tests/fixtures/diffs/sample_pr.diff").read_text()
+          result = run_action(
+              diff_text=diff_text,
+              current_reports={
+                  "trivy": "tests/fixtures/scanners/trivy_report.json",
+                  "semgrep": "tests/fixtures/scanners/semgrep_report.json",
+                  "grype": "tests/fixtures/scanners/grype_report.json",
+                  "syft": "tests/fixtures/scanners/syft_report.json",
+              },
+              baseline_reports={
+                  "semgrep": "tests/fixtures/scanners/semgrep_report.json",
+              },
+              policy_text=Path("tests/fixtures/policies/default_policy.yaml").read_text(),
+              metadata_text=Path("tests/fixtures/pr/pr_metadata.json").read_text(),
+              trust_profile_text=Path("tests/fixtures/pr/trust_profile.json").read_text(),
+          )
+          payload = result.to_dict()
+          assert payload["report_diagnostics"]["attribution_trusted"] is True
+          assert payload["report_diagnostics"]["attribution_mode"] == "trusted"
+          Path("smoke-artifacts/veridion-result.json").write_text(json.dumps(payload, indent=2) + "\n")
+          Path("smoke-artifacts/veridion-comment.md").write_text(result.comment_markdown)
+          PY
+
+      - name: Upload hosted smoke artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-app-smoke-artifacts
+          path: smoke-artifacts/

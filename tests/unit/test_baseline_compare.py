@@ -74,6 +74,8 @@ def test_compare_findings_against_baseline_partitions_introduced_existing_and_un
     assert comparison.change_relevant == ()
     assert tuple(finding.rule_id for finding in comparison.unattributed) == ("python.audit.unrelated",)
     assert comparison.attribution_trusted is True
+    assert comparison.attribution_mode == "trusted"
+    assert comparison.attribution_likely_cause == ""
 
 
 def test_compare_findings_against_baseline_marks_changed_file_findings_as_change_relevant_without_baseline() -> None:
@@ -114,6 +116,8 @@ def test_compare_findings_against_baseline_marks_changed_file_findings_as_change
     assert tuple(finding.rule_id for finding in comparison.change_relevant) == ("python.audit.new",)
     assert tuple(finding.rule_id for finding in comparison.unattributed) == ("python.audit.unrelated",)
     assert comparison.attribution_trusted is False
+    assert comparison.attribution_mode == "missing_baseline"
+    assert comparison.attribution_likely_cause == "baseline_reports_missing_or_empty"
 
 
 def test_compare_findings_against_baseline_downgrades_suspicious_present_baseline_to_change_relevant() -> None:
@@ -175,3 +179,5 @@ def test_compare_findings_against_baseline_downgrades_suspicious_present_baselin
     assert tuple(finding.rule_id for finding in comparison.change_relevant) == ("python.audit.new",)
     assert tuple(finding.rule_id for finding in comparison.unattributed) == ("python.audit.unrelated",)
     assert comparison.attribution_trusted is False
+    assert comparison.attribution_mode == "suspicious_present_baseline"
+    assert comparison.attribution_likely_cause == "base_ref_or_normalization_mismatch"
