@@ -4,6 +4,19 @@ from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.report.threats import ThreatExplanation, explain_introduced_threats, render_threat_line
 
 
+def _trusted_baseline() -> list[NormalizedFinding]:
+    return [
+        NormalizedFinding(
+            source="semgrep",
+            finding_type="code",
+            rule_id="python.audit.baseline",
+            title="Existing baseline issue",
+            severity="low",
+            location=NormalizedLocation(path="app/existing.py", start_line=1, end_line=1),
+        )
+    ]
+
+
 def test_explain_introduced_threats_returns_structured_dependency_and_code_facts() -> None:
     bundle = build_analysis_bundle(
         current_findings=[
@@ -26,7 +39,7 @@ def test_explain_introduced_threats_returns_structured_dependency_and_code_facts
                 location=NormalizedLocation(path="/workspace/requirements.txt"),
             ),
         ],
-        baseline_findings=[],
+        baseline_findings=_trusted_baseline(),
         change_context=ParsedChangeContext(
             files=(
                 ParsedFileChange(
@@ -88,7 +101,7 @@ def test_explain_introduced_threats_groups_duplicate_dependency_advisories() -> 
                 location=NormalizedLocation(path="/workspace/requirements.txt"),
             ),
         ],
-        baseline_findings=[],
+        baseline_findings=_trusted_baseline(),
         change_context=ParsedChangeContext(
             files=(
                 ParsedFileChange(
@@ -140,7 +153,7 @@ def test_explain_introduced_threats_summarizes_privilege_escalation_patterns() -
                 location=NormalizedLocation(path="k8s/deployment.yaml", start_line=14, end_line=14),
             ),
         ],
-        baseline_findings=[],
+        baseline_findings=_trusted_baseline(),
         change_context=ParsedChangeContext(
             files=(
                 ParsedFileChange(
@@ -175,7 +188,7 @@ def test_explain_introduced_threats_normalizes_broad_iam_findings() -> None:
                 location=NormalizedLocation(path="infra/main.tf", start_line=10, end_line=10),
             ),
         ],
-        baseline_findings=[],
+        baseline_findings=_trusted_baseline(),
         change_context=ParsedChangeContext(
             files=(
                 ParsedFileChange(

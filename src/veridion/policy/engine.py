@@ -34,6 +34,7 @@ def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None)
     risk, score_adjustments = _apply_policy_score_adjustments(base_risk, bundle, resolved_policy)
 
     reasons = list(risk.reasons)
+    reasons.extend(_baseline_attribution_reasons(bundle))
     reasons.extend(_accepted_risk_reasons(bundle))
     reasons.extend(_historical_context_reasons(bundle))
     reasons.extend(_runtime_context_reasons(bundle))
@@ -105,6 +106,9 @@ def _apply_policy_decision(
             reasons.append("accepted risk governance metadata is incomplete")
         return "CONDITIONAL GO"
 
+    if not bundle.summary.baseline_attribution_trusted and bundle.summary.change_relevant_findings:
+        return "CONDITIONAL GO"
+
     return risk.decision
 
 
@@ -158,6 +162,8 @@ def _recommendations(
 
     if decision == "NO GO":
         recommendations.append("Block release until introduced risk is remediated or policy is adjusted")
+    elif not bundle.summary.baseline_attribution_trusted and bundle.summary.change_relevant_findings:
+        recommendations.append("Repair or refresh baseline scanner outputs before treating changed-file findings as newly introduced risk")
 
     for approval in required_approvals:
         recommendations.append(f"Require approval from the {_approval_label(approval)}")
@@ -194,6 +200,8 @@ def _recommendations(
 
     if risk.features.introduced_high or risk.features.introduced_critical:
         recommendations.append("Prioritize remediation for introduced high-severity findings")
+    elif not bundle.summary.baseline_attribution_trusted and bundle.summary.change_relevant_findings:
+        recommendations.append("Review change-relevant findings manually until baseline attribution is repaired")
 
     if change_context.touches_payments_surface:
         recommendations.append("Verify payment-impact monitoring and rollback safeguards before release")
@@ -416,6 +424,14 @@ def _accepted_risk_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
         reasons.append(f"{bundle.suppression_report.expiring_soon} accepted-risk exception(s) expire soon")
 
     return tuple(reasons)
+
+
+def _baseline_attribution_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
+    if bundle.summary.baseline_attribution_trusted or bundle.summary.change_relevant_findings == 0:
+        return ()
+    return (
+        "baseline attribution is incomplete, so findings in changed files are being treated as change-relevant rather than proven introduced",
+    )
 
 
 def _change_surface_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:

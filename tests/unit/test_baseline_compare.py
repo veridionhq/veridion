@@ -71,4 +71,46 @@ def test_compare_findings_against_baseline_partitions_introduced_existing_and_un
         "python.audit.new",
         "CVE-2025-99999",
     )
+    assert comparison.change_relevant == ()
     assert tuple(finding.rule_id for finding in comparison.unattributed) == ("python.audit.unrelated",)
+    assert comparison.attribution_trusted is True
+
+
+def test_compare_findings_against_baseline_marks_changed_file_findings_as_change_relevant_without_baseline() -> None:
+    current = [
+        NormalizedFinding(
+            source="semgrep",
+            finding_type="code",
+            rule_id="python.audit.new",
+            title="New issue",
+            severity="high",
+            location=NormalizedLocation(path="app/routes.py", start_line=12, end_line=12),
+        ),
+        NormalizedFinding(
+            source="semgrep",
+            finding_type="code",
+            rule_id="python.audit.unrelated",
+            title="Unrelated issue",
+            severity="high",
+            location=NormalizedLocation(path="scripts/maintenance.py", start_line=8, end_line=8),
+        ),
+    ]
+    context = ParsedChangeContext(
+        files=(
+            ParsedFileChange(
+                path="app/routes.py",
+                change_type="modified",
+                added_lines=2,
+                removed_lines=1,
+                signals=("application_code",),
+                previous_path="app/routes.py",
+            ),
+        )
+    )
+
+    comparison = compare_findings_against_baseline(current, [], context)
+
+    assert comparison.introduced == ()
+    assert tuple(finding.rule_id for finding in comparison.change_relevant) == ("python.audit.new",)
+    assert tuple(finding.rule_id for finding in comparison.unattributed) == ("python.audit.unrelated",)
+    assert comparison.attribution_trusted is False

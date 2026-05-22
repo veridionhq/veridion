@@ -99,6 +99,51 @@ def test_render_pr_comment_handles_clean_change_without_approvals() -> None:
     assert comment.endswith("<!-- veridion:rdi:end -->\n")
 
 
+def test_render_pr_comment_downgrades_to_change_relevant_when_baseline_is_missing() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.new",
+                title="New code issue",
+                severity="high",
+                location=NormalizedLocation(path="app/routes.py", start_line=12, end_line=12),
+            )
+        ],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="app/routes.py",
+                    change_type="modified",
+                    added_lines=2,
+                    removed_lines=1,
+                    signals=("application_code",),
+                    previous_path="app/routes.py",
+                ),
+            )
+        ),
+        trust_baseline=TrustBaseline(
+            repo_stability="watch",
+            service_stability="fragile",
+            test_coverage_level="low",
+            rollback_readiness="partial",
+        ),
+    )
+    decision = evaluate_release(bundle, PolicyConfig())
+
+    comment = render_pr_comment(bundle, decision)
+
+    assert "**Summary:** Change-relevant findings: 1 | Existing findings: 0 | Unattributed findings: 0 | Suppressed findings: 0 | Changed files: 1" in comment
+    assert "### Baseline Attribution" in comment
+    assert "baseline scanner evidence is incomplete" in comment
+    assert "### Change-relevant threats" in comment
+    assert "### Key threats" not in comment
+    assert "baseline attribution is incomplete" in comment
+    assert "introduces high code risk" not in comment
+
+
 def test_render_pr_comment_includes_ai_attribution_when_present() -> None:
     bundle_with_ai = build_analysis_bundle(
         current_findings=[],

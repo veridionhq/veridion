@@ -87,7 +87,9 @@ def test_build_analysis_bundle_assembles_deterministic_summary_and_partitions() 
     assert bundle.summary.total_findings == 3
     assert bundle.summary.introduced_findings == 2
     assert bundle.summary.existing_findings == 1
+    assert bundle.summary.change_relevant_findings == 0
     assert bundle.summary.unattributed_findings == 0
+    assert bundle.summary.baseline_attribution_trusted is True
     assert bundle.summary.changed_files == 3
     assert bundle.summary.dependency_changes is True
     assert bundle.summary.lockfile_changes is True
@@ -210,13 +212,17 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
         "baseline_comparison": {
             "introduced": [],
             "existing": [],
+            "change_relevant": [],
             "unattributed": [],
+            "attribution_trusted": True,
         },
         "summary": {
             "total_findings": 0,
             "introduced_findings": 0,
             "existing_findings": 0,
+            "change_relevant_findings": 0,
             "unattributed_findings": 0,
+            "baseline_attribution_trusted": True,
             "changed_files": 0,
             "dependency_changes": False,
             "lockfile_changes": False,
@@ -245,6 +251,38 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "introduced_by_finding_type": {},
         },
     }
+
+
+def test_build_analysis_bundle_surfaces_change_relevant_findings_when_baseline_is_missing() -> None:
+    current = [
+        NormalizedFinding(
+            source="semgrep",
+            finding_type="code",
+            rule_id="python.audit.new",
+            title="New issue",
+            severity="high",
+            location=NormalizedLocation(path="app/routes.py", start_line=12, end_line=12),
+        ),
+    ]
+    change_context = ParsedChangeContext(
+        files=(
+            ParsedFileChange(
+                path="app/routes.py",
+                change_type="modified",
+                added_lines=2,
+                removed_lines=1,
+                signals=("application_code",),
+                previous_path="app/routes.py",
+            ),
+        )
+    )
+
+    bundle = build_analysis_bundle(current, [], change_context)
+
+    assert bundle.summary.introduced_findings == 0
+    assert bundle.summary.change_relevant_findings == 1
+    assert bundle.summary.baseline_attribution_trusted is False
+    assert tuple(finding.rule_id for finding in bundle.baseline_comparison.change_relevant) == ("python.audit.new",)
 
 
 def test_build_analysis_bundle_surfaces_ai_attribution_summary() -> None:

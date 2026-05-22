@@ -28,7 +28,9 @@ class AnalysisSummary:
     total_findings: int
     introduced_findings: int
     existing_findings: int
+    change_relevant_findings: int
     unattributed_findings: int
+    baseline_attribution_trusted: bool
     changed_files: int
     dependency_changes: bool
     lockfile_changes: bool
@@ -173,7 +175,9 @@ def _build_summary(
         total_findings=len(current_findings),
         introduced_findings=len(baseline_comparison.introduced),
         existing_findings=len(baseline_comparison.existing),
+        change_relevant_findings=len(baseline_comparison.change_relevant),
         unattributed_findings=len(baseline_comparison.unattributed),
+        baseline_attribution_trusted=baseline_comparison.attribution_trusted,
         changed_files=len(change_context.files),
         dependency_changes=change_context.has_dependency_changes,
         lockfile_changes=change_context.has_lockfile_changes,
