@@ -144,6 +144,76 @@ def test_render_pr_comment_downgrades_to_change_relevant_when_baseline_is_missin
     assert "introduces high code risk" not in comment
 
 
+def test_render_pr_comment_downgrades_suspicious_present_baseline_to_change_relevant() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.new",
+                title="New code issue",
+                severity="high",
+                location=NormalizedLocation(path="app/routes.py", start_line=12, end_line=12),
+            ),
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.unrelated",
+                title="Unrelated issue",
+                severity="medium",
+                location=NormalizedLocation(path="scripts/maintenance.py", start_line=8, end_line=8),
+            ),
+        ],
+        baseline_findings=[
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.baseline",
+                title="Existing issue elsewhere",
+                severity="low",
+                location=NormalizedLocation(path="legacy/unused.py", start_line=1, end_line=1),
+            )
+        ],
+        change_context=ParsedChangeContext(
+            files=tuple(
+                ParsedFileChange(
+                    path=f"app/file_{index}.py",
+                    change_type="modified",
+                    added_lines=2,
+                    removed_lines=1,
+                    signals=("application_code",),
+                    previous_path=f"app/file_{index}.py",
+                )
+                for index in range(60)
+            )
+            + (
+                ParsedFileChange(
+                    path="app/routes.py",
+                    change_type="modified",
+                    added_lines=2,
+                    removed_lines=1,
+                    signals=("application_code",),
+                    previous_path="app/routes.py",
+                ),
+            )
+        ),
+        trust_baseline=TrustBaseline(
+            repo_stability="watch",
+            service_stability="fragile",
+            test_coverage_level="low",
+            rollback_readiness="partial",
+        ),
+    )
+    decision = evaluate_release(bundle, PolicyConfig())
+
+    comment = render_pr_comment(bundle, decision)
+
+    assert "**Summary:** Change-relevant findings: 1 | Existing findings: 0 | Unattributed findings: 1 | Suppressed findings: 0 | Changed files: 61" in comment
+    assert "### Baseline Attribution" in comment
+    assert "### Change-relevant threats" in comment
+    assert "introduces high code risk" not in comment
+
+
 def test_render_pr_comment_includes_ai_attribution_when_present() -> None:
     bundle_with_ai = build_analysis_bundle(
         current_findings=[],

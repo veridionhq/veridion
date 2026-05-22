@@ -51,6 +51,17 @@ def compare_findings_against_baseline(
         else:
             unattributed.append(finding)
 
+    if _is_suspicious_baseline_attribution(
+        baseline_findings=baseline_findings,
+        changed_paths=changed_paths,
+        introduced=introduced,
+        existing=existing,
+        unattributed=unattributed,
+    ):
+        attribution_trusted = False
+        change_relevant = [*change_relevant, *introduced]
+        introduced = []
+
     return BaselineComparison(
         introduced=tuple(introduced),
         existing=tuple(existing),
@@ -77,3 +88,22 @@ def _is_finding_relevant_to_change(
         return True
 
     return False
+
+
+def _is_suspicious_baseline_attribution(
+    *,
+    baseline_findings: list[NormalizedFinding],
+    changed_paths: set[str],
+    introduced: list[NormalizedFinding],
+    existing: list[NormalizedFinding],
+    unattributed: list[NormalizedFinding],
+) -> bool:
+    if not baseline_findings:
+        return False
+    if existing:
+        return False
+    if not introduced:
+        return False
+    if not unattributed:
+        return False
+    return len(changed_paths) >= 50 or len(unattributed) >= len(introduced)

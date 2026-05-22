@@ -114,3 +114,64 @@ def test_compare_findings_against_baseline_marks_changed_file_findings_as_change
     assert tuple(finding.rule_id for finding in comparison.change_relevant) == ("python.audit.new",)
     assert tuple(finding.rule_id for finding in comparison.unattributed) == ("python.audit.unrelated",)
     assert comparison.attribution_trusted is False
+
+
+def test_compare_findings_against_baseline_downgrades_suspicious_present_baseline_to_change_relevant() -> None:
+    baseline = [
+        NormalizedFinding(
+            source="semgrep",
+            finding_type="code",
+            rule_id="python.audit.baseline",
+            title="Existing issue elsewhere",
+            severity="low",
+            location=NormalizedLocation(path="legacy/unused.py", start_line=1, end_line=1),
+        )
+    ]
+    current = [
+        NormalizedFinding(
+            source="semgrep",
+            finding_type="code",
+            rule_id="python.audit.new",
+            title="New issue",
+            severity="high",
+            location=NormalizedLocation(path="app/routes.py", start_line=12, end_line=12),
+        ),
+        NormalizedFinding(
+            source="semgrep",
+            finding_type="code",
+            rule_id="python.audit.unrelated",
+            title="Unrelated issue",
+            severity="medium",
+            location=NormalizedLocation(path="scripts/maintenance.py", start_line=8, end_line=8),
+        ),
+    ]
+    context = ParsedChangeContext(
+        files=tuple(
+            ParsedFileChange(
+                path=f"app/file_{index}.py",
+                change_type="modified",
+                added_lines=2,
+                removed_lines=1,
+                signals=("application_code",),
+                previous_path=f"app/file_{index}.py",
+            )
+            for index in range(60)
+        )
+        + (
+            ParsedFileChange(
+                path="app/routes.py",
+                change_type="modified",
+                added_lines=2,
+                removed_lines=1,
+                signals=("application_code",),
+                previous_path="app/routes.py",
+            ),
+        )
+    )
+
+    comparison = compare_findings_against_baseline(current, baseline, context)
+
+    assert comparison.introduced == ()
+    assert tuple(finding.rule_id for finding in comparison.change_relevant) == ("python.audit.new",)
+    assert tuple(finding.rule_id for finding in comparison.unattributed) == ("python.audit.unrelated",)
+    assert comparison.attribution_trusted is False
