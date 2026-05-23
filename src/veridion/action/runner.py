@@ -129,6 +129,13 @@ def run_action(
         trust_memory_signals=resolved_context.trust_memory_signals,
         suppression_rules=suppression_rules,
     )
+    report_diagnostics = _build_report_diagnostics(
+        current_reports=current_reports,
+        baseline_reports=baseline_reports or {},
+        current_report_diagnostics=current_report_diagnostics,
+        baseline_report_diagnostics=baseline_report_diagnostics,
+        bundle=bundle,
+    )
     decision = evaluate_release(bundle, policy)
     summarizer = build_comment_summarizer(
         provider=comment_summary_provider,
@@ -142,6 +149,7 @@ def run_action(
         decision,
         summarizer=summarizer,
         summary_style=comment_summary_style,
+        report_diagnostics=report_diagnostics,
     )
     gate = evaluate_gate(decision.decision, allowed_decisions=allowed_decisions)
     decision_contract = build_decision_contract(
@@ -157,13 +165,6 @@ def run_action(
         },
         gate=gate,
         policy_pack_metadata=policy_pack.metadata if policy_pack else None,
-    )
-    report_diagnostics = _build_report_diagnostics(
-        current_reports=current_reports,
-        baseline_reports=baseline_reports or {},
-        current_report_diagnostics=current_report_diagnostics,
-        baseline_report_diagnostics=baseline_report_diagnostics,
-        bundle=bundle,
     )
 
     return ActionResult(

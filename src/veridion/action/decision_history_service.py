@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import html
 import json
+import threading
+import time
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, urlparse
@@ -51,6 +54,24 @@ from veridion.action.history_identity import jwt_auth_enabled, resolve_bearer_id
 API_VERSION = "v1"
 APP_SESSION_COOKIE = "veridion_app_bearer"
 APP_SESSION_ID_COOKIE = "veridion_app_session_id"
+
+# Login rate limiting (F-05): max attempts per IP within the sliding window.
+_LOGIN_RATE_LIMIT = 10
+_LOGIN_RATE_WINDOW = 60.0  # seconds
+_LOGIN_ATTEMPTS: dict[str, tuple[int, float]] = {}
+_LOGIN_LOCK = threading.Lock()
+
+
+def _check_login_rate(key: str) -> bool:
+    """Return True if the request is allowed, False if it exceeds the rate limit."""
+    now = time.monotonic()
+    with _LOGIN_LOCK:
+        count, window_start = _LOGIN_ATTEMPTS.get(key, (0, now))
+        if now - window_start >= _LOGIN_RATE_WINDOW:
+            count, window_start = 0, now
+        count += 1
+        _LOGIN_ATTEMPTS[key] = (count, window_start)
+        return count <= _LOGIN_RATE_LIMIT
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -784,6 +805,20 @@ def _select_history_paths(
     return history_paths
 
 
+def _session_not_expired(session: dict[str, str]) -> bool:
+    """Return True if the session has no expiry or its expiry is in the future (F-03)."""
+    expires_at = str(session.get("expires_at", "")).strip()
+    if not expires_at:
+        return True
+    try:
+        exp = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) < exp
+    except ValueError:
+        return True
+
+
 def _authorize_request(
     *,
     headers: dict[str, str],
@@ -807,7 +842,7 @@ def _authorize_request(
             session_id = _cookie_value(headers, APP_SESSION_ID_COOKIE)
             if session_id:
                 session = get_service_session(sqlite_path=sqlite_path, store_dsn=store_dsn, session_id=session_id)
-                if session is not None and str(session.get("status", "active")) == "active":
+                if session is not None and str(session.get("status", "active")) == "active" and _session_not_expired(session):
                     scoped = HistoryToken(
                         token=session_id,
                         token_id=str(session.get("user_id", "") or session.get("session_id", "")),
@@ -1006,7 +1041,7 @@ def _build_overview_payload(
 def _browser_auth_mode_label(jwt_config: JWTAuthConfig, trusted_header_auth: TrustedHeaderAuthConfig) -> str:
     if trusted_header_auth.enabled:
         return "Managed browser sign-in through trusted gateway headers is active."
-    if jwt_auth_enabled(jwt_config) or str(jwt_config.oidc_discovery_url).strip():
+    if jwt_auth_enabled(jwt_config):
         return "Managed browser sign-in through JWT or OIDC is ready."
     return "Paste an operator token once to bridge into a browser session."
 
@@ -1095,6 +1130,7 @@ def _handle_post_request(
             api_version=api_version,
             service_name=service_name,
             jwt_config=jwt_config,
+            trusted_header_auth=trusted_header_auth,
         )
     if path == "/admin/tenants":
         try:
@@ -1419,6 +1455,7 @@ def _handle_app_post_request(
     api_version: str,
     service_name: str,
     jwt_config: JWTAuthConfig,
+    trusted_header_auth: TrustedHeaderAuthConfig | None = None,
 ) -> tuple[int, dict[str, object]]:
     payload = _parse_form_payload(body, headers)
     action = _body_string(payload, "action")
@@ -1677,8 +1714,12 @@ def _handle_app_post_request(
             criticality=_body_string(payload, "service_criticality"),
             client_id=_body_string(payload, "producer_client"),
             service_url=(
+                # Only derive the URL from forwarded headers when the trusted-header auth
+                # mechanism is active (already validates via shared secret), so an arbitrary
+                # client cannot spoof the service URL shown in setup snippets (F-04).
                 f"{headers.get('X-Forwarded-Proto', '').strip()}://{headers.get('Host', '').strip()}"
-                if headers.get("X-Forwarded-Proto", "").strip() and headers.get("Host", "").strip()
+                if trusted_header_auth is not None and trusted_header_auth.enabled
+                and headers.get("X-Forwarded-Proto", "").strip() and headers.get("Host", "").strip()
                 else ""
             ),
             api_version=api_version,
@@ -1717,6 +1758,14 @@ def _handle_app_login_post_request(
     api_version: str,
     service_name: str,
 ) -> tuple[int, dict[str, object]]:
+    # Rate-limit login attempts by client IP (F-05: brute-force protection).
+    client_ip = (
+        headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        or headers.get("X-Real-IP", "").strip()
+        or "global"
+    )
+    if not _check_login_rate(client_ip):
+        return (429, {"error": "too_many_requests"})
     payload = _parse_form_payload(body, headers)
     token = _body_string(payload, "token")
     tenant_id = _body_string(payload, "tenant_id")
@@ -2257,7 +2306,19 @@ def _event_pack_summary(event: dict[str, object]) -> str:
     return f"{pack_id} / {pack_version} / {rollout_stage}"
 
 
+def _event_reason_lines(event: dict[str, object]) -> tuple[str, ...]:
+    reasons = event.get("reasons")
+    if not isinstance(reasons, dict):
+        return ()
+    blocking = reasons.get("blocking")
+    if not isinstance(blocking, list):
+        return ()
+    return tuple(str(item).strip() for item in blocking if str(item).strip())
+
+
 def _event_evidence_status(event: dict[str, object]) -> str:
+    if any("baseline attribution is incomplete" in line for line in _event_reason_lines(event)):
+        return "degraded attribution confidence"
     gate = _event_gate_status(event).lower()
     verdict = _event_verdict(event).upper()
     if gate == "block" or verdict == "NO GO":
@@ -2270,6 +2331,8 @@ def _event_evidence_status(event: dict[str, object]) -> str:
 
 
 def _event_verify_next(event: dict[str, object]) -> str:
+    if any("baseline attribution is incomplete" in line for line in _event_reason_lines(event)):
+        return "Repair baseline scanner outputs and verify the same finding against the correct base before relying on introduction claims."
     gate = _event_gate_status(event).lower()
     blocking_categories = _event_blocking_categories(event)
     if gate == "block" or _event_verdict(event).upper() == "NO GO":
@@ -2696,6 +2759,11 @@ def render_app_login_html(
         if managed_identity_ready
         else "Paste an operator token once to bridge into a browser session."
     )
+    managed_continue = (
+        f"<a class='btn-managed' href='{_html_escape(next_path)}'>Continue With Managed Sign-In</a>"
+        if managed_identity_ready and not auto_redirect
+        else ""
+    )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -2787,6 +2855,13 @@ def render_app_login_html(
     }}
     .btn-primary:hover {{ background: #c05520; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(179,75,24,.50); }}
     .btn-primary:active {{ transform: translateY(0); }}
+    .btn-managed {{
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 100%; border: 1px solid rgba(24,22,16,.16); border-radius: 8px;
+      padding: .78rem 1rem; background: transparent; color: #161710; text-decoration: none;
+      font-weight: 600; margin-top: .7rem;
+    }}
+    .btn-managed:hover {{ border-color: #161710; text-decoration: none; }}
     .divider {{ border: none; border-top: 1px solid rgba(24,22,16,.09); margin: 1.25rem 0; }}
     .actions {{ display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; font-size: .87rem; }}
     a {{ color: #b34b18; text-decoration: none; }}
@@ -2825,6 +2900,7 @@ def render_app_login_html(
         <input type="hidden" name="next" value="{_html_escape(next_path)}">
         <button class="btn-primary" type="submit">Sign In</button>
       </form>
+      {managed_continue}
       <p class="hint">{_html_escape(tenant_hint)}</p>
       <p class="hint">{_html_escape(auth_hint)}</p>
       <p class="hint">This form accepts the raw token value. If you paste a value that starts with <span class="mono">Bearer </span>, the app strips the prefix for you.</p>

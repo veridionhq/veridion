@@ -207,6 +207,7 @@ def test_decision_history_service_app_login_uses_session_cookie(tmp_path) -> Non
     assert login_page_status == 200
     assert "Sign In To The Control Plane" in login_page["html"]
     assert "Operator Token Or JWT" in login_page["html"]
+    assert "Paste an operator token once to bridge into a browser session." in login_page["html"]
     assert login_status == 200
     assert "Signed in. Redirecting to the hosted app." in login_payload["html"]
     assert "veridion_app_bearer=" in cookie_header
@@ -1539,6 +1540,60 @@ def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path)
     assert "Dedicated service page" in service_page["data"]["html"]
     assert "Decision Guidance" in service_page["data"]["html"]
     assert "Recent Decisions" in service_page["data"]["html"]
+
+
+def test_decision_history_service_focus_pages_surface_degraded_attribution_guidance(tmp_path) -> None:
+    sqlite_path = tmp_path / "history.db"
+    admin = {"Authorization": "Bearer admin"}
+    scoped = {"admin": HistoryToken(token="admin", tenants=("acme",), roles=("admin",), principal_name="Admin One", token_id="admin-1")}
+
+    resolve_history_request(
+        "/api/v1/admin/tenants",
+        method="POST",
+        body=json.dumps({"tenant_id": "acme", "display_name": "Acme", "organization_name": "Acme Org"}),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+    resolve_history_request(
+        "/api/v1/events",
+        method="POST",
+        body=json.dumps(
+            {
+                "tenant": "acme",
+                "event": {
+                    "generated_at": "2026-05-14T12:00:00Z",
+                    "repository": "acme/service-a",
+                    "organization": "acme",
+                    "project": "acme/service-a",
+                    "service": "service-a",
+                    "decision": {"verdict": "CONDITIONAL GO", "gate_status": "review", "blocking_categories": []},
+                    "automation": {"approval_gate_status": "pending", "stale_approvals": []},
+                    "policy": {"pack_id": "app", "pack_version": "1", "rollout_stage": "general"},
+                    "reasons": {"blocking": ["baseline attribution is incomplete, so findings in changed files are being treated as change-relevant rather than proven introduced"]},
+                    "trust_context": {"service_owner": "payments-owner", "owning_team": "payments", "service_criticality": "high"},
+                },
+            }
+        ),
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+
+    repo_page_status, repo_page = resolve_history_request(
+        "/api/v1/app/repository?tenant=acme&repository=acme/service-a",
+        history_paths=(),
+        sqlite_path=str(sqlite_path),
+        headers=admin,
+        scoped_tokens=scoped,
+    )
+
+    assert repo_page_status == 200
+    assert "Evidence Status" in repo_page["data"]["html"]
+    assert "degraded attribution confidence" in repo_page["data"]["html"]
+    assert "Repair baseline scanner outputs and verify the same finding against the correct base before relying on introduction claims." in repo_page["data"]["html"]
 
 
 def _build_test_jwt(*, secret: str, payload: dict[str, object]) -> str:

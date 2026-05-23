@@ -168,6 +168,9 @@ def test_run_action_surfaces_suspicious_baseline_diagnostics() -> None:
     assert diagnostics["likely_cause"] == "baseline_reports_missing_or_empty"
     assert diagnostics["zero_finding_baseline_tools"] == ["semgrep"]
     assert "### Baseline Attribution" in result.comment_markdown
+    assert "### Report Health" in result.comment_markdown
+    assert "- attribution mode: missing_baseline" in result.comment_markdown
+    assert "- baseline tools with zero normalized findings: semgrep" in result.comment_markdown
     assert "one or more baseline scanner reports were missing or normalized to zero findings" in result.comment_markdown
 
 

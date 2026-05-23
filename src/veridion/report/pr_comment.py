@@ -56,12 +56,14 @@ def render_pr_comment(
     *,
     summarizer: CommentSummarizer | None = None,
     summary_style: str = "terse",
+    report_diagnostics: dict[str, object] | None = None,
 ) -> str:
     return render_pr_comment_result(
         bundle,
         decision,
         summarizer=summarizer,
         summary_style=summary_style,
+        report_diagnostics=report_diagnostics,
     ).markdown
 
 
@@ -71,6 +73,7 @@ def render_pr_comment_result(
     *,
     summarizer: CommentSummarizer | None = None,
     summary_style: str = "terse",
+    report_diagnostics: dict[str, object] | None = None,
 ) -> RenderedComment:
     """Render a deterministic PR comment for the current release decision."""
 
@@ -124,6 +127,8 @@ def render_pr_comment_result(
         lines.extend(_section("Key Context", key_context))
     if attribution_untrusted:
         lines.extend(_section("Baseline Attribution", _baseline_attribution_lines(bundle)))
+        if report_diagnostics:
+            lines.extend(_section("Report Health", _report_health_lines(report_diagnostics)))
     if bundle.summary.suppressed_findings or bundle.summary.expired_suppressions:
         lines.extend(_section("Accepted Risk", _format_suppressions(bundle)))
 
@@ -677,6 +682,29 @@ def _baseline_attribution_lines(bundle: AnalysisBundle) -> tuple[str, ...]:
     elif bundle.summary.baseline_attribution_likely_cause == "baseline_reports_missing_or_empty":
         lines.append("one or more baseline scanner reports were missing or normalized to zero findings")
     return tuple(lines)
+
+
+def _report_health_lines(report_diagnostics: dict[str, object]) -> tuple[str, ...]:
+    items: list[str] = []
+    attribution_mode = str(report_diagnostics.get("attribution_mode", "")).strip()
+    likely_cause = str(report_diagnostics.get("likely_cause", "")).strip()
+    baseline_tools = report_diagnostics.get("baseline_report_tools")
+    zero_finding_tools = report_diagnostics.get("zero_finding_baseline_tools")
+    missing_tools = report_diagnostics.get("missing_baseline_tools")
+    current_tools = report_diagnostics.get("current_report_tools")
+    if attribution_mode:
+        items.append(f"attribution mode: {attribution_mode}")
+    if likely_cause:
+        items.append(f"likely cause: {likely_cause}")
+    if isinstance(current_tools, list) and current_tools:
+        items.append("current tools: " + ", ".join(str(item) for item in current_tools))
+    if isinstance(baseline_tools, list):
+        items.append("baseline tools: " + (", ".join(str(item) for item in baseline_tools) if baseline_tools else "none"))
+    if isinstance(zero_finding_tools, list) and zero_finding_tools:
+        items.append("baseline tools with zero normalized findings: " + ", ".join(str(item) for item in zero_finding_tools))
+    if isinstance(missing_tools, list) and missing_tools:
+        items.append("missing baseline tools: " + ", ".join(str(item) for item in missing_tools))
+    return tuple(items)
 
 
 def _is_clean_review_case(bundle: AnalysisBundle, decision: PolicyDecision) -> bool:

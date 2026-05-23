@@ -74,6 +74,44 @@ jobs:
           assert payload["report_diagnostics"]["attribution_mode"] == "trusted"
           Path("smoke-artifacts/veridion-result.json").write_text(json.dumps(payload, indent=2) + "\n")
           Path("smoke-artifacts/veridion-comment.md").write_text(result.comment_markdown)
+          suspicious = run_action(
+              diff_text="\n".join(
+                  [
+                      *(
+                          line
+                          for index in range(30)
+                          for line in (
+                              f"diff --git a/app/file_{index}.py b/app/file_{index}.py",
+                              f"--- a/app/file_{index}.py",
+                              f"+++ b/app/file_{index}.py",
+                              "@@ -1 +1 @@",
+                              "-pass",
+                              "+print('changed')",
+                          )
+                      ),
+                      "diff --git a/app/routes.py b/app/routes.py",
+                      "--- a/app/routes.py",
+                      "+++ b/app/routes.py",
+                      "@@ -1 +1 @@",
+                      "-pass",
+                      "+danger()",
+                  ]
+              ),
+              current_reports={
+                  "semgrep": "tests/fixtures/scanners/semgrep_report.json",
+              },
+              baseline_reports={
+                  "semgrep": "tests/fixtures/scanners/semgrep_baseline_empty.json",
+              },
+              policy_text=None,
+          )
+          suspicious_payload = suspicious.to_dict()
+          assert suspicious_payload["report_diagnostics"]["attribution_trusted"] is False
+          assert suspicious_payload["report_diagnostics"]["attribution_mode"] == "missing_baseline"
+          assert suspicious_payload["report_diagnostics"]["zero_finding_baseline_tools"] == ["semgrep"]
+          assert "### Report Health" in suspicious.comment_markdown
+          Path("smoke-artifacts/veridion-result-suspicious.json").write_text(json.dumps(suspicious_payload, indent=2) + "\n")
+          Path("smoke-artifacts/veridion-comment-suspicious.md").write_text(suspicious.comment_markdown)
           PY
 
       - name: Upload hosted smoke artifacts
