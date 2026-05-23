@@ -16,6 +16,7 @@ class RiskFeatures:
     introduced_high: int
     introduced_medium: int
     introduced_low: int
+    introduced_high_epss: int
     introduced_code_findings: int
     introduced_dependency_findings: int
     changed_files: int
@@ -58,6 +59,7 @@ def extract_risk_features(bundle: AnalysisBundle) -> RiskFeatures:
         introduced_high=_count_introduced_with_severity(bundle, "high"),
         introduced_medium=_count_introduced_with_severity(bundle, "medium"),
         introduced_low=_count_introduced_with_severity(bundle, "low"),
+        introduced_high_epss=_count_introduced_with_high_epss(bundle),
         introduced_code_findings=_count_introduced_with_type(bundle, "code"),
         introduced_dependency_findings=_count_introduced_with_type(bundle, "dependency"),
         changed_files=bundle.summary.changed_files,
@@ -79,10 +81,7 @@ def extract_risk_features(bundle: AnalysisBundle) -> RiskFeatures:
 
 
 def score_analysis_bundle(bundle: AnalysisBundle) -> RdiResult:
-    """Assign an explainable RDI score and release decision.
-
-    CVSS and EPSS are captured in the normalized model but not yet applied in scoring.
-    """
+    """Assign an explainable RDI score and release decision."""
 
     features = extract_risk_features(bundle)
     score = 100
@@ -91,6 +90,12 @@ def score_analysis_bundle(bundle: AnalysisBundle) -> RdiResult:
     score -= features.introduced_high * 20
     score -= features.introduced_medium * 8
     score -= features.introduced_low * 3
+
+    # EPSS supplement: introduced findings with high exploitation probability (EPSS ≥ 0.5)
+    # add an extra penalty on top of the severity-based penalty, because active exploitation
+    # in the wild is qualitatively worse than a theoretical vulnerability.
+    if features.introduced_high_epss:
+        score -= features.introduced_high_epss * 8
 
     if features.has_infrastructure_changes and features.introduced_findings:
         score -= 10
@@ -148,6 +153,13 @@ def _count_introduced_with_severity(bundle: AnalysisBundle, severity: str) -> in
 
 def _count_introduced_with_type(bundle: AnalysisBundle, finding_type: str) -> int:
     return sum(1 for finding in bundle.baseline_comparison.introduced if finding.finding_type == finding_type)
+
+
+def _count_introduced_with_high_epss(bundle: AnalysisBundle) -> int:
+    return sum(
+        1 for finding in bundle.baseline_comparison.introduced
+        if finding.epss_score is not None and finding.epss_score >= 0.5
+    )
 
 
 def _derive_decision(score: int, features: RiskFeatures) -> str:
@@ -232,6 +244,9 @@ def _derive_reasons(features: RiskFeatures) -> tuple[str, ...]:
         reasons.append(_issue_count_reason(features.introduced_medium, "medium-severity"))
     if features.introduced_low:
         reasons.append(_issue_count_reason(features.introduced_low, "low-severity"))
+    if features.introduced_high_epss:
+        noun = "finding" if features.introduced_high_epss == 1 else "findings"
+        reasons.append(f"{features.introduced_high_epss} introduced {noun} with elevated exploitation probability (EPSS ≥ 50%)")
     if features.has_infrastructure_changes and features.introduced_findings:
         reasons.append("the change includes infrastructure updates")
     if features.introduced_dependency_findings:
