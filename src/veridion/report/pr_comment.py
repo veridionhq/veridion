@@ -82,7 +82,7 @@ def render_pr_comment_result(
     lines.append("## Release Decision Intelligence")
     lines.append("")
     lines.append(f"### {_decision_icon(decision.decision)} {decision.decision}")
-    lines.append(f"**RDI Score:** {decision.score} | **Confidence:** {decision.confidence.upper()}")
+    lines.append(f"**RDI Score:** {decision.score} | **Confidence:** {_confidence_display(decision)}")
     lines.append("")
 
     attribution_untrusted = not bundle.summary.baseline_attribution_trusted
@@ -122,7 +122,10 @@ def render_pr_comment_result(
     # so engineers see who must approve and what to fix before reading context and reasons.
     if decision.decision != "GO":
         if decision.required_approvals:
-            approvals = tuple(_format_approval(name) for name in decision.required_approvals)
+            approvals = tuple(
+                _format_approval_with_triggers(name, decision.required_approval_triggers)
+                for name in decision.required_approvals
+            )
             lines.extend(_section("Required Approvals", approvals))
         lines.extend(
             _section(
@@ -192,6 +195,16 @@ def wrap_pr_comment(body: str) -> str:
     return f"{COMMENT_MARKER_START}\n{body.rstrip()}\n{COMMENT_MARKER_END}\n"
 
 
+def _confidence_display(decision: PolicyDecision) -> str:
+    label = decision.confidence.upper()
+    reason = decision.risk.confidence_ceiling_reason
+    if reason == "missing_baseline":
+        return f"{label} (limited: baseline unavailable)"
+    if reason == "suspicious_baseline":
+        return f"{label} (limited: baseline comparison unreliable)"
+    return label
+
+
 def _decision_icon(decision: str) -> str:
     icons = {
         "NO GO": "❌",
@@ -213,6 +226,15 @@ def _section(title: str, items: tuple[str, ...] | list[str]) -> list[str]:
 
 def _format_approval(value: str) -> str:
     return format_approval_label(value)
+
+
+def _format_approval_with_triggers(role: str, triggers_by_role: dict[str, tuple[str, ...]]) -> str:
+    label = format_approval_label(role)
+    triggers = triggers_by_role.get(role, ())
+    if not triggers:
+        return label
+    trigger_text = ", ".join(t.replace("_", " ") for t in triggers)
+    return f"{label} (required: {trigger_text})"
 
 
 def _drivers_title(decision: str) -> str:

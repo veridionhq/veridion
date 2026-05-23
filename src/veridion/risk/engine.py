@@ -42,6 +42,7 @@ class RdiResult:
     score: int
     decision: str
     confidence: str
+    confidence_ceiling_reason: str
     reasons: tuple[str, ...]
     features: RiskFeatures
 
@@ -128,13 +129,14 @@ def score_analysis_bundle(bundle: AnalysisBundle) -> RdiResult:
     score = max(0, min(100, score))
 
     decision = _derive_decision(score, features)
-    confidence = _derive_confidence(bundle, features)
+    confidence, confidence_ceiling_reason = _derive_confidence(bundle, features)
     reasons = _derive_reasons(features)
 
     return RdiResult(
         score=score,
         decision=decision,
         confidence=confidence,
+        confidence_ceiling_reason=confidence_ceiling_reason,
         reasons=reasons,
         features=features,
     )
@@ -162,7 +164,12 @@ def _derive_decision(score: int, features: RiskFeatures) -> str:
     return "GO"
 
 
-def _derive_confidence(bundle: AnalysisBundle, features: RiskFeatures) -> str:
+def _derive_confidence(bundle: AnalysisBundle, features: RiskFeatures) -> tuple[str, str]:
+    """Return (confidence, ceiling_reason).
+
+    ceiling_reason is a short label explaining why confidence was capped, or ""
+    when the evidence count alone determines the level.
+    """
     evidence_count = 0
 
     if features.changed_files:
@@ -188,23 +195,30 @@ def _derive_confidence(bundle: AnalysisBundle, features: RiskFeatures) -> str:
     return _apply_confidence_ceiling(base, bundle)
 
 
-def _apply_confidence_ceiling(confidence: str, bundle: AnalysisBundle) -> str:
-    """Cap confidence when critical evidence is absent or unreliable.
+def _apply_confidence_ceiling(confidence: str, bundle: AnalysisBundle) -> tuple[str, str]:
+    """Return (effective_confidence, ceiling_reason).
 
-    The evidence count above measures how much we know about the change; this
-    ceiling measures how much we can trust what we know.  Missing baseline means
-    we cannot prove which findings are newly introduced, so the best we can
+    The evidence count measures how much we know about the change; this ceiling
+    measures how much we can trust what we know.  Missing or unreliable baseline
+    means we cannot prove which findings are newly introduced, so the best we can
     honestly claim is medium even when there is plenty of change evidence.
     """
     ceiling = "high"
+    ceiling_reason = ""
 
     if bundle.summary.baseline_attribution_mode == "missing_baseline" and bundle.summary.total_findings:
         ceiling = "medium"
+        ceiling_reason = "missing_baseline"
     elif bundle.summary.baseline_attribution_mode == "suspicious_present_baseline":
         ceiling = "medium"
+        ceiling_reason = "suspicious_baseline"
 
     order = {"low": 0, "medium": 1, "high": 2}
-    return confidence if order[confidence] <= order[ceiling] else ceiling
+    effective = confidence if order[confidence] <= order[ceiling] else ceiling
+    # Surface the ceiling reason whenever a ceiling is in effect, even if the evidence
+    # count didn't reach "high" on its own — callers can explain *why* high is unreachable.
+    active_reason = ceiling_reason if ceiling_reason else ""
+    return effective, active_reason
 
 
 def _derive_reasons(features: RiskFeatures) -> tuple[str, ...]:

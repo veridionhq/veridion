@@ -230,6 +230,110 @@ def test_run_action_accepts_versioned_operational_context_artifact() -> None:
     assert "- SRE owner" in result.comment_markdown
 
 
+def test_run_action_produces_go_for_clean_change_with_trusted_baseline() -> None:
+    """A change with no introduced findings and a trusted baseline should GO.
+
+    This is the baseline-comparison happy path: the same finding appears in both
+    current and baseline, so it is classified as 'existing' rather than
+    'introduced', and the decision is GO.
+    """
+    diff_text = "\n".join([
+        "diff --git a/app/routes.py b/app/routes.py",
+        "--- a/app/routes.py",
+        "+++ b/app/routes.py",
+        "@@ -1,3 +1,4 @@",
+        " from flask import Flask",
+        "+app = Flask(__name__)",
+        " ",
+        " def index():",
+    ])
+
+    result = run_action(
+        diff_text=diff_text,
+        current_reports={"semgrep": "tests/fixtures/scanners/semgrep_report.json"},
+        baseline_reports={"semgrep": "tests/fixtures/scanners/semgrep_report.json"},
+        policy_text=None,
+    )
+
+    assert result.decision.decision == "GO"
+    assert result.bundle.summary.introduced_findings == 0
+    assert result.bundle.summary.existing_findings >= 1
+    assert result.bundle.summary.baseline_attribution_trusted is True
+    assert result.bundle.summary.baseline_attribution_mode == "trusted"
+    assert result.gate_status == "pass"
+    assert result.decision_allowed is True
+    assert result.decision.confidence == "high"
+    assert "### ✅ GO" in result.comment_markdown
+    assert "### Required Approvals" not in result.comment_markdown
+    assert "no introduced findings detected" in result.comment_markdown
+
+
+def test_run_action_comment_surfaces_approvals_and_next_steps_before_reasons() -> None:
+    """For NO GO decisions, approvals and next steps must appear before the reasons section.
+
+    Engineers reading a blocked PR comment should see the unblock path immediately
+    rather than having to scroll through context, reasons, and threat details first.
+    """
+    diff_text = Path("tests/fixtures/diffs/sample_pr.diff").read_text()
+    current_reports = {
+        "trivy": "tests/fixtures/scanners/trivy_report.json",
+        "semgrep": "tests/fixtures/scanners/semgrep_report.json",
+        "grype": "tests/fixtures/scanners/grype_report.json",
+        "syft": "tests/fixtures/scanners/syft_report.json",
+    }
+    baseline_reports = {"semgrep": "tests/fixtures/scanners/semgrep_report.json"}
+    policy_text = Path("tests/fixtures/policies/default_policy.yaml").read_text()
+
+    result = run_action(
+        diff_text=diff_text,
+        current_reports=current_reports,
+        baseline_reports=baseline_reports,
+        policy_text=policy_text,
+    )
+
+    comment = result.comment_markdown
+    assert result.decision.decision == "NO GO"
+    assert "### Required Approvals" in comment
+    assert "### What must happen next" in comment
+    assert "### Why this is blocked" in comment
+    # The unblock path must appear before the reasons section
+    assert comment.index("### Required Approvals") < comment.index("### Why this is blocked")
+    assert comment.index("### What must happen next") < comment.index("### Why this is blocked")
+    # And approvals before next steps
+    assert comment.index("### Required Approvals") < comment.index("### What must happen next")
+
+
+def test_run_action_caps_confidence_when_baseline_missing_with_findings() -> None:
+    """When baseline reports are absent but current findings exist, confidence is capped.
+
+    Without a baseline we cannot verify which findings are newly introduced,
+    so the system must not claim high confidence in the decision.
+    """
+    diff_text = "\n".join([
+        "diff --git a/app/routes.py b/app/routes.py",
+        "--- a/app/routes.py",
+        "+++ b/app/routes.py",
+        "@@ -1 +1,2 @@",
+        " from flask import Flask",
+        "+app = Flask(__name__)",
+    ])
+
+    result = run_action(
+        diff_text=diff_text,
+        current_reports={"semgrep": "tests/fixtures/scanners/semgrep_report.json"},
+        baseline_reports={},
+        policy_text=None,
+    )
+
+    assert result.bundle.summary.baseline_attribution_trusted is False
+    assert result.bundle.summary.baseline_attribution_mode == "missing_baseline"
+    assert result.bundle.summary.total_findings >= 1
+    assert result.decision.confidence == "medium"
+    assert result.decision.risk.confidence_ceiling_reason == "missing_baseline"
+    assert "### Baseline Attribution" in result.comment_markdown
+    assert "MEDIUM (limited: baseline unavailable)" in result.comment_markdown
+
+
 def test_run_action_applies_accepted_risk_suppressions() -> None:
     diff_text = Path("tests/fixtures/diffs/sample_pr.diff").read_text()
     current_reports = {

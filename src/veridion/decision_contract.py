@@ -103,6 +103,10 @@ def build_decision_contract(
         "actions": {
             "required_approvals": list(decision.required_approvals),
             "required_approval_labels": [_format_approval(value) for value in decision.required_approvals],
+            "required_approval_triggers": {
+                role: list(triggers)
+                for role, triggers in decision.required_approval_triggers.items()
+            },
             "required_next_steps": list(required_next_steps),
             "advisory_guidance": list(advisory_guidance),
             "all_recommendations": list(decision.recommendations),

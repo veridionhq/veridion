@@ -1114,6 +1114,76 @@ def _bundle_with_iac_and_dependency_risk():
     )
 
 
+def test_evaluate_release_populates_required_approval_triggers() -> None:
+    """Each required approval role must carry the policy triggers that caused it.
+
+    This allows callers to render 'security owner (required: dependency changes,
+    public exposure)' so approvers understand *what* they are signing off on.
+    """
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="trivy",
+                finding_type="dependency",
+                rule_id="CVE-2026-99",
+                title="Vulnerable dep",
+                severity="high",
+                package_name="urllib3",
+                package_version="2.0.0",
+                location=NormalizedLocation(path="/workspace/requirements.txt"),
+            )
+        ],
+        baseline_findings=[
+            NormalizedFinding(
+                source="trivy",
+                finding_type="dependency",
+                rule_id="CVE-2025-00",
+                title="Pre-existing dep",
+                severity="low",
+                package_name="requests",
+                package_version="2.28.0",
+                location=NormalizedLocation(path="/workspace/requirements.txt"),
+            )
+        ],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=0,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+                ParsedFileChange(
+                    path="k8s/deploy.yaml",
+                    change_type="modified",
+                    added_lines=2,
+                    removed_lines=0,
+                    signals=("infrastructure",),
+                    previous_path="k8s/deploy.yaml",
+                ),
+            )
+        ),
+        runtime_signals=RuntimeSignals(environment="production", public_exposure=True),
+    )
+    policy = PolicyConfig(
+        require_approval_for=("production_iac", "dependency_changes"),
+        require_security_owner_for=("public_exposure",),
+    )
+
+    decision = evaluate_release(bundle, policy)
+
+    assert "platform_owner" in decision.required_approvals
+    assert "security_owner" in decision.required_approvals
+    # platform_owner triggered by production_iac (infrastructure change)
+    assert "production_iac" in decision.required_approval_triggers.get("platform_owner", ())
+    # security_owner triggered by both dependency_changes and public_exposure
+    security_triggers = decision.required_approval_triggers.get("security_owner", ())
+    assert "dependency_changes" in security_triggers
+    assert "public_exposure" in security_triggers
+
+
 def _bundle_with_single_high_code_issue():
     return build_analysis_bundle(
         current_findings=[
