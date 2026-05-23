@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from veridion.action.bootstrap import build_bootstrap_files
 from veridion.action.runner import run_action
 from veridion.context import build_operational_context_artifact
 
@@ -268,6 +269,8 @@ def test_run_action_produces_go_for_clean_change_with_trusted_baseline() -> None
     assert result.gate_status == "pass"
     assert result.decision_allowed is True
     assert result.decision.confidence == "high"
+    assert result.decision.risk.confidence_ceiling_reason == ""
+    assert result.to_dict()["decision_contract"]["decision"]["confidence_ceiling_reason"] == ""
     assert "### ✅ GO" in result.comment_markdown
     assert "### Required Approvals" not in result.comment_markdown
     assert "no introduced findings detected" in result.comment_markdown
@@ -337,6 +340,7 @@ def test_run_action_caps_confidence_when_baseline_missing_with_findings() -> Non
     assert result.decision.risk.confidence_ceiling_reason == "missing_baseline"
     assert "### Baseline Attribution" in result.comment_markdown
     assert "MEDIUM (limited: baseline unavailable)" in result.comment_markdown
+    assert result.to_dict()["decision_contract"]["decision"]["confidence_ceiling_reason"] == "missing_baseline"
 
 
 def test_run_action_applies_accepted_risk_suppressions() -> None:
@@ -476,4 +480,55 @@ def test_run_action_produces_conditional_go_for_introduced_high_severity() -> No
     contract = result.to_dict()["decision_contract"]
     assert contract["decision"]["verdict"] == "CONDITIONAL GO"
     assert contract["decision"]["gate_status"] == "review"
+    assert contract["decision"]["confidence_ceiling_reason"] == ""
     assert contract["actions"]["required_approval_triggers"]["security_owner"] == ["dependency_changes"]
+
+
+def test_run_action_bootstrap_preset_produces_valid_pipeline_decision() -> None:
+    """Bootstrap-generated policy packs must be accepted by the runner pipeline.
+
+    This test ensures that the starter preset produced by 'veridion bootstrap' wires
+    through the full pipeline without error and yields a recognizable release decision.
+    Any schema drift between the bootstrap output and policy engine would surface here.
+    """
+    files = build_bootstrap_files(
+        preset="application-team",
+        repo_id="acme/payments",
+        service_id="payments/api",
+        team_id="platform-trust",
+    )
+    policy_text = files[".veridion/policy.yaml"]
+
+    result = run_action(
+        diff_text="\n".join([
+            "diff --git a/requirements.txt b/requirements.txt",
+            "--- a/requirements.txt",
+            "+++ b/requirements.txt",
+            "@@ -1 +1 @@",
+            "-requests==2.0.0",
+            "+requests==2.31.0",
+        ]),
+        current_reports={
+            "semgrep": "tests/fixtures/scanners/semgrep_report.json",
+            "grype": "tests/fixtures/scanners/grype_report.json",
+        },
+        baseline_reports={
+            "semgrep": "tests/fixtures/scanners/semgrep_report.json",
+        },
+        policy_text=policy_text,
+    )
+
+    # application-team preset has no_go_below_score=60 and max_severity=critical;
+    # grype introduces a high (not critical) finding → score should land above 60
+    assert result.decision.decision in {"CONDITIONAL GO", "GO"}
+    assert result.decision.score >= 60
+    assert result.decision.confidence in {"low", "medium", "high"}
+    # Dependency approval gating is wired in the preset
+    assert "security_owner" in result.decision.required_approvals
+    # Decision contract is well-formed
+    contract = result.to_dict()["decision_contract"]
+    assert contract["schema_version"] == 1
+    assert contract["decision"]["verdict"] in {"CONDITIONAL GO", "GO"}
+    assert "confidence_ceiling_reason" in contract["decision"]
+    assert isinstance(contract["actions"]["required_approval_triggers"], dict)
+    assert result.to_dict()["comment_summary"]["mode"] == "deterministic"

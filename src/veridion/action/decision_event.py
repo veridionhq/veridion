@@ -45,6 +45,7 @@ def build_decision_event(
             "verdict": decision.get("verdict", ""),
             "score": decision.get("score"),
             "confidence": decision.get("confidence", ""),
+            "confidence_ceiling_reason": decision.get("confidence_ceiling_reason", ""),
             "gate_status": decision.get("gate_status", ""),
             "decision_allowed": decision.get("decision_allowed"),
             "blocking_categories": list(_as_list(decision.get("blocking_categories"))),

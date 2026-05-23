@@ -42,6 +42,7 @@ def test_build_decision_event_preserves_final_contract_state() -> None:
     )
 
     assert event["decision"]["verdict"] == "CONDITIONAL GO"
+    assert event["decision"]["confidence_ceiling_reason"] == ""
     assert event["automation"]["approval_gate_status"] == "blocked"
     assert event["automation"]["approval_head_sha"] == "abc123"
     assert event["policy"]["pack_id"] == "platform-team"

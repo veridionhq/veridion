@@ -213,6 +213,7 @@ def test_render_pr_comment_downgrades_suspicious_present_baseline_to_change_rele
     assert "**Summary:** Change-relevant findings: 1 | Existing findings: 0 | Unattributed findings: 1 | Suppressed findings: 0 | Changed files: 61" in comment
     assert "### Baseline Attribution" in comment
     assert "base-ref mismatch or finding-normalization mismatch is likely" in comment
+    assert "MEDIUM (limited: baseline comparison unreliable)" in comment
     assert "### Change-relevant threats" in comment
     assert "no introduced findings detected" not in comment
     assert "introduced-vs-existing attribution could not be verified for this run" in comment

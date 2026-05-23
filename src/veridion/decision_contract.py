@@ -90,6 +90,7 @@ def build_decision_contract(
             "verdict": decision.decision,
             "score": decision.score,
             "confidence": decision.confidence.upper(),
+            "confidence_ceiling_reason": decision.risk.confidence_ceiling_reason,
             "gate_status": gate.status,
             "decision_allowed": gate.decision_allowed,
             "allowed_decisions": list(gate.allowed_decisions),
