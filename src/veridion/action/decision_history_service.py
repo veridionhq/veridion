@@ -2344,22 +2344,153 @@ def _event_verify_next(event: dict[str, object]) -> str:
     return "Verify production monitoring and rollback ownership while rollout continues."
 
 
+def _event_required_approvals(event: dict[str, object]) -> list[str]:
+    actions = event.get("actions")
+    if isinstance(actions, dict) and isinstance(actions.get("required_approvals"), list):
+        result = [str(item).strip() for item in actions["required_approvals"] if str(item).strip()]
+        if result:
+            return result
+    automation = event.get("automation")
+    if isinstance(automation, dict) and isinstance(automation.get("unsatisfied_approvals"), list):
+        return [str(item).strip() for item in automation["unsatisfied_approvals"] if str(item).strip()]
+    return []
+
+
+def _event_required_next_steps(event: dict[str, object]) -> list[str]:
+    actions = event.get("actions")
+    if isinstance(actions, dict) and isinstance(actions.get("required_next_steps"), list):
+        return [str(item).strip() for item in actions["required_next_steps"] if str(item).strip()]
+    return []
+
+
+def _verdict_css_class(verdict: str) -> str:
+    v = verdict.upper()
+    if v == "GO":
+        return "verdict-go"
+    if v == "NO GO":
+        return "verdict-nogo"
+    if "CONDITIONAL" in v:
+        return "verdict-conditional"
+    return "verdict-unknown"
+
+
+def _verdict_badge_html(verdict: str) -> str:
+    """Return an inline colored verdict badge span."""
+    if not verdict:
+        return ""
+    css = _verdict_css_class(verdict)
+    badge_css = css.replace("verdict-", "vbadge-")
+    return f"<span class='vbadge {_html_escape(badge_css)}'>{_html_escape(verdict)}</span>"
+
+
+def _event_trust_context_summary(event: dict[str, object]) -> str:
+    tc = event.get("trust_context")
+    if not isinstance(tc, dict):
+        return ""
+    parts: list[str] = []
+    if tc.get("environment"):
+        parts.append(str(tc["environment"]))
+    if tc.get("blast_radius"):
+        parts.append(f"blast radius: {tc['blast_radius']}")
+    criticality = str(tc.get("service_criticality") or tc.get("repo_criticality") or "").strip()
+    if criticality:
+        parts.append(f"criticality: {criticality}")
+    if tc.get("public_exposure"):
+        parts.append("publicly exposed")
+    return " · ".join(parts)
+
+
 def _event_detail_html(event: dict[str, object] | None, *, empty_message: str) -> str:
     if not isinstance(event, dict) or not event:
         return f"<p class='hint'>{_html_escape(empty_message)}</p>"
-    blocking_categories = _event_blocking_categories(event)
-    blocking_text = ", ".join(blocking_categories[:4]) if blocking_categories else "none"
-    return (
-        "<ul>"
-        f"<li><strong>Current Decision</strong><div class='hint'>{_html_escape(_event_verdict(event) or 'unknown')} / {_html_escape(_event_gate_status(event) or 'unknown')}</div></li>"
-        f"<li><strong>Evidence Status</strong><div class='hint'>{_html_escape(_event_evidence_status(event))}</div></li>"
-        f"<li><strong>Approval State</strong><div class='hint'>{_html_escape(_event_approval_summary(event))}</div></li>"
-        f"<li><strong>Policy Pack</strong><div class='hint'>{_html_escape(_event_pack_summary(event))}</div></li>"
-        f"<li><strong>Blocking Categories</strong><div class='hint'>{_html_escape(blocking_text)}</div></li>"
-        f"<li><strong>Next Action</strong><div class='hint'>{_html_escape(_event_next_action(event))}</div></li>"
-        f"<li><strong>What To Verify</strong><div class='hint'>{_html_escape(_event_verify_next(event))}</div></li>"
-        "</ul>"
+
+    verdict = _event_verdict(event) or "unknown"
+    css_class = _verdict_css_class(verdict)
+    gate = _event_gate_status(event) or "unknown"
+    decision = event.get("decision") if isinstance(event.get("decision"), dict) else {}
+    score = decision.get("score")
+    confidence = str(decision.get("confidence", "")).strip()
+    score_text = f"Score {score}" if score is not None else ""
+    meta_parts = [p for p in [score_text, confidence] if p]
+    meta_text = " · ".join(meta_parts)
+
+    reasons = [line for line in _event_reason_lines(event) if line]
+    approvals = _event_required_approvals(event)
+    next_steps = _event_required_next_steps(event)
+    trust_ctx = _event_trust_context_summary(event)
+
+    reason_rows = "".join(
+        f"<li>{_html_escape(r)}</li>" for r in reasons[:5]
+    ) if reasons else "<li class='hint'>No explicit blockers recorded.</li>"
+
+    approval_rows = "".join(
+        f"<li><span class='approval-tag'>{_html_escape(a.replace('_', ' ').title())}</span></li>"
+        for a in approvals[:6]
+    ) if approvals else ""
+
+    step_rows = "".join(
+        f"<li>{_html_escape(s)}</li>" for s in next_steps[:6]
+    ) if next_steps else f"<li>{_html_escape(_event_next_action(event))}</li>"
+
+    verify_text = _event_verify_next(event)
+    evidence_status = _event_evidence_status(event)
+    pack_summary = _event_pack_summary(event)
+
+    sections = (
+        f"<div class='decision-verdict-row'>"
+        f"<span class='verdict-badge {_html_escape(css_class)}'>{_html_escape(verdict)}</span>"
+        f"<span class='verdict-meta'>{_html_escape(meta_text)}</span>"
+        f"<span class='verdict-gate'>{_html_escape(gate)}</span>"
+        f"</div>"
     )
+    sections += (
+        f"<div class='decision-section'>"
+        f"<div class='decision-section-label'>Why</div>"
+        f"<ul class='decision-list'>{reason_rows}</ul>"
+        f"</div>"
+    )
+    if approvals:
+        sections += (
+            f"<div class='decision-section'>"
+            f"<div class='decision-section-label'>Required Approvals</div>"
+            f"<ul class='decision-list approval-list'>{approval_rows}</ul>"
+            f"</div>"
+        )
+    sections += (
+        f"<div class='decision-section'>"
+        f"<div class='decision-section-label'>What To Do Next</div>"
+        f"<ul class='decision-list'>{step_rows}</ul>"
+        f"</div>"
+    )
+    sections += (
+        f"<div class='decision-section'>"
+        f"<div class='decision-section-label'>What To Verify</div>"
+        f"<div class='hint'>{_html_escape(verify_text)}</div>"
+        f"</div>"
+    )
+    if evidence_status and evidence_status not in {"actionable release signal"}:
+        sections += (
+            f"<div class='decision-section'>"
+            f"<div class='decision-section-label'>Evidence Status</div>"
+            f"<div class='hint'>{_html_escape(evidence_status)}</div>"
+            f"</div>"
+        )
+    if trust_ctx:
+        sections += (
+            f"<div class='decision-section'>"
+            f"<div class='decision-section-label'>Trust Context</div>"
+            f"<div class='hint mono'>{_html_escape(trust_ctx)}</div>"
+            f"</div>"
+        )
+    if pack_summary and pack_summary != "unknown / unversioned / unspecified":
+        sections += (
+            f"<div class='decision-section'>"
+            f"<div class='decision-section-label'>Policy Pack</div>"
+            f"<div class='hint mono'>{_html_escape(pack_summary)}</div>"
+            f"</div>"
+        )
+
+    return f"<div class='decision-card'>{sections}</div>"
 
 
 def _observability_payload(
@@ -2998,7 +3129,7 @@ def render_app_html(
         for item in materializations[:6]
     ) or "<li>No materializations recorded</li>"
     repository_rows = "".join(
-        f"<tr><td>{_html_escape(str(item.get('repository', '')))}</td><td>{_html_escape(str(item.get('verdict', '')))}</td><td>{_html_escape(str(item.get('gate_status', '')))}</td><td>{_html_escape(str(item.get('generated_at', '')))}</td></tr>"
+        f"<tr><td><span class='mono' style='font-size:.88rem;'>{_html_escape(str(item.get('repository', '')))}</span></td><td>{_verdict_badge_html(str(item.get('verdict', '')))}</td><td><span class='mono' style='font-size:.82rem;'>{_html_escape(str(item.get('gate_status', '')))}</span></td><td><span class='hint mono'>{_html_escape(str(item.get('generated_at', '')))}</span></td></tr>"
         for item in latest_by_repository[:8]
     ) or "<tr><td colspan='4'>No repository activity yet</td></tr>"
     blocking_items = "".join(
@@ -3028,7 +3159,9 @@ def render_app_html(
         for item in services[:8]
     ) or "<li>No services recorded</li>"
     repository_link_items = "".join(
-        f"<li><a href='/api/{_html_escape(api_version)}/app?tenant={tenant_query}&repository={quote(str(item.get('repository', '')))}'>{_html_escape(str(item.get('repository', '')))}</a> · <a href='/api/{_html_escape(api_version)}/app/repository?tenant={tenant_query}&repository={quote(str(item.get('repository', '')))}'>open page</a><div class='hint'>{_html_escape(str(item.get('verdict', '')))} / {_html_escape(str(item.get('gate_status', '')))}</div></li>"
+        f"<li><a href='/api/{_html_escape(api_version)}/app/repository?tenant={tenant_query}&repository={quote(str(item.get('repository', '')))}'>{_html_escape(str(item.get('repository', '')))}</a>"
+        f" {_verdict_badge_html(str(item.get('verdict', '')))}"
+        f"<div class='hint mono' style='font-size:.8rem;'>{_html_escape(str(item.get('gate_status', '')))} · {_html_escape(str(item.get('generated_at', '')))}</div></li>"
         for item in latest_by_repository[:8]
     ) or "<li>No repository activity yet</li>"
     selected_repository = str((detail.get("selected_repository") if isinstance(detail, dict) else "") or tenant.get("selected_repository", "")).strip()
@@ -3301,12 +3434,12 @@ def render_app_html(
         else "<li>No observability data available yet</li>"
     )
     repo_recent_event_items = "".join(
-        f"<li><strong>{_html_escape(str(item.get('generated_at', '')))}</strong><div class='hint'>{_html_escape(_event_verdict(item) or 'unknown')} / {_html_escape(_event_gate_status(item) or 'unknown')}<br>{_html_escape(_event_next_action(item))}</div></li>"
+        f"<li>{_verdict_badge_html(_event_verdict(item))} <span class='hint mono' style='font-size:.8rem;'>{_html_escape(str(item.get('generated_at', '')))}</span><div class='hint' style='margin-top:.2rem;'>{_html_escape(_event_next_action(item))}</div></li>"
         for item in repository_recent_events[:4]
         if isinstance(item, dict)
     ) or "<li>No recent decisions for this repository yet.</li>"
     service_recent_event_items = "".join(
-        f"<li><strong>{_html_escape(str(item.get('generated_at', '')))}</strong><div class='hint'>{_html_escape(_event_verdict(item) or 'unknown')} / {_html_escape(_event_gate_status(item) or 'unknown')}<br>{_html_escape(_event_next_action(item))}</div></li>"
+        f"<li>{_verdict_badge_html(_event_verdict(item))} <span class='hint mono' style='font-size:.8rem;'>{_html_escape(str(item.get('generated_at', '')))}</span><div class='hint' style='margin-top:.2rem;'>{_html_escape(_event_next_action(item))}</div></li>"
         for item in service_recent_events[:4]
         if isinstance(item, dict)
     ) or "<li>No recent decisions for this service yet.</li>"
@@ -3450,6 +3583,40 @@ def render_app_html(
       table {{ width: 100%; border-collapse: collapse; }}
       th, td {{ text-align: left; padding: .7rem .6rem; border-top: 1px solid var(--line); font-size: .92rem; vertical-align: top; }}
       th {{ color: var(--muted); font-weight: 500; border-top: none; font-size: .68rem; text-transform: uppercase; letter-spacing: .07em; font-family: 'IBM Plex Mono', monospace; }}
+
+      /* Verdict badges — used in tables, lists, and detail cards */
+      .vbadge {{ display: inline-block; font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: .78rem; padding: .15rem .5rem; border-radius: 5px; white-space: nowrap; }}
+      .vbadge-go {{ background:#d4f0de; color:#0f5c28; }}
+      .vbadge-nogo {{ background:#fde4e1; color:#8b1a12; }}
+      .vbadge-conditional {{ background:#fef3cd; color:#7a5200; }}
+      .vbadge-unknown {{ background:var(--line); color:var(--muted); }}
+
+      /* Decision card (used in repo/service detail panels) */
+      .decision-card {{ padding: 0; }}
+      .decision-verdict-row {{
+        display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+        padding-bottom: .85rem; margin-bottom: .85rem;
+        border-bottom: 1px solid var(--line);
+      }}
+      .verdict-badge {{
+        display: inline-flex; align-items: center; justify-content: center;
+        font-family: 'IBM Plex Mono', monospace; font-weight: 700;
+        font-size: .95rem; letter-spacing: .04em; padding: .3rem .8rem;
+        border-radius: 8px; white-space: nowrap;
+      }}
+      .verdict-go    {{ background:#d4f0de; color:#0f5c28; border:1.5px solid #a3d9b5; }}
+      .verdict-nogo  {{ background:#fde4e1; color:#8b1a12; border:1.5px solid #f5b3ac; }}
+      .verdict-conditional {{ background:#fef3cd; color:#7a5200; border:1.5px solid #f0d080; }}
+      .verdict-unknown {{ background:var(--line); color:var(--muted); border:1.5px solid var(--line); }}
+      .verdict-meta {{ font-family:'IBM Plex Mono',monospace; font-size:.82rem; color:var(--muted); }}
+      .verdict-gate {{ margin-left:auto; font-family:'IBM Plex Mono',monospace; font-size:.75rem; color:var(--muted); background:var(--bg); padding:.18rem .5rem; border-radius:99px; border:1px solid var(--line); }}
+      .decision-section {{ margin-bottom:.7rem; }}
+      .decision-section:last-child {{ margin-bottom:0; }}
+      .decision-section-label {{ font-size:.65rem; text-transform:uppercase; letter-spacing:.1em; font-family:'IBM Plex Mono',monospace; color:var(--muted); font-weight:600; margin-bottom:.25rem; }}
+      .decision-list {{ margin:0; padding-left:1.1rem; }}
+      .decision-list li {{ font-size:.88rem; margin:.2rem 0; color:var(--ink); }}
+      .approval-list {{ list-style:none; padding-left:0; display:flex; flex-wrap:wrap; gap:.35rem; }}
+      .approval-tag {{ display:inline-block; font-size:.78rem; font-family:'IBM Plex Mono',monospace; background:#fff3e0; color:#7a4000; border:1px solid #f0c070; padding:.12rem .5rem; border-radius:5px; }}
 
       /* Forms */
       form {{ display: grid; gap: .75rem; }}
@@ -3928,7 +4095,7 @@ def render_focus_page_html(
     focus_recent_events = repository_recent_events if kind == "repository" else service_recent_events
     focus_latest_event = focus_recent_events[0] if focus_recent_events and isinstance(focus_recent_events[0], dict) else None
     recent_event_items = "".join(
-        f"<li><strong>{_html_escape(str(item.get('generated_at', '')))}</strong><div class='hint'>{_html_escape(_event_verdict(item) or 'unknown')} / {_html_escape(_event_gate_status(item) or 'unknown')}<br>{_html_escape(_event_next_action(item))}</div></li>"
+        f"<li>{_verdict_badge_html(_event_verdict(item))} <span class='hint mono' style='font-size:.8rem;'>{_html_escape(str(item.get('generated_at', '')))}</span><div class='hint' style='margin-top:.2rem;'>{_html_escape(_event_next_action(item))}</div></li>"
         for item in focus_recent_events[:5]
         if isinstance(item, dict)
     ) or "<li>No recent decisions recorded.</li>"
@@ -4021,11 +4188,55 @@ def render_focus_page_html(
       .state-grid {{ display: grid; grid-template-columns: 1fr 2fr; gap: 1.25rem; margin-bottom: 1.25rem; }}
       .analytics-grid {{ display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 1.25rem; }}
 
+      /* Decision card — the release decision hero */
+      .decision-panel {{ margin-bottom: 1.5rem; }}
+      .decision-card {{ padding: 0; }}
+      .decision-verdict-row {{
+        display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+        padding-bottom: .85rem; margin-bottom: .85rem;
+        border-bottom: 1px solid var(--line);
+      }}
+      .verdict-badge {{
+        display: inline-flex; align-items: center; justify-content: center;
+        font-family: 'IBM Plex Mono', monospace; font-weight: 700;
+        font-size: 1rem; letter-spacing: .04em; padding: .35rem .9rem;
+        border-radius: 8px; white-space: nowrap;
+      }}
+      .verdict-go    {{ background: #d4f0de; color: #0f5c28; border: 1.5px solid #a3d9b5; }}
+      .verdict-nogo  {{ background: #fde4e1; color: #8b1a12; border: 1.5px solid #f5b3ac; }}
+      .verdict-conditional {{ background: #fef3cd; color: #7a5200; border: 1.5px solid #f0d080; }}
+      .verdict-unknown {{ background: var(--line); color: var(--muted); border: 1.5px solid var(--line); }}
+      .verdict-meta {{ font-family: 'IBM Plex Mono', monospace; font-size: .82rem; color: var(--muted); }}
+      .verdict-gate {{ margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: .78rem; color: var(--muted); background: var(--bg); padding: .2rem .55rem; border-radius: 99px; border: 1px solid var(--line); }}
+      .decision-section {{ margin-bottom: .75rem; }}
+      .decision-section:last-child {{ margin-bottom: 0; }}
+      .decision-section-label {{
+        font-size: .68rem; text-transform: uppercase; letter-spacing: .1em;
+        font-family: 'IBM Plex Mono', monospace; color: var(--muted); font-weight: 600;
+        margin-bottom: .3rem;
+      }}
+      .decision-list {{ margin: 0; padding-left: 1.1rem; }}
+      .decision-list li {{ font-size: .9rem; margin: .25rem 0; color: var(--ink); }}
+      .approval-list {{ list-style: none; padding-left: 0; display: flex; flex-wrap: wrap; gap: .4rem; }}
+      .approval-tag {{
+        display: inline-block; font-size: .8rem; font-family: 'IBM Plex Mono', monospace;
+        background: #fff3e0; color: #7a4000; border: 1px solid #f0c070;
+        padding: .15rem .55rem; border-radius: 6px;
+      }}
+
+      /* Verdict badges in tables and lists */
+      .vbadge {{ display: inline-block; font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: .78rem; padding: .15rem .5rem; border-radius: 5px; white-space: nowrap; }}
+      .vbadge-go {{ background:#d4f0de; color:#0f5c28; }}
+      .vbadge-nogo {{ background:#fde4e1; color:#8b1a12; }}
+      .vbadge-conditional {{ background:#fef3cd; color:#7a5200; }}
+      .vbadge-unknown {{ background:var(--line); color:var(--muted); }}
+
       a {{ color: var(--accent); text-decoration: none; }}
       a:hover {{ text-decoration: underline; }}
 
       @media (max-width: 900px) {{
         .state-grid, .analytics-grid {{ grid-template-columns: 1fr; }}
+        .verdict-gate {{ margin-left: 0; }}
       }}
     </style>
   </head>
@@ -4052,31 +4263,34 @@ def render_focus_page_html(
         <div class="page-sub">Tenant {_html_escape(str(tenant.get('tenant_id', '')) or 'all')} &middot; {_html_escape(principal)}</div>
       </header>
 
+      <div class="decision-panel card">
+        <div style="display:flex; align-items:baseline; gap:.75rem; margin-bottom:.85rem; flex-wrap:wrap;">
+          <h2 class="section-title" style="margin:0;">Release Decision</h2>
+          <span style="font-size:.8rem; color:var(--muted); font-family:'IBM Plex Mono',monospace;">{_html_escape(str(focus_latest_event.get('generated_at', '')) if isinstance(focus_latest_event, dict) else '')}</span>
+        </div>
+        {focus_decision_guidance}
+      </div>
+
       <div class="state-grid">
         <div class="card">
           <h2 class="section-title">Current State</h2>
           {focus_meta}
         </div>
         <div class="card">
-          <h2 class="section-title">Related Pages</h2>
-          <ul>
-            <li><a href="/api/{_html_escape(api_version)}/app?tenant={tenant_value}">&larr; Back to dashboard</a></li>
-            <li><a href="/api/{_html_escape(api_version)}/app/repository?tenant={tenant_value}&repository={quote(selected_repository)}">Repository focus page</a></li>
-            <li><a href="/api/{_html_escape(api_version)}/app/service?tenant={tenant_value}&service={quote(selected_service)}">Service focus page</a></li>
-          </ul>
+          <h2 class="section-title">Recent Decisions &amp; Navigation</h2>
+          <ul style="margin-bottom:.75rem;">{recent_event_items}</ul>
+          <div style="border-top:1px solid var(--line); padding-top:.65rem; margin-top:.5rem;">
+            <ul>
+              <li><a href="/api/{_html_escape(api_version)}/app?tenant={tenant_value}">&larr; Back to dashboard</a></li>
+              <li><a href="/api/{_html_escape(api_version)}/app/repository?tenant={tenant_value}&repository={quote(selected_repository)}">Repository focus page</a></li>
+              <li><a href="/api/{_html_escape(api_version)}/app/service?tenant={tenant_value}&service={quote(selected_service)}">Service focus page</a></li>
+            </ul>
+          </div>
         </div>
       </div>
 
       <div class="analytics-grid">
         {_focus_analytics(repository_analytics if kind == 'repository' else service_analytics)}
-        <div class="card">
-          <h2 class="section-title">Decision Guidance</h2>
-          {focus_decision_guidance}
-        </div>
-        <div class="card">
-          <h2 class="section-title">Recent Decisions</h2>
-          <ul>{recent_event_items}</ul>
-        </div>
       </div>
     </div>
   </body>

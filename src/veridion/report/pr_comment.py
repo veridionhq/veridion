@@ -118,6 +118,19 @@ def render_pr_comment_result(
         summary_style=summary_style,
     )
 
+    # For NO GO and CONDITIONAL GO, surface the action block immediately after the verdict
+    # so engineers see who must approve and what to fix before reading context and reasons.
+    if decision.decision != "GO":
+        if decision.required_approvals:
+            approvals = tuple(_format_approval(name) for name in decision.required_approvals)
+            lines.extend(_section("Required Approvals", approvals))
+        lines.extend(
+            _section(
+                "What must happen next",
+                _truncate_items(next_steps, MAX_REQUIRED_NEXT_STEP_ITEMS, "required step"),
+            )
+        )
+
     key_context = (
         _format_release_context(bundle)
         if _is_clean_review_case(bundle, decision)
@@ -157,16 +170,14 @@ def render_pr_comment_result(
     if decision.score_adjustments:
         lines.extend(_section("Policy Score Adjustments", decision.score_adjustments))
 
-    if decision.required_approvals:
-        approvals = tuple(_format_approval(name) for name in decision.required_approvals)
-        lines.extend(_section("Required Approvals", approvals))
-
-    lines.extend(
-        _section(
-            "What must happen next",
-            _truncate_items(next_steps, MAX_REQUIRED_NEXT_STEP_ITEMS, "required step"),
+    # For GO decisions the next-steps block is advisory and belongs at the bottom.
+    if decision.decision == "GO":
+        lines.extend(
+            _section(
+                "What must happen next",
+                _truncate_items(next_steps, MAX_REQUIRED_NEXT_STEP_ITEMS, "required step"),
+            )
         )
-    )
 
     return RenderedComment(
         markdown=wrap_pr_comment("\n".join(lines).rstrip() + "\n"),

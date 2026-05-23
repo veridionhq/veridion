@@ -79,7 +79,12 @@ def test_score_analysis_bundle_returns_go_for_clean_change() -> None:
     assert result.reasons == ("no introduced findings detected",)
 
 
-def test_score_analysis_bundle_returns_high_confidence_for_well_covered_clean_run() -> None:
+def test_score_analysis_bundle_caps_confidence_to_medium_when_baseline_missing_with_findings() -> None:
+    """Confidence cannot be high when baseline is absent and findings are present.
+
+    Without a baseline we cannot verify which findings are newly introduced,
+    so claiming high confidence about the decision would be dishonest.
+    """
     bundle = build_analysis_bundle(
         current_findings=[
             NormalizedFinding(
@@ -118,6 +123,64 @@ def test_score_analysis_bundle_returns_high_confidence_for_well_covered_clean_ru
 
     assert result.score == 100
     assert result.decision == "GO"
+    assert result.confidence == "medium"
+
+
+def test_score_analysis_bundle_returns_high_confidence_when_baseline_present_and_trusted() -> None:
+    """Confidence reaches high when baseline is trusted and evidence is sufficient."""
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.new",
+                title="Introduced issue",
+                severity="high",
+                location=NormalizedLocation(path="app/routes.py", start_line=12, end_line=12),
+            ),
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.existing",
+                title="Existing issue",
+                severity="medium",
+                location=NormalizedLocation(path="app/routes.py", start_line=4, end_line=4),
+            ),
+        ],
+        baseline_findings=[
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.existing",
+                title="Existing issue",
+                severity="medium",
+                location=NormalizedLocation(path="app/routes.py", start_line=4, end_line=4),
+            )
+        ],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="app/routes.py",
+                    change_type="modified",
+                    added_lines=10,
+                    removed_lines=1,
+                    signals=("application_code",),
+                    previous_path="app/routes.py",
+                ),
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=0,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+    )
+
+    result = score_analysis_bundle(bundle)
+
     assert result.confidence == "high"
 
 

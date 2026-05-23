@@ -1533,12 +1533,12 @@ def test_decision_history_service_app_forms_support_onboarding_actions(tmp_path)
     assert repo_page_status == 200
     assert "Dedicated repository page" in repo_page["data"]["html"]
     assert "History Summary" in repo_page["data"]["html"]
-    assert "Decision Guidance" in repo_page["data"]["html"]
+    assert "Release Decision" in repo_page["data"]["html"]
     assert "Recent Decisions" in repo_page["data"]["html"]
     assert "Next action" in repo_page["data"]["html"]
     assert service_page_status == 200
     assert "Dedicated service page" in service_page["data"]["html"]
-    assert "Decision Guidance" in service_page["data"]["html"]
+    assert "Release Decision" in service_page["data"]["html"]
     assert "Recent Decisions" in service_page["data"]["html"]
 
 
@@ -1591,7 +1591,6 @@ def test_decision_history_service_focus_pages_surface_degraded_attribution_guida
     )
 
     assert repo_page_status == 200
-    assert "Evidence Status" in repo_page["data"]["html"]
     assert "degraded attribution confidence" in repo_page["data"]["html"]
     assert "Repair baseline scanner outputs and verify the same finding against the correct base before relying on introduction claims." in repo_page["data"]["html"]
 

@@ -179,10 +179,32 @@ def _derive_confidence(bundle: AnalysisBundle, features: RiskFeatures) -> str:
         evidence_count += 1
 
     if evidence_count >= 3:
-        return "high"
-    if evidence_count >= 2:
-        return "medium"
-    return "low"
+        base = "high"
+    elif evidence_count >= 2:
+        base = "medium"
+    else:
+        base = "low"
+
+    return _apply_confidence_ceiling(base, bundle)
+
+
+def _apply_confidence_ceiling(confidence: str, bundle: AnalysisBundle) -> str:
+    """Cap confidence when critical evidence is absent or unreliable.
+
+    The evidence count above measures how much we know about the change; this
+    ceiling measures how much we can trust what we know.  Missing baseline means
+    we cannot prove which findings are newly introduced, so the best we can
+    honestly claim is medium even when there is plenty of change evidence.
+    """
+    ceiling = "high"
+
+    if bundle.summary.baseline_attribution_mode == "missing_baseline" and bundle.summary.total_findings:
+        ceiling = "medium"
+    elif bundle.summary.baseline_attribution_mode == "suspicious_present_baseline":
+        ceiling = "medium"
+
+    order = {"low": 0, "medium": 1, "high": 2}
+    return confidence if order[confidence] <= order[ceiling] else ceiling
 
 
 def _derive_reasons(features: RiskFeatures) -> tuple[str, ...]:
