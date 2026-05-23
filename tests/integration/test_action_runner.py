@@ -104,6 +104,11 @@ def test_run_action_executes_pipeline_and_renders_comment() -> None:
         "service owner",
         "SRE owner",
     ]
+    triggers = decision_contract["actions"]["required_approval_triggers"]
+    assert "platform_owner" in triggers
+    assert "security_owner" in triggers
+    assert "production_iac" in triggers["platform_owner"]
+    assert "dependency_changes" in triggers["security_owner"]
     assert "rollback readiness" in " ".join(decision_contract["signals"]["trust_baseline"]["elevated"])
 
 
@@ -404,3 +409,71 @@ def test_run_action_applies_accepted_risk_suppressions() -> None:
         "review timestamp missing",
         "tracking ticket missing",
     ]
+
+
+def test_run_action_produces_conditional_go_for_introduced_high_severity() -> None:
+    """A high-severity introduced finding with a matching baseline should yield CONDITIONAL GO.
+
+    This covers the path where:
+    - semgrep appears in both current and baseline (existing, not introduced)
+    - grype appears only in current (high-severity dependency finding is introduced)
+    - Policy requires security_owner approval for dependency_changes
+    - Score lands between no_go and conditional_go thresholds
+    """
+    policy_text = "\n".join([
+        "max_severity: critical",
+        "allow_conditional: true",
+        "no_go_below_score: 60",
+        "conditional_go_below_score: 85",
+        "require_approval_for:",
+        "  - dependency_changes",
+        "require_security_owner_for:",
+        "  - dependency_reputation_risk",
+    ])
+
+    result = run_action(
+        diff_text="\n".join([
+            "diff --git a/requirements.txt b/requirements.txt",
+            "--- a/requirements.txt",
+            "+++ b/requirements.txt",
+            "@@ -1 +1 @@",
+            "-requests==2.0.0",
+            "+requests==2.31.0",
+        ]),
+        current_reports={
+            "semgrep": "tests/fixtures/scanners/semgrep_report.json",
+            "grype": "tests/fixtures/scanners/grype_report.json",
+        },
+        baseline_reports={
+            "semgrep": "tests/fixtures/scanners/semgrep_report.json",
+        },
+        policy_text=policy_text,
+    )
+
+    assert result.decision.decision == "CONDITIONAL GO"
+    assert result.decision.score < 85
+    assert result.decision.score >= 60
+    assert result.bundle.summary.introduced_findings == 1
+    assert result.bundle.summary.existing_findings >= 1
+    assert result.bundle.summary.baseline_attribution_trusted is True
+    assert result.decision.confidence == "high"
+    assert result.decision.risk.confidence_ceiling_reason == ""
+    assert result.gate_status == "review"
+    assert result.decision_allowed is True
+    assert result.decision.required_approvals == ("security_owner",)
+    assert result.decision.required_approval_triggers["security_owner"] == ("dependency_changes",)
+    # Action-first layout: approvals and next steps before reasons
+    comment = result.comment_markdown
+    assert "### 🟡 CONDITIONAL GO" in comment
+    assert "### Required Approvals" in comment
+    assert "### What must happen next" in comment
+    assert "### Why this needs review" in comment
+    assert "### Why this is blocked" not in comment
+    assert comment.index("### Required Approvals") < comment.index("### Why this needs review")
+    assert comment.index("### What must happen next") < comment.index("### Why this needs review")
+    assert "- security owner (required: dependency changes)" in comment
+    # Decision contract
+    contract = result.to_dict()["decision_contract"]
+    assert contract["decision"]["verdict"] == "CONDITIONAL GO"
+    assert contract["decision"]["gate_status"] == "review"
+    assert contract["actions"]["required_approval_triggers"]["security_owner"] == ["dependency_changes"]

@@ -67,6 +67,7 @@ def test_write_github_outputs_emits_gate_and_contract_fields(tmp_path, monkeypat
     assert "required_approvals_json=[]" in content
     assert "accepted_risk_present=false" in content
     assert "blocking_categories_json=[]" in content
+    assert "confidence_ceiling_reason=" in content
 
     blocking_line = next(line for line in content.splitlines() if line.startswith("blocking_reasons_json="))
     assert json.loads(blocking_line.split("=", maxsplit=1)[1]) == []

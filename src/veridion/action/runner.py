@@ -390,6 +390,7 @@ def _write_github_outputs(
         f"accepted_risk_present={str(bool(result.bundle.summary.suppressed_findings)).lower()}",
         f"baseline_attribution_trusted={str(result.bundle.summary.baseline_attribution_trusted).lower()}",
         f"baseline_attribution_mode={result.bundle.summary.baseline_attribution_mode}",
+        f"confidence_ceiling_reason={result.decision.risk.confidence_ceiling_reason}",
         f"report_diagnostics_json={json.dumps(result.report_diagnostics)}",
     ]
     if result.decision.required_approvals:
