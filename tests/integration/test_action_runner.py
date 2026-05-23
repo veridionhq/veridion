@@ -532,3 +532,42 @@ def test_run_action_bootstrap_preset_produces_valid_pipeline_decision() -> None:
     assert "confidence_ceiling_reason" in contract["decision"]
     assert isinstance(contract["actions"]["required_approval_triggers"], dict)
     assert result.to_dict()["comment_summary"]["mode"] == "deterministic"
+
+
+def test_run_action_regulated_service_preset_escalates_conditional_to_no_go() -> None:
+    """The regulated-service preset uses allow_conditional=false.
+
+    A change that would yield CONDITIONAL GO under the default policy must
+    escalate to NO GO because the preset prohibits conditional releases.
+    This ensures the allow_conditional policy knob works end-to-end.
+    """
+    files = build_bootstrap_files(preset="regulated-service")
+    policy_text = files[".veridion/policy.yaml"]
+
+    result = run_action(
+        diff_text="\n".join([
+            "diff --git a/requirements.txt b/requirements.txt",
+            "--- a/requirements.txt",
+            "+++ b/requirements.txt",
+            "@@ -1 +1 @@",
+            "-requests==2.0.0",
+            "+requests==2.31.0",
+        ]),
+        current_reports={
+            "semgrep": "tests/fixtures/scanners/semgrep_report.json",
+            "grype": "tests/fixtures/scanners/grype_report.json",
+        },
+        baseline_reports={
+            "semgrep": "tests/fixtures/scanners/semgrep_report.json",
+        },
+        policy_text=policy_text,
+    )
+
+    assert result.decision.decision == "NO GO"
+    assert result.decision.policy.allow_conditional is False
+    assert "policy does not allow conditional releases" in result.decision.reasons
+    assert result.gate_status == "block"
+    assert result.decision_allowed is False
+    contract = result.to_dict()["decision_contract"]
+    assert contract["decision"]["verdict"] == "NO GO"
+    assert contract["decision"]["gate_status"] == "block"
