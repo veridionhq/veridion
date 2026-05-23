@@ -80,11 +80,23 @@ def _policy_from_mapping(parsed: dict[str, object]) -> PolicyConfig:
     if not isinstance(approval_values, list):
         raise ValueError("require_approval_for must be a list")
 
+    no_go_below_score = _as_int(parsed.get("no_go_below_score"), default=60)
+    conditional_go_below_score = _as_int(parsed.get("conditional_go_below_score"), default=85)
+    if not (0 <= no_go_below_score <= 100):
+        raise ValueError(f"no_go_below_score must be between 0 and 100, got {no_go_below_score}")
+    if not (0 <= conditional_go_below_score <= 100):
+        raise ValueError(f"conditional_go_below_score must be between 0 and 100, got {conditional_go_below_score}")
+    if no_go_below_score > conditional_go_below_score:
+        raise ValueError(
+            f"no_go_below_score ({no_go_below_score}) must not exceed "
+            f"conditional_go_below_score ({conditional_go_below_score})"
+        )
+
     return PolicyConfig(
         max_severity=max_severity,
         allow_conditional=_as_bool(parsed.get("allow_conditional"), default=True),
-        no_go_below_score=_as_int(parsed.get("no_go_below_score"), default=60),
-        conditional_go_below_score=_as_int(parsed.get("conditional_go_below_score"), default=85),
+        no_go_below_score=no_go_below_score,
+        conditional_go_below_score=conditional_go_below_score,
         require_approval_for=_approval_string_list(approval_values),
         require_platform_owner_for=_string_list(parsed.get("require_platform_owner_for"), "require_platform_owner_for"),
         require_service_owner_for=_string_list(parsed.get("require_service_owner_for"), "require_service_owner_for"),

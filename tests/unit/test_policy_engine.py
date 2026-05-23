@@ -93,6 +93,27 @@ require_approval_for:
         )
 
 
+def test_parse_policy_yaml_rejects_inverted_score_thresholds() -> None:
+    with __import__("pytest").raises(ValueError, match=r"no_go_below_score \(90\) must not exceed conditional_go_below_score \(80\)"):
+        parse_policy_yaml("no_go_below_score: 90\nconditional_go_below_score: 80\n")
+
+
+def test_parse_policy_yaml_rejects_out_of_range_score_thresholds() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match=r"no_go_below_score must be between 0 and 100"):
+        parse_policy_yaml("no_go_below_score: 105\n")
+
+    with pytest.raises(ValueError, match=r"conditional_go_below_score must be between 0 and 100"):
+        parse_policy_yaml("conditional_go_below_score: 110\n")
+
+
+def test_parse_policy_yaml_accepts_equal_score_thresholds() -> None:
+    policy = parse_policy_yaml("no_go_below_score: 75\nconditional_go_below_score: 75\n")
+    assert policy.no_go_below_score == 75
+    assert policy.conditional_go_below_score == 75
+
+
 def test_evaluate_release_applies_required_approvals_and_recommendations() -> None:
     bundle = _bundle_with_iac_and_dependency_risk()
     policy = parse_policy_yaml(DEFAULT_POLICY_PATH.read_text())
