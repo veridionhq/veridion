@@ -63,6 +63,8 @@ def test_decision_history_aggregates_pack_and_gate_trends(tmp_path) -> None:
     assert payload["approval_freshness"]["stale_approval_events"] == 1
     assert payload["top_blocking_categories"][0]["name"] == "public_exposure"
     assert payload["by_policy_pack"][0]["pack_id"] == "app"
+    assert payload["confidence_health"]["degraded_confidence_events"] == 0
+    assert "by_confidence_ceiling_reason" in payload["confidence_health"]
 
 
 def test_decision_history_filters_by_repository_and_pack(tmp_path) -> None:
@@ -154,3 +156,58 @@ def test_decision_history_reads_exported_event_directory_and_reports_rollout(tmp
     assert payload["policy_rollout"]["latest_by_repository"][0]["pack_version"] == "2"
     assert payload["policy_rollout"]["transitions"][0]["from"] == "app@1:pilot"
     assert payload["policy_rollout"]["transitions"][0]["to"] == "app@2:general"
+
+
+def test_decision_history_tracks_confidence_ceiling_degradation(tmp_path) -> None:
+    history_path = tmp_path / "history.ndjson"
+    history_path.write_text(
+        "\n".join(
+            [
+                json.dumps({
+                    "decision": {
+                        "verdict": "CONDITIONAL GO",
+                        "gate_status": "review",
+                        "blocking_categories": [],
+                        "confidence": "MEDIUM",
+                        "confidence_ceiling_reason": "missing_baseline",
+                    },
+                    "automation": {"approval_gate_status": "satisfied", "stale_approvals": []},
+                    "policy": {},
+                }),
+                json.dumps({
+                    "decision": {
+                        "verdict": "NO GO",
+                        "gate_status": "block",
+                        "blocking_categories": ["introduced_critical_findings"],
+                        "confidence": "MEDIUM",
+                        "confidence_ceiling_reason": "suspicious_baseline",
+                    },
+                    "automation": {"approval_gate_status": "blocked", "stale_approvals": []},
+                    "policy": {},
+                }),
+                json.dumps({
+                    "decision": {
+                        "verdict": "GO",
+                        "gate_status": "pass",
+                        "blocking_categories": [],
+                        "confidence": "HIGH",
+                        "confidence_ceiling_reason": "",
+                    },
+                    "automation": {"approval_gate_status": "not_required", "stale_approvals": []},
+                    "policy": {},
+                }),
+            ]
+        )
+        + "\n"
+    )
+    output_path = tmp_path / "analytics.json"
+
+    main(["--history-path", str(history_path), "--output-path", str(output_path)])
+    payload = json.loads(output_path.read_text())
+
+    assert payload["confidence_health"]["degraded_confidence_events"] == 2
+    assert payload["confidence_health"]["by_confidence_ceiling_reason"] == {
+        "missing_baseline": 1,
+        "suspicious_baseline": 1,
+    }
+    assert payload["confidence_health"]["by_confidence"] == {"HIGH": 1, "MEDIUM": 2}
