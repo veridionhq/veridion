@@ -120,6 +120,41 @@ def test_compare_findings_against_baseline_marks_changed_file_findings_as_change
     assert comparison.attribution_likely_cause == "baseline_reports_missing_or_empty"
 
 
+def test_compare_findings_against_empty_available_baseline_marks_changed_dependency_as_introduced() -> None:
+    current = [
+        NormalizedFinding(
+            source="grype",
+            finding_type="dependency",
+            rule_id="CVE-2020-14343",
+            title="Improper Input Validation in PyYAML",
+            severity="critical",
+            package_name="pyyaml",
+            package_version="5.3.1",
+            location=NormalizedLocation(path="requirements.txt"),
+        )
+    ]
+    context = ParsedChangeContext(
+        files=(
+            ParsedFileChange(
+                path="requirements.txt",
+                change_type="modified",
+                added_lines=1,
+                removed_lines=0,
+                signals=("dependency_manifest",),
+                previous_path="requirements.txt",
+            ),
+        )
+    )
+
+    comparison = compare_findings_against_baseline(current, [], context, baseline_available=True)
+
+    assert tuple(finding.rule_id for finding in comparison.introduced) == ("CVE-2020-14343",)
+    assert comparison.change_relevant == ()
+    assert comparison.attribution_trusted is True
+    assert comparison.attribution_mode == "trusted"
+    assert comparison.attribution_likely_cause == ""
+
+
 def test_compare_findings_against_baseline_downgrades_suspicious_present_baseline_to_change_relevant() -> None:
     baseline = [
         NormalizedFinding(

@@ -25,12 +25,14 @@ def compare_findings_against_baseline(
     current_findings: list[NormalizedFinding],
     baseline_findings: list[NormalizedFinding],
     change_context: ParsedChangeContext,
+    baseline_available: bool | None = None,
 ) -> BaselineComparison:
     """Identify findings that are newly introduced by the current change."""
 
     baseline_fingerprints = {finding.fingerprint for finding in baseline_findings}
     baseline_dedup_keys = {finding.dedup_key for finding in baseline_findings}
-    attribution_trusted = bool(baseline_findings) or not current_findings
+    resolved_baseline_available = bool(baseline_findings) if baseline_available is None else baseline_available
+    attribution_trusted = resolved_baseline_available or not current_findings
     attribution_mode = "trusted"
     attribution_likely_cause = ""
     changed_paths = set(change_context.changed_paths)

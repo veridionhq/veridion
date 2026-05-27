@@ -130,7 +130,7 @@ def test_action_result_to_dict_is_json_serializable() -> None:
     assert '"report_diagnostics"' in rendered
 
 
-def test_run_action_surfaces_suspicious_baseline_diagnostics() -> None:
+def test_run_action_treats_present_zero_finding_baseline_as_clean_baseline() -> None:
     diff_lines: list[str] = []
     for index in range(30):
         diff_lines.extend(
@@ -169,15 +169,14 @@ def test_run_action_surfaces_suspicious_baseline_diagnostics() -> None:
     )
 
     diagnostics = result.to_dict()["report_diagnostics"]
-    assert diagnostics["attribution_trusted"] is False
-    assert diagnostics["attribution_mode"] == "missing_baseline"
-    assert diagnostics["likely_cause"] == "baseline_reports_missing_or_empty"
+    assert diagnostics["attribution_trusted"] is True
+    assert diagnostics["attribution_mode"] == "trusted"
+    assert diagnostics["likely_cause"] == ""
     assert diagnostics["zero_finding_baseline_tools"] == ["semgrep"]
-    assert "### Baseline Attribution" in result.comment_markdown
-    assert "### Report Health" in result.comment_markdown
-    assert "- attribution mode: missing_baseline" in result.comment_markdown
-    assert "- baseline tools with zero normalized findings: semgrep" in result.comment_markdown
-    assert "one or more baseline scanner reports were missing or normalized to zero findings" in result.comment_markdown
+    assert "### Baseline Attribution" not in result.comment_markdown
+    assert "baseline scanner evidence is incomplete" not in result.comment_markdown
+    assert "Change-relevant findings:" not in result.comment_markdown
+    assert "Introduced findings:" in result.comment_markdown
 
 
 def test_run_action_accepts_versioned_operational_context_artifact() -> None:

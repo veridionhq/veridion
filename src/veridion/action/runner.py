@@ -120,6 +120,7 @@ def run_action(
         current_findings=current_findings,
         baseline_findings=baseline_findings,
         change_context=change_context,
+        baseline_available=bool(baseline_reports),
         metadata=resolved_context.metadata,
         historical_signals=resolved_context.historical_signals,
         runtime_signals=resolved_context.runtime_signals,

@@ -293,6 +293,42 @@ def test_build_analysis_bundle_surfaces_change_relevant_findings_when_baseline_i
     assert tuple(finding.rule_id for finding in bundle.baseline_comparison.change_relevant) == ("python.audit.new",)
 
 
+def test_build_analysis_bundle_trusts_available_clean_baseline_for_dependency_introduction() -> None:
+    current = [
+        NormalizedFinding(
+            source="trivy",
+            finding_type="dependency",
+            rule_id="CVE-2020-14343",
+            title="Improper Input Validation in PyYAML",
+            severity="critical",
+            package_name="pyyaml",
+            package_version="5.3.1",
+            location=NormalizedLocation(path="requirements.txt"),
+        ),
+    ]
+    change_context = ParsedChangeContext(
+        files=(
+            ParsedFileChange(
+                path="requirements.txt",
+                change_type="modified",
+                added_lines=1,
+                removed_lines=0,
+                signals=("dependency_manifest",),
+                previous_path="requirements.txt",
+            ),
+        )
+    )
+
+    bundle = build_analysis_bundle(current, [], change_context, baseline_available=True)
+
+    assert bundle.summary.introduced_findings == 1
+    assert bundle.summary.change_relevant_findings == 0
+    assert bundle.summary.baseline_attribution_trusted is True
+    assert bundle.summary.baseline_attribution_mode == "trusted"
+    assert bundle.summary.baseline_attribution_likely_cause == ""
+    assert bundle.summary.introduced_by_severity == {"critical": 1}
+
+
 def test_build_analysis_bundle_downgrades_suspicious_present_baseline_to_change_relevant() -> None:
     current = [
         NormalizedFinding(

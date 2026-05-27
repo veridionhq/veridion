@@ -99,6 +99,7 @@ def build_analysis_bundle(
     trust_baseline: TrustBaseline | None = None,
     trust_memory_signals: TrustMemorySignals | None = None,
     suppression_rules: tuple[SuppressionRule, ...] = (),
+    baseline_available: bool | None = None,
 ) -> AnalysisBundle:
     """Assemble the deterministic analysis object used by the decision engine."""
 
@@ -118,6 +119,7 @@ def build_analysis_bundle(
         current_findings=scored_current_findings,
         baseline_findings=scored_baseline_findings,
         change_context=change_context,
+        baseline_available=baseline_available,
     )
     ai_attribution = detect_ai_attribution(metadata)
     resolved_historical_signals = historical_signals or HistoricalSignals()
