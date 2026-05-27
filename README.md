@@ -1,11 +1,11 @@
 # Veridion
 
-Veridion is operational trust infrastructure for autonomous engineering systems.
+Veridion is a release decision engine for introduced dependency risk.
 
 Website: `https://getveridion.com`
 Docs: `https://getveridion.com/docs/`
 
-The product is not "AI for DevOps" and it is not another scanner wrapper. The wedge is Release Decision Intelligence (RDI): a system that determines whether a software change is safe to reach production, explains why, and recommends the next action.
+The product is not "AI for DevOps" and it is not another scanner wrapper. The v1 wedge is release decision governance: a GitHub-native system that determines whether a pull request introduced unacceptable dependency risk, explains why, and recommends the next action.
 
 Security is one signal inside that decision, not the category itself.
 
@@ -21,10 +21,9 @@ Veridion sits in a distinct category:
 - Not DevSecOps automation
 - Not AI code review
 
-Veridion is the trust and governance layer for autonomous software delivery.
-It sits between increasingly autonomous engineering systems and production.
+Veridion is the trust and governance layer between software-delivery signals and release actions.
 
-As engineering organizations adopt AI coding agents, AI-generated infrastructure, autonomous remediation, and increasingly automated deployment systems, they need a control plane that answers one question reliably:
+As engineering organizations adopt faster dependency updates, automated remediation, AI-assisted coding, and increasingly automated deployment systems, they need a control layer that answers one question reliably:
 
 Should this change ship?
 
@@ -32,19 +31,21 @@ That is a broader question than "is this vulnerable?"
 
 ## Product Wedge
 
-The initial product is an AI-aware release decision engine delivered as a GitHub Action.
+The v1 product is a GitHub-native release decision engine for introduced dependency risk.
 
 Core responsibilities:
 
-- Collect findings from security and code analysis tools
-- Understand what the current change introduced
-- Incorporate operational and deployment context
-- Surface lightweight AI-origin signals from PR metadata
-- Produce an RDI score and release decision
+- Generate or consume SBOM and vulnerability signals from Syft, Grype, and Trivy
+- Compare current dependency risk against a baseline
+- Separate introduced dependency risk from pre-existing backlog
+- Evaluate severity and policy through clear release rules
+- Produce a release decision: `GO`, `CONDITIONAL GO`, or `NO GO`
 - Explain the decision in a PR comment with recommended actions
 
 Security matters inside this model, but Veridion is not a security scanner or a remediation engine.
-It is the operational trust layer that decides whether a change should safely move toward production.
+It is the decision layer that decides whether scanner signals should block or condition a release action.
+
+The implementation already contains broader release-governance primitives such as operational context, approval satisfaction, accepted-risk lifecycle state, decision history, policy simulation, and hosted control-plane foundations. Those are expansion paths. They are not required to understand or adopt the v1 wedge.
 
 The action can now consume a versioned operational-context artifact as its primary context contract. That artifact can be produced by GitHub workflows today, and later by other CI/CD or platform integrations without changing the decision engine.
 
@@ -85,30 +86,29 @@ Those are merged into one versioned operational-context artifact:
 
 The repo-local source example lives at [examples/trust/trust-profile.source.json](examples/trust/trust-profile.source.json). A shared catalog baseline can also be layered in from [examples/trust/trust-catalog.source.json](examples/trust/trust-catalog.source.json), and the workflow now builds `operational-context.json` before running Veridion. That is the integration point other products should target.
 
-Example output:
+V1 example output:
 
 ```text
-RDI SCORE: 81
-DECISION: CONDITIONAL GO
+DECISION: NO GO
 
 WHY:
-- New critical dependency introduced
-- IaC modified for production ingress
-- Historical rollback rate elevated for this service
+- Introduced critical vulnerability in a runtime dependency
+- Finding was not present in the baseline reports
+- No active accepted-risk exception applies
 
-CONFIDENCE: MEDIUM
+CONFIDENCE: HIGH
 
 RECOMMENDATIONS:
-- Require approval from platform owner
-- Run staging smoke tests
-- Delay Friday deployment
+- Block release until the dependency is upgraded or an exception is approved
+- Review the vulnerable package with the security owner
 ```
 
 ## Principles
 
 - Introduced risk over legacy noise
-- Operational context over scanner spam
-- Deployment trust over security-only framing
+- Clear release rules over magic scoring
+- Signal quality over AI certainty
+- Dependency risk as the v1 wedge
 - Explainable decisions over opaque scoring
 - Fast installation over platform-heavy onboarding
 - Trustworthy output over shallow breadth
@@ -118,30 +118,23 @@ RECOMMENDATIONS:
 ```text
 GitHub PR
   -> GitHub Action
-  -> Scanner Orchestration
+  -> SBOM and Vulnerability Signals
   -> Normalization Layer
-  -> Risk Engine
-  -> RDI Decision Engine
+  -> Baseline Comparison
+  -> Policy Decision Engine
   -> PR Comment
+  -> Machine Decision Contract
 ```
 
 ## Repo Docs
 
-- [Website](https://getveridion.com)
-- [Docs Home](https://getveridion.com/docs/)
 - [Quickstart](docs/QUICKSTART.md)
-- [Automation Guide](docs/AUTOMATION_GUIDE.md)
-- [AWS Deployment Pattern](docs/AWS.md)
-- [Decision History](docs/DECISION_HISTORY.md)
-- [Non-GitHub Producers](docs/NON_GITHUB.md)
-- [GitLab Adapter](docs/GITLAB.md)
-- [Policy Simulation](docs/POLICY_SIMULATION.md)
 - [Evaluation Guide](docs/EVALUATION_GUIDE.md)
 - [Evaluation Checklist](docs/EVALUATION_CHECKLIST.md)
 - [Design Partner Guide](docs/DESIGN_PARTNER.md)
 - [One-Pager](docs/ONE_PAGER.md)
-- [Operational Context Contract](docs/OPERATIONAL_CONTEXT.md)
-- [Milestones](docs/roadmap/MILESTONES.md)
+- [V1 Release Governance Wedge](docs/roadmap/V1_RELEASE_GOVERNANCE.md)
+- [Automation Guide](docs/AUTOMATION_GUIDE.md)
 - [Testing Strategy](docs/TESTING_STRATEGY.md)
 - [Support](SUPPORT.md)
 - [Contributing](CONTRIBUTING.md)
@@ -149,47 +142,43 @@ GitHub PR
 - [License](LICENSE)
 - [Releasing](RELEASING.md)
 
+Expansion docs for later hosted, non-GitHub, policy rollout, and cloud paths remain in [docs](docs), but they are not the first-install route.
+
 ## Current Focus
 
-Phase 0 and Phase 1:
+V1 design-partner readiness:
 
-- Define the category precisely
-- Build the GitHub Action wedge
-- Establish the normalization and decisioning primitives
-- Test every increment as code is written
-- Reach a usable MVP in 60 to 90 days
+- Keep the public product wedge narrow: introduced dependency risk governance
+- Make the GitHub Action install path boring and reproducible
+- Keep default decisions clear, explainable, and conservative
+- Use Syft, Grype, and Trivy as the primary v1 signal sources
+- Treat hosted control-plane, runtime, AI, and adapter work as expansion paths
 
 ## Current State
 
-The current `main` branch already includes:
+The current v1 path includes:
 
 - A working composite GitHub Action with deterministic outputs
-- Multi-scanner normalization for Trivy, Grype, Semgrep, and Syft
-- Introduced-only comparison with baseline suppression
+- Syft, Grype, and Trivy normalization for dependency and vulnerability signals
+- Introduced-only dependency comparison with baseline suppression
 - Cross-scanner dependency deduplication
-- Policy-aware RDI scoring and PR comment rendering
+- Policy-aware release decisions and PR comment rendering
 - GitHub PR comment create/update support
-- Smoke and PR-commenting workflow examples
-- Initial AI-attribution signals from PR title, body, labels, and commit metadata
-- Initial historical trust signals for criticality, rollback rate, incidents, and flaky services
-- Initial trust-baseline signals for repo fragility, service stability, rollback readiness, and dependency reputation
-- A versioned `operational-context` contract for non-GitHub producers
-- A versioned `decision contract` for downstream workflow automation and gating
-- Live runtime release gates for freezes, incidents, alert pressure, canary health, and rollback viability
+- A versioned `decision contract` for downstream workflow gating
 - Accepted-risk lifecycle states, renewals, and expiry pressure in the decision contract
-- Policy pack metadata and side-by-side policy simulation
-- Trust memory signals for repeated no-go decisions, overrides, accepted-risk backlog, and low decision quality
-- GitLab merge-request metadata and note adapters
-- Starter policy packs for application teams, platform teams, and regulated services
+- A narrow `dependency-risk-v1` policy pack for first installs
+- Smoke and PR-commenting workflow examples aligned to the v1 wedge
+
+The repo also contains expansion capabilities such as Semgrep normalization, operational context, approval satisfaction, decision history, policy simulation, runtime gates, hosted-service foundations, and GitLab adapters. Those are deliberately not the v1 default.
 
 The current MVP has also been validated in an external canary repository with:
 
 - a clean docs-only `GO`
-- a deliberately risky dependency/ingress/IAM `NO GO`
-- a middle-path `CONDITIONAL GO` scenario for product tuning
+- a deliberately risky dependency `NO GO`
+- a middle-path dependency-risk `CONDITIONAL GO` scenario for product tuning
 - an accepted-risk `CONDITIONAL GO` where suppressed findings remain visible
 
-That means the current product already handles more than vulnerability status alone. It reasons about release posture, operational context, approvals, and accepted risk together.
+That means the current implementation already handles more than vulnerability status alone. For v1, the default product story stays narrower: introduced dependency risk first, broader release posture second.
 
 ## Fastest Install Path
 
@@ -205,31 +194,19 @@ python3 -m pip install "git+https://github.com/veridionhq/veridion.git@main"
 
 ```bash
 veridion-bootstrap \
-  --preset application-team \
+  --preset dependency-risk-v1 \
   --repo-id your-org/your-repo \
   --service-id your-service \
   --team-id your-team
 ```
 
 3. Start with [docs/QUICKSTART.md](docs/QUICKSTART.md)
-4. Pick a starter pack from [examples/policy-packs](examples/policy-packs) if `application-team` is not the right default
-5. Treat `operational-context.json` as the integration contract for future non-GitHub environments
-
-The GitHub Action can build `operational-context.json` internally from repo-local trust source files, so external repos do not need to import Veridion Python modules inside their workflow before the action runs.
+4. Use [examples/policy-packs/dependency-risk-v1.yaml](examples/policy-packs/dependency-risk-v1.yaml) as the default v1 policy
+5. Treat `operational-context.json`, hosted history, and cloud sinks as expansion paths, not first-install requirements
 
 Bootstrap also creates `.veridion/suppressions.json` so teams have a first-class accepted-risk feedback loop instead of ad hoc ignore behavior.
 
 Each suppression can now carry lifecycle metadata such as exception ID, status, owner, approver, review timestamp, ticket, and expiry so accepted risk remains auditable instead of becoming silent ignore state.
-
-Optional AI wording can sit on top of the deterministic decision engine. If you configure a provider, Veridion still decides deterministically and only uses the model to rewrite structured threat facts into shorter operator-facing English.
-
-For an OpenAI-backed setup in GitHub Actions, add:
-
-- repository variable: `VERIDION_COMMENT_SUMMARY_PROVIDER=openai`
-- repository variable: `VERIDION_COMMENT_SUMMARY_MODEL=gpt-5-mini`
-- repository secret: `VERIDION_COMMENT_SUMMARY_API_KEY`
-
-OpenAI's model guide says to choose a smaller variant such as `gpt-5-mini` when you are optimizing for latency and cost, which fits this wording-only layer well: [OpenAI Models](https://developers.openai.com/api/docs/models).
 
 For downstream automation, the action now exposes:
 
@@ -241,14 +218,9 @@ For downstream automation, the action now exposes:
 - `blocking_categories_json`
 - `accepted_risk_present`
 - `decision_contract_path`
-- `approval_gate_status`
-- `approval_gate_allowed`
-- `stale_approvals_json`
-- `approval_head_sha`
 - `decision_event_path`
-- `sink_delivery_summary_json`
 
-Optional integrations on top of the decision contract now include:
+Optional expansion integrations on top of the decision contract include:
 
 - GitHub reviewer requests from role-based approval maps
 - GitHub approval satisfaction checks for mapped approval roles
@@ -262,18 +234,14 @@ Optional integrations on top of the decision contract now include:
 
 Most users do not need all of those.
 
-Practical default:
+V1 practical default:
 
 - core Veridion install
 - deterministic decision engine
 - no LLM configured
 - local artifacts in CI
-
-Recommended first production control-plane path:
-
-- S3 as centralized event storage
-- local or Athena-based history analysis
-- optional AI wording only if the team wants it
+- no hosted service
+- no cloud sink
 
 For contributor/local development only, an editable install also works:
 
@@ -292,57 +260,4 @@ python3 -m pip install "veridion[events]"
 
 These extras are only needed when you want the matching sink or provider. The core decision engine does not require them.
 
-These metadata-driven AI signals are currently non-scoring by default. Historical posture, trust-baseline posture, runtime gates, and trust-memory pressure can now affect score, gating, approvals, and required actions depending on the selected policy pack.
-
-The current product direction beyond the GitHub wedge is:
-
-- approval satisfaction and enforcement
-- runtime release gating from live operational state
-- accepted-risk lifecycle governance
-- policy simulation and rollout management
-- portable adapter surfaces such as GitLab and generic CI
-
-The current policy surface can also drive metadata-based approvals, for example:
-
-```yaml
-require_service_owner_for:
-  - repo_criticality_high
-  - service_criticality_high
-  - low_team_trust
-  - low_test_coverage
-require_sre_owner_for:
-  - historical_instability
-  - flaky_service
-  - service_fragility
-require_security_owner_for:
-  - sensitive_repo
-  - dependency_reputation_risk
-require_platform_owner_for:
-  - production_deployment
-  - large_blast_radius
-  - weak_rollback_readiness
-```
-
-The same policy can opt into contextual score penalties without changing the default model:
-
-```yaml
-historical_instability_score_penalty: 7
-service_criticality_score_penalty: 5
-sensitive_repo_score_penalty: 3
-ai_signal_score_penalty: 0
-ai_authored_commit_score_penalty: 0
-production_deployment_score_penalty: 0
-after_hours_deploy_score_penalty: 0
-public_exposure_score_penalty: 0
-large_blast_radius_score_penalty: 0
-low_team_trust_score_penalty: 0
-unowned_service_score_penalty: 0
-missing_oncall_score_penalty: 0
-cross_team_change_score_penalty: 0
-repo_fragility_score_penalty: 0
-service_fragility_score_penalty: 0
-low_test_coverage_score_penalty: 0
-weak_rollback_readiness_score_penalty: 0
-dependency_reputation_risk_score_penalty: 0
-low_team_deploy_safety_score_penalty: 0
-```
+These metadata-driven AI signals are currently non-scoring by default. For v1, keep them out of the default product story. Historical posture, trust-baseline posture, runtime gates, and trust-memory pressure can affect score, gating, approvals, and required actions only when a selected policy pack opts into that broader release-governance behavior.

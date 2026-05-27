@@ -7,7 +7,7 @@ Veridion now emits a machine-facing decision contract at `veridion-decision.json
 - `veridion-result.json`: full runner envelope, analysis payload, comment text, and embedded decision contract
 - `veridion-decision.json`: stable machine-facing contract for gates, approvals, and external integrations
 
-If you are writing workflow logic, approval routing, or webhook consumers, prefer `veridion-decision.json`.
+If you are writing workflow logic for the v1 dependency-risk wedge, prefer `veridion-decision.json`.
 
 Important product boundary:
 
@@ -20,14 +20,12 @@ Those are optional integration layers on top of the deterministic core.
 
 - `gate_status`: `pass`, `review`, or `block`
 - `decision_allowed`: whether the configured gate allows the verdict
-- `required_approvals_json`
 - `required_next_steps_json`
 - `blocking_reasons_json`
 - `blocking_categories_json`
 - `accepted_risk_present`
 - `decision_contract_path`
 - `decision_event_path`
-- `sink_delivery_summary_json`
 
 ## Decision contract
 
@@ -39,36 +37,8 @@ Key fields:
 - `decision.gate_status`
 - `decision.decision_allowed`
 - `decision.blocking_categories`
-- `actions.required_approvals`
-- `actions.required_approval_labels`
 - `actions.required_next_steps`
 - `accepted_risk.governance_gaps`
-- `signals.runtime.runtime_safety_checks`
-- `signals.runtime.active_runtime_gates`
-
-## Runtime release gates
-
-Live runtime-readiness gates now flow through the same decision contract.
-
-Runtime fields Veridion understands:
-
-- `deployment_freeze_active`
-- `active_incident`
-- `active_incident_severity`
-- `alert_state`
-- `canary_health`
-- `rollback_viability`
-
-These are surfaced in:
-
-- `signals.runtime.active_runtime_gates`
-- `decision.blocking_categories`
-- `actions.required_next_steps`
-
-Examples:
-
-- active freeze or blocked rollback path can force `NO GO`
-- degraded canary health or unverified rollback path can force `CONDITIONAL GO`
 
 ## Gate a deploy
 
@@ -99,7 +69,9 @@ If you want `CONDITIONAL GO` to pass but still be visible, use:
 allowed-decisions: "GO,CONDITIONAL GO"
 ```
 
-## Enforce approval routing
+For v1, use this to gate introduced dependency risk. Runtime release gates and broader operational context are expansion paths.
+
+## Expansion: approval routing
 
 The action can now optionally request GitHub reviewers when you provide an approval map.
 
@@ -141,7 +113,7 @@ Outputs:
 - `requested_reviewers_json`
 - `missing_approval_mappings_json`
 
-## Verify approval satisfaction
+## Expansion: approval satisfaction
 
 The action can also evaluate whether mapped approval roles are currently satisfied on the pull request.
 
@@ -222,7 +194,7 @@ require_security_owner_for:
   - accepted_risk_governance_gap
 ```
 
-## Emit decision events
+## Expansion: decision events
 
 Veridion now emits a machine-readable decision event artifact after approval verification so history captures the final enforced state, not just the raw runner verdict.
 
@@ -236,7 +208,7 @@ Inputs:
 - `decision-event-path`
 - `decision-history-path`
 
-## Deliver canonical events to sinks
+## Expansion: canonical event sinks
 
 The canonical transport surface is now `veridion-decision-event.json`.
 

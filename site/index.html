@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Veridion | The Operational Trust Layer For Software Delivery</title>
-  <meta name="description" content="Veridion is the operational trust layer for autonomous software delivery. It determines whether a software change should safely ship." />
-  <meta property="og:title" content="Veridion | The Operational Trust Layer For Software Delivery" />
-  <meta property="og:description" content="AI increases software velocity. Veridion governs operational trust." />
+  <title>Veridion | Release Decisions For Introduced Dependency Risk</title>
+  <meta name="description" content="Veridion is a GitHub-native release decision engine that determines whether a pull request introduced unacceptable dependency risk." />
+  <meta property="og:title" content="Veridion | Release Decisions For Introduced Dependency Risk" />
+  <meta property="og:description" content="Scanner signals are noisy. Veridion decides whether introduced dependency risk should block a release." />
   <meta property="og:type" content="website" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -40,12 +40,12 @@
     <div class="hero-copy">
       <div class="hero-badge">
         <span class="badge-dot" aria-hidden="true"></span>
-        PR-Level Release Decision Intelligence
+        Introduced Dependency Risk Governance
       </div>
-      <h1>Should this<br>change ship?</h1>
+      <h1>Did this PR<br>introduce risk?</h1>
       <p class="hero-sub">
-        Veridion is the release decision system for increasingly autonomous engineering teams.
-        It determines whether a software change should safely ship, explains why, and prescribes what happens next.
+        Veridion is a GitHub-native release decision engine.
+        It compares dependency risk against a baseline, decides whether the PR should proceed, and explains what happens next.
       </p>
       <div class="hero-actions">
         <a href="/docs/evaluation" class="btn btn--primary">
@@ -75,10 +75,10 @@
 <div class="scanner-bar" aria-label="Supported scanners">
   <span class="scanner-label">Ingests</span>
   <ul class="scanner-list" role="list">
-    <li>Semgrep</li>
-    <li>Trivy</li>
     <li>Grype</li>
     <li>Syft</li>
+    <li>Trivy</li>
+    <li>Baseline reports</li>
     <li>GitHub Actions</li>
   </ul>
 </div>
@@ -90,47 +90,47 @@
   <section class="content-section reveal" aria-labelledby="wedge-heading">
     <div class="section-meta">
       <p class="eyebrow">The wedge</p>
-      <h2 id="wedge-heading">The control layer,<br>not the scanner layer.</h2>
-      <p class="section-intro">Most tools return findings and leave the decision to humans. Veridion closes that gap by deciding whether a change should safely move toward production.</p>
+      <h2 id="wedge-heading">The decision layer,<br>not the scanner layer.</h2>
+      <p class="section-intro">Most tools return vulnerability lists and leave the release call to humans. Veridion closes that gap for introduced dependency risk.</p>
     </div>
     <div class="cards-3">
       <article class="card reveal-child">
         <p class="card-num" aria-hidden="true">01</p>
         <h3>What changed?</h3>
-        <p>Application code, dependencies, Dockerfiles, Terraform, Kubernetes, Helm, GitHub Actions, IAM policy, network exposure, and database migrations — all classified directly from the diff.</p>
+        <p>Dependency and lockfile changes, package metadata, SBOM deltas, and vulnerability reports are compared directly against the baseline.</p>
       </article>
       <article class="card reveal-child">
         <p class="card-num" aria-hidden="true">02</p>
         <h3>What risk was introduced?</h3>
-        <p>Veridion isolates risk introduced <em>in this PR</em> from pre-existing backlog. Teams reason about the current change, not the entire historical scanner backlog.</p>
+        <p>Veridion isolates vulnerable dependencies introduced <em>in this PR</em> from pre-existing backlog. Teams reason about the current change, not the entire historical scanner backlog.</p>
       </article>
       <article class="card reveal-child">
         <p class="card-num" aria-hidden="true">03</p>
         <h3>What should happen next?</h3>
-        <p>A scored decision, confidence level, explicit approvals, and required next steps. A release decision memo posted to the PR, not a raw finding dump.</p>
+        <p>A clear release decision, confidence level, and required next steps. A decision memo posted to the PR, not a raw finding dump.</p>
       </article>
     </div>
   </section>
 
   <!-- STATEMENT BAND -->
   <div class="statement reveal">
-    <p>AI increases software velocity.<br>Veridion governs <strong>operational trust.</strong></p>
+    <p>Tools detect problems.<br>Veridion decides whether they <strong>block release.</strong></p>
   </div>
 
   <section class="content-section reveal" aria-labelledby="difference-heading">
     <div class="section-meta">
       <p class="eyebrow">Category</p>
-      <h2 id="difference-heading">Not AI security.<br>Production trust.</h2>
-      <p class="section-intro">Security findings matter, but they are only one signal inside the decision. Veridion is not a scanner or a remediation tool.</p>
+      <h2 id="difference-heading">Not vulnerability scanning.<br>Release governance.</h2>
+      <p class="section-intro">Security findings matter, but the product is the release decision. Veridion is not a scanner or a remediation tool.</p>
     </div>
     <div class="cards-2">
       <article class="card reveal-child">
         <h3>Security tools ask</h3>
-        <p>Is this vulnerable? What should be fixed? How should the patch be generated or validated?</p>
+        <p>Is this vulnerable? What package is affected? What severity did the scanner report?</p>
       </article>
       <article class="card reveal-child">
         <h3>Veridion asks</h3>
-        <p>Should this change ship now, under these conditions, with this blast radius, this rollback posture, and this policy?</p>
+        <p>Did this PR introduce unacceptable dependency risk, and should that block, condition, or allow the release?</p>
       </article>
     </div>
   </section>
@@ -139,25 +139,25 @@
   <section class="content-section reveal" aria-labelledby="why-heading">
     <div class="section-meta">
       <p class="eyebrow">Why now</p>
-      <h2 id="why-heading">AI is accelerating delivery.<br>Trust is not keeping up.</h2>
+      <h2 id="why-heading">Dependency changes move fast.<br>Release trust lags.</h2>
     </div>
     <div class="cards-2">
       <article class="tension-card tension-card--accel reveal-child">
         <p class="tension-label">The acceleration</p>
         <ul role="list">
-          <li>AI-generated code at higher volume and velocity</li>
-          <li>Autonomous dependency upgrades and remediation</li>
-          <li>Infrastructure changes from non-infrastructure engineers</li>
-          <li>Deploy frequency outpacing manual review capacity</li>
+          <li>Automated dependency updates at higher volume</li>
+          <li>Container and package churn across many services</li>
+          <li>Scanner output mixed with old vulnerability backlog</li>
+          <li>Release frequency outpacing manual triage capacity</li>
         </ul>
       </article>
       <article class="tension-card tension-card--control reveal-child">
         <p class="tension-label">The control problem</p>
         <ul role="list">
-          <li>What exactly changed and what does it touch?</li>
-          <li>What new risk did this PR actually introduce?</li>
-          <li>What is the blast radius if this goes wrong?</li>
-          <li>Should this ship, and who needs to approve it?</li>
+          <li>Which vulnerable dependency is actually new?</li>
+          <li>Was it already present in the baseline?</li>
+          <li>Does policy require a block or review?</li>
+          <li>What should the reviewer do next?</li>
         </ul>
       </article>
     </div>
@@ -174,28 +174,28 @@
         <div class="step-num" aria-hidden="true">1</div>
         <div class="step-body">
           <h3>Scan on every PR</h3>
-          <p>Semgrep, Trivy, Grype, and Syft run against both head and baseline. One bootstrap command generates the workflow with policy, trust inputs, and accepted-risk support.</p>
+          <p>Syft, Grype, and Trivy run against both head and baseline. One bootstrap command generates the workflow with policy and accepted-risk support.</p>
         </div>
       </li>
       <li class="step reveal-child">
         <div class="step-num" aria-hidden="true">2</div>
         <div class="step-body">
           <h3>Normalize, deduplicate, attribute</h3>
-          <p>Scanner output is unified into one schema. Cross-scanner duplicates collapse. Each finding is attributed as introduced or pre-existing against the baseline.</p>
+          <p>Scanner output is unified into one schema. Cross-scanner dependency duplicates collapse. Each finding is attributed as introduced or pre-existing against the baseline.</p>
         </div>
       </li>
       <li class="step reveal-child">
         <div class="step-num" aria-hidden="true">3</div>
         <div class="step-body">
           <h3>Score against your policy</h3>
-          <p>Change surface, blast radius, operational context, accepted risk, and policy are weighed to produce a deterministic 0-100 score and release verdict.</p>
+          <p>Introduced severity, baseline quality, accepted risk, and policy produce a deterministic release verdict.</p>
         </div>
       </li>
       <li class="step reveal-child">
         <div class="step-num" aria-hidden="true">4</div>
         <div class="step-body">
           <h3>Decision posted to the PR</h3>
-          <p>GO, CONDITIONAL GO, or NO GO — with primary drivers, required approvals, and next steps. A decision memo, not a raw scanner log.</p>
+          <p>GO, CONDITIONAL GO, or NO GO — with primary drivers and next steps. A decision memo, not a raw scanner log.</p>
         </div>
       </li>
     </ol>
@@ -230,7 +230,7 @@
           <span class="decision-score" aria-label="Score 38">38</span>
         </div>
         <p class="decision-scenario">Dependency + IAM + ingress</p>
-        <p class="decision-body">Critical dependency risk plus IAM and ingress exposure. Release blocked pending remediation and review.</p>
+        <p class="decision-body">Critical introduced dependency risk. Release blocked pending remediation or accepted-risk review.</p>
       </article>
       <article class="decision-card decision-card--conditional reveal-child">
         <div class="decision-top">
@@ -251,16 +251,16 @@
     </div>
     <div class="cards-3">
       <article class="card reveal-child">
-        <h3>Introduced-only intelligence</h3>
-        <p>Multi-scanner normalization, deduplication, baseline comparison, and deterministic release decisioning. Legacy debt stays separate from current change risk.</p>
+        <h3>Introduced dependency intelligence</h3>
+        <p>SBOM normalization, vulnerability deduplication, baseline comparison, and deterministic release decisioning. Legacy debt stays separate from current PR risk.</p>
       </article>
       <article class="card reveal-child">
-        <h3>Blast-radius and policy intelligence</h3>
-        <p>Change-surface inference across multiple risk domains. Configurable approvals, score adjustments, and accepted-risk exception handling with expiry governance.</p>
+        <h3>Policy that reads plainly</h3>
+        <p>Critical introduced dependency risk can block. High introduced dependency risk can require review. Accepted-risk exceptions stay visible with owner, reason, and expiry.</p>
       </article>
       <article class="card reveal-child">
-        <h3>Portable integration contract</h3>
-        <p>GitHub Actions is the current wedge. The engine already accepts a versioned operational-context artifact designed for future CI systems, deployment pipelines, autonomous remediation flows, and runtime governance paths.</p>
+        <h3>Machine-readable decisions</h3>
+        <p>GitHub Actions is the current wedge. The action also emits a stable decision contract so downstream workflow steps can gate without scraping PR prose.</p>
       </article>
     </div>
   </section>
@@ -274,7 +274,7 @@
     <div class="cards-2">
       <article class="card reveal-child">
         <h3>Output should feel like a decision memo</h3>
-        <p>Primary drivers, contextual risk, required approvals, and next steps should be scannable without opening a single raw scanner log.</p>
+        <p>Introduced dependencies, vulnerability severity, baseline status, confidence, and next steps should be scannable without opening a single raw scanner log.</p>
       </article>
       <article class="card reveal-child">
         <h3>Accepted risk should stay visible</h3>
@@ -306,9 +306,9 @@
     <div class="cta-inner">
       <div class="cta-glow" aria-hidden="true"></div>
       <h2 id="cta-heading">Start with evaluation.<br>Move to live install when it earns it.</h2>
-      <p>Read the evaluation guide if you want to test the wedge with real PR scenarios. Use the bootstrap command when you are ready to run Veridion in a live repository and see how it governs deployment trust end to end.</p>
+      <p>Read the evaluation guide if you want to test the wedge with real PR scenarios. Use the bootstrap command when you are ready to run Veridion in a live repository and judge introduced dependency risk.</p>
       <div class="cta-code" role="group" aria-label="Bootstrap command">
-        <code id="cta-code-text">veridion-bootstrap --preset application-team</code>
+        <code id="cta-code-text">veridion-bootstrap --preset dependency-risk-v1</code>
         <button class="copy-btn" id="copy-btn" aria-label="Copy command to clipboard" title="Copy">
           <svg class="icon-copy" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
           <svg class="icon-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -332,7 +332,7 @@
 <footer class="footer">
   <div class="footer-inner">
     <span class="footer-brand">Veridion</span>
-    <span class="footer-tagline">AI increases software velocity. Veridion governs operational trust.</span>
+    <span class="footer-tagline">Scanner signals are noisy. Veridion makes release decisions explainable.</span>
     <a href="https://github.com/veridionhq/veridion" class="footer-gh" target="_blank" rel="noopener noreferrer">
       GitHub
       <svg width="11" height="11" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2.5 7h9M8 3.5 11.5 7 8 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -346,17 +346,17 @@
 
   // ── Terminal animation ──────────────────────────────────────────
   var LINES = [
-    { t: '## Release Decision Intelligence', c: 'h2' },
+    { t: '## Release Decision', c: 'h2' },
     { t: '', c: 'blank' },
     { t: 'Decision:   CONDITIONAL GO', c: 'decision-cond' },
     { t: 'RDI Score:  74', c: 'kv' },
     { t: 'Confidence: HIGH', c: 'kv' },
     { t: '', c: 'blank' },
-    { t: 'Summary: Introduced: 3 | Existing: 47 | Suppressed: 1 | Files: 12', c: 'summary' },
+    { t: 'Summary: Introduced: 1 | Existing: 47 | Suppressed: 0 | Files: 2', c: 'summary' },
     { t: '', c: 'blank' },
     { t: '### Primary Drivers', c: 'h3' },
-    { t: '- 2 high-severity findings introduced (code)', c: 'li' },
-    { t: '- payments surface touched', c: 'li' },
+    { t: '- high-severity vulnerability introduced in runtime dependency', c: 'li' },
+    { t: '- baseline reports did not contain this finding', c: 'li' },
     { t: '- policy no_go threshold: 60 (score: 74)', c: 'li' },
     { t: '', c: 'blank' },
     { t: '### Required Approvals', c: 'h3' },
@@ -364,8 +364,8 @@
     { t: '', c: 'blank' },
     { t: '### Required Next Steps', c: 'h3' },
     { t: '- Prioritize remediation of introduced findings', c: 'li' },
-    { t: '- Verify payment-impact before merge', c: 'li' },
-    { t: '- Verify rollback ownership and on-call coverage', c: 'li' },
+    { t: '- Upgrade the package or approve a time-bound exception', c: 'li' },
+    { t: '- Keep the baseline reports attached to preserve attribution', c: 'li' },
   ];
 
   var terminalBody = document.getElementById('terminal-body');

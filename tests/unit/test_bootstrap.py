@@ -31,6 +31,19 @@ def test_build_bootstrap_files_scaffolds_expected_paths() -> None:
     assert 'request-approvals: "true"' in files[".github/workflows/veridion-rdi.yml"]
     assert 'verify-approvals: "true"' in files[".github/workflows/veridion-rdi.yml"]
     assert "decision-contract-path: veridion-decision.json" in files[".github/workflows/veridion-rdi.yml"]
+    assert "semgrep" not in files[".github/workflows/veridion-rdi.yml"].lower()
+
+
+def test_dependency_risk_v1_preset_stays_narrow() -> None:
+    files = build_bootstrap_files(preset="dependency-risk-v1")
+
+    policy = files[".veridion/policy.yaml"]
+    assert "  - dependency_changes" in policy
+    assert "require_platform_owner_for: []" in policy
+    assert "require_service_owner_for: []" in policy
+    assert "require_sre_owner_for: []" in policy
+    assert "  - production_iac" not in policy
+    assert "ai_signal_score_penalty: 0" in policy
 
 
 def test_build_bootstrap_files_rejects_unknown_preset() -> None:

@@ -1,15 +1,15 @@
 name: "Veridion RDI"
-description: "Release Decision Intelligence for pull requests"
+description: "GitHub-native release decisions for introduced dependency risk"
 inputs:
   diff-path:
     description: "Path to a unified diff file for the current change"
     required: true
   reports:
-    description: "Newline-delimited TOOL=PATH mappings for current scanner reports"
+    description: "Newline-delimited TOOL=PATH mappings for current scanner reports; v1 defaults to Syft, Grype, and Trivy"
     required: false
     default: ""
   baseline-reports:
-    description: "Newline-delimited TOOL=PATH mappings for baseline scanner reports"
+    description: "Newline-delimited TOOL=PATH mappings for baseline scanner reports used to separate introduced risk from existing backlog"
     required: false
     default: ""
   policy-path:
@@ -17,7 +17,7 @@ inputs:
     required: false
     default: ""
   operational-context-path:
-    description: "Path to optional versioned operational-context JSON; when provided, metadata-path and trust-profile-path are ignored"
+    description: "Expansion path: optional versioned operational-context JSON; when provided, metadata-path and trust-profile-path are ignored"
     required: false
     default: ""
   trust-profile-source-path:
@@ -29,7 +29,7 @@ inputs:
     required: false
     default: ""
   metadata-path:
-    description: "Path to optional pull request metadata JSON for AI attribution; ignored when operational-context-path is provided"
+    description: "Expansion path: optional pull request metadata JSON for attribution; ignored when operational-context-path is provided"
     required: false
     default: ""
   trust-profile-path:
@@ -41,7 +41,7 @@ inputs:
     required: false
     default: ""
   comment-summary-provider:
-    description: "Optional wording model provider for PR comment summarization: openai, anthropic, or bedrock"
+    description: "Expansion path: optional wording model provider for PR comment summarization: openai, anthropic, or bedrock"
     required: false
     default: ""
   comment-summary-model:
@@ -81,11 +81,11 @@ inputs:
     required: false
     default: "veridion-decision-event.json"
   decision-history-path:
-    description: "Optional path to append NDJSON decision history events"
+    description: "Expansion path: optional path to append NDJSON decision history events"
     required: false
     default: ""
   decision-sinks:
-    description: "Newline-delimited sink specs for canonical decision-event delivery"
+    description: "Expansion path: newline-delimited sink specs for canonical decision-event delivery"
     required: false
     default: ""
   fail-on-sink-error:
@@ -101,7 +101,7 @@ inputs:
     required: false
     default: "GO,CONDITIONAL GO"
   approval-map-path:
-    description: "Path to optional approval role map JSON for GitHub reviewer requests"
+    description: "Expansion path: path to optional approval role map JSON for GitHub reviewer requests"
     required: false
     default: ""
   request-approvals:

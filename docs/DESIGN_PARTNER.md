@@ -7,10 +7,11 @@ This document is for teams evaluating Veridion in a real repository.
 Veridion is a strong fit for teams that:
 
 - already use GitHub pull request workflows
+- already run dependency or container vulnerability scanners
 - care about release safety, not just scanner output
-- have meaningful application, infrastructure, or dependency risk in PRs
-- want policy and approvals to be more explainable
-- are dealing with growing automation or AI-assisted engineering
+- have meaningful dependency risk in PRs
+- want introduced risk separated from pre-existing backlog
+- want release decisions to be more explainable
 
 ## Recommended Pilot Shape
 
@@ -19,8 +20,8 @@ Start narrow.
 Use Veridion in one repository where:
 
 - pull requests are frequent
-- production impact is real
-- platform/security review already exists in some form
+- dependency changes happen regularly
+- security review already exists in some form
 - the team will actually compare Veridion’s output with human judgment
 
 Do not start with a broad multi-repo rollout.
@@ -34,8 +35,7 @@ For a first pilot:
 3. Compare the output with real reviewer expectations.
 4. Tune only:
 
-- policy thresholds
-- approval requirements
+- policy thresholds for introduced dependency risk
 - accepted-risk suppressions
 
 Avoid changing the core model immediately.
@@ -47,7 +47,7 @@ A successful early pilot should show at least one of these:
 - clearer review decisions than scanner output alone
 - reduced noise from pre-existing issues
 - better explanation of why a change was blocked or conditioned
-- faster alignment between application, platform, and security reviewers
+- faster alignment between application and security reviewers
 
 ## What To Avoid
 
@@ -64,12 +64,13 @@ Its value is in prioritization, explanation, and governance.
 
 Today Veridion can:
 
-- normalize Trivy, Grype, Semgrep, and Syft inputs
-- isolate introduced risk from existing debt
-- infer parts of blast radius from the change surface
-- apply policy-driven approvals and score adjustments
+- normalize Syft, Grype, and Trivy dependency signals
+- isolate introduced dependency risk from existing debt
+- apply policy-driven release decisions
 - render clear PR comments with next actions
 - govern accepted-risk suppressions with visible exceptions and expiry
+
+The repo also contains broader release-governance capabilities such as Semgrep normalization, operational context, approval satisfaction, decision history, runtime gates, and hosted-control-plane foundations. Do not make those the first design-partner evaluation unless the dependency-risk wedge is already trusted.
 
 ## Current Limits
 

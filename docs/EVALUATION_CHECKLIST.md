@@ -11,27 +11,27 @@ Use this during design-partner trials or internal product reviews.
 ## Decision Quality
 
 - Low-risk PR produced a credible `GO`
-- Medium-risk PR produced a credible `CONDITIONAL GO`
-- High-risk PR produced a credible `NO GO`
+- Medium dependency-risk PR produced a credible `CONDITIONAL GO`
+- Critical introduced dependency-risk PR produced a credible `NO GO`
 - Accepted-risk PR remained visible and did not read as pristine
 
 ## Output Quality
 
 - Primary drivers were easy to scan
-- Required approvals felt justified
+- Required security review felt justified when dependency risk was introduced
 - Required next steps were actionable
-- Contextual risk amplified understanding without overwhelming the reader
+- Contextual risk did not overwhelm the dependency-risk decision
 
 ## Policy Quality
 
 - Policy defaults were usable without deep tuning
-- Approval requirements were neither too weak nor too noisy
-- Score behavior matched team expectations closely enough to be trusted
+- Dependency-risk decisions were neither too weak nor too noisy
+- Score behavior did not feel like an unexplained magic model
 
 ## Operational Trust
 
-- Introduced risk was clearly separated from pre-existing noise
-- Blast-radius reasoning felt directionally correct
+- Introduced dependency risk was clearly separated from pre-existing noise
+- Baseline quality and attribution confidence were clear
 - Accepted-risk exceptions stayed auditable
 - Nothing important disappeared silently
 

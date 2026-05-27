@@ -2,6 +2,8 @@
 
 This is the shortest path to a usable Veridion install in a GitHub repository.
 
+The default v1 path is intentionally narrow: decide whether a pull request introduced unacceptable dependency risk. Start there before enabling broader release-governance features.
+
 ## 1. Install Veridion
 
 For a GitHub-hosted install:
@@ -46,7 +48,7 @@ Run:
 
 ```bash
 veridion-bootstrap \
-  --preset application-team \
+  --preset dependency-risk-v1 \
   --repo-id your-org/your-repo \
   --service-id your-service \
   --team-id your-team
@@ -60,17 +62,18 @@ This creates:
 - `.veridion/suppressions.json`
 - `.github/workflows/veridion-rdi.yml`
 
-Use `--preset platform-team` or `--preset regulated-service` when those better match the repo.
+Use `--preset application-team`, `--preset platform-team`, or `--preset regulated-service` later when you are ready to evaluate broader operational context and approval behavior.
 
 ## 3. Choose or adjust the policy pack
 
 Start with one of these presets:
 
+- [Dependency Risk V1](../examples/policy-packs/dependency-risk-v1.yaml)
 - [Application Team](../examples/policy-packs/application-team.yaml)
 - [Platform Team](../examples/policy-packs/platform-team.yaml)
 - [Regulated Service](../examples/policy-packs/regulated-service.yaml)
 
-If you are unsure, start with `application-team.yaml`.
+If you are unsure, start with `dependency-risk-v1.yaml`.
 
 ## 4. Add repo-local trust inputs
 
@@ -161,46 +164,34 @@ Do not customize everything up front.
 First review:
 
 - false positives
-- approval noise
-- rollout guidance
+- introduced versus pre-existing dependency attribution
+- whether `GO`, `CONDITIONAL GO`, and `NO GO` match reviewer judgment
+- whether the confidence level reflects report and baseline quality
 - whether the chosen policy pack is too strict or too loose
 
 Then tune:
 
 - `require_*_for`
-- score penalties
-- trust profile posture values
+- accepted-risk suppressions
+- thresholds only after reviewing real PRs
 
-## Optional AI wording layer
+## Expansion Integrations
 
-Veridion can optionally rewrite its structured threat facts into shorter English using a model provider, while still keeping the decision and policy logic deterministic.
+The v1 dependency-risk wedge does not require AI wording, S3, Athena, hosted services, or a cloud provider.
 
-For an OpenAI-backed setup in GitHub Actions, add:
-
-- repository variable: `VERIDION_COMMENT_SUMMARY_PROVIDER=openai`
-- repository variable: `VERIDION_COMMENT_SUMMARY_MODEL=gpt-5-mini`
-- repository secret: `VERIDION_COMMENT_SUMMARY_API_KEY`
-
-The workflow example already passes these optional inputs through when they are present.
-
-Supported providers today:
-
-- OpenAI-compatible
-- Anthropic / Claude
-- AWS Bedrock
-
-If no provider is configured, or if the model response is invalid, Veridion falls back to deterministic rendering automatically.
+Optional expansion paths exist for teams that later want centralized history, external event sinks, broader operational context, or model-assisted wording on top of deterministic decisions.
 
 Important:
 
 - users do not need their own LLM to use Veridion
 - users do not need S3 or Athena to use Veridion
+- users do not need the hosted control plane to evaluate the v1 dependency-risk wedge
 
-Those are optional integrations for teams that want centralized storage, analytics, or AI wording.
+Those are optional integrations after the basic PR decision loop is trusted.
 
 ## Install Notes
 
-- `operational-context.json` is the portable integration contract. Other CI/CD systems should emit that same artifact instead of duplicating Veridion internals.
-- GitHub is currently the reference producer, not the only intended environment.
+- `operational-context.json` is the portable integration contract for broader release-governance scenarios. Other CI/CD systems should emit that same artifact instead of duplicating Veridion internals.
+- GitHub is currently the reference v1 producer, not the only intended environment.
 - The composite action can build operational context internally from `.veridion/trust-profile.source.json` and `.veridion/trust-catalog.source.json`. External repos do not need local Veridion Python modules in CI.
-- If you want the lowest-friction first install, do not edit the scoring model yet. Start with approvals and recommendations first.
+- If you want the lowest-friction first install, do not edit the scoring model yet. Start with introduced dependency risk, baseline quality, and accepted-risk handling first.

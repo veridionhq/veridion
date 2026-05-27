@@ -8,6 +8,42 @@ from pathlib import Path
 
 
 POLICY_PACKS = {
+    "dependency-risk-v1": """max_severity: critical
+allow_conditional: true
+no_go_below_score: 60
+conditional_go_below_score: 85
+require_approval_for:
+  - dependency_changes
+require_platform_owner_for: []
+require_service_owner_for: []
+require_sre_owner_for: []
+require_security_owner_for:
+  - dependency_reputation_risk
+historical_instability_score_penalty: 0
+service_criticality_score_penalty: 0
+sensitive_repo_score_penalty: 0
+ai_signal_score_penalty: 0
+ai_authored_commit_score_penalty: 0
+production_deployment_score_penalty: 0
+after_hours_deploy_score_penalty: 0
+public_exposure_score_penalty: 0
+large_blast_radius_score_penalty: 0
+low_team_trust_score_penalty: 0
+unowned_service_score_penalty: 0
+missing_oncall_score_penalty: 0
+cross_team_change_score_penalty: 0
+repo_fragility_score_penalty: 0
+service_fragility_score_penalty: 0
+low_test_coverage_score_penalty: 0
+weak_rollback_readiness_score_penalty: 0
+dependency_reputation_risk_score_penalty: 0
+low_team_deploy_safety_score_penalty: 0
+shared_platform_surface_score_penalty: 0
+database_migration_surface_score_penalty: 0
+payments_surface_score_penalty: 0
+auth_surface_score_penalty: 0
+data_surface_score_penalty: 0
+""",
     "application-team": """max_severity: critical
 allow_conditional: true
 no_go_below_score: 60
@@ -217,18 +253,6 @@ jobs:
           mkdir -p artifacts
           git worktree add --detach ../veridion-base "${{{{ github.event.pull_request.base.sha }}}}"
 
-      - name: Install Semgrep CLI
-        shell: bash
-        run: python3 -m pip install semgrep
-
-      - name: Run Semgrep on current workspace
-        shell: bash
-        run: semgrep scan --config auto --json --output artifacts/semgrep.json .
-
-      - name: Run Semgrep on baseline workspace
-        shell: bash
-        run: semgrep scan --config auto --json --output artifacts/baseline-semgrep.json ../veridion-base
-
       - name: Run Trivy on current workspace
         uses: aquasecurity/trivy-action@0.35.0
         with:
@@ -287,12 +311,10 @@ jobs:
           diff-path: pr.diff
           reports: |
             trivy=artifacts/trivy.json
-            semgrep=artifacts/semgrep.json
             grype=artifacts/grype.json
             syft=artifacts/syft.json
           baseline-reports: |
             trivy=artifacts/baseline-trivy.json
-            semgrep=artifacts/baseline-semgrep.json
             grype=artifacts/baseline-grype.json
             syft=artifacts/baseline-syft.json
           policy-path: .veridion/policy.yaml
