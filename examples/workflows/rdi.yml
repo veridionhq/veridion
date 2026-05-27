@@ -107,10 +107,7 @@ jobs:
             grype=artifacts/baseline-grype.json
             syft=artifacts/baseline-syft.json
           policy-path: examples/policy-packs/dependency-risk-v1.yaml
-          trust-profile-source-path: examples/trust/trust-profile.source.json
-          trust-catalog-source-path: examples/trust/trust-catalog.source.json
           suppression-path: .veridion/suppressions.json
-          approval-map-path: .veridion/approval-map.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           decision-contract-path: veridion-decision.json

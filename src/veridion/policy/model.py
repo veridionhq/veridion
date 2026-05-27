@@ -37,6 +37,7 @@ class PolicyConfig:
     # accepted_risk_burden, active_incident, firing_alerts.
     require_security_owner_for: tuple[str, ...] = ()
     require_complete_accepted_risk_metadata: bool = False
+    condition_on_release_controls: bool = True
     historical_instability_score_penalty: int = 0
     service_criticality_score_penalty: int = 0
     sensitive_repo_score_penalty: int = 0
@@ -106,6 +107,7 @@ def _policy_from_mapping(parsed: dict[str, object]) -> PolicyConfig:
             parsed.get("require_complete_accepted_risk_metadata"),
             default=False,
         ),
+        condition_on_release_controls=_as_bool(parsed.get("condition_on_release_controls"), default=True),
         historical_instability_score_penalty=_as_int(parsed.get("historical_instability_score_penalty"), default=0),
         service_criticality_score_penalty=_as_int(parsed.get("service_criticality_score_penalty"), default=0),
         sensitive_repo_score_penalty=_as_int(parsed.get("sensitive_repo_score_penalty"), default=0),

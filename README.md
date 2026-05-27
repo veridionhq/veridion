@@ -47,9 +47,7 @@ It is the decision layer that decides whether scanner signals should block or co
 
 The implementation already contains broader release-governance primitives such as operational context, approval satisfaction, accepted-risk lifecycle state, decision history, policy simulation, and hosted control-plane foundations. Those are expansion paths. They are not required to understand or adopt the v1 wedge.
 
-The action can now consume a versioned operational-context artifact as its primary context contract. That artifact can be produced by GitHub workflows today, and later by other CI/CD or platform integrations without changing the decision engine.
-
-That same contract now carries both static posture and live release-readiness gates such as active freezes, incidents, canary health, and rollback viability.
+The action can consume a versioned operational-context artifact for broader release-governance scenarios. That is an expansion path, not part of the v1 dependency-risk default.
 
 The comment is now only one view of the product. Veridion also emits a first-class machine contract at `veridion-decision.json` so downstream workflow steps can gate, route approvals, and audit accepted risk without scraping prose.
 
@@ -60,12 +58,7 @@ The comment is now only one view of the product. Veridion also emits a first-cla
 
 Consumers should build automation against `veridion-decision.json`, not the larger runner envelope.
 
-The current GitHub path still builds from two source inputs:
-
-- PR metadata for request-scoped signals like title, body, labels, and commit history
-- trust profile JSON for repo, service, and team posture that should persist across PRs
-
-Those are merged into one versioned operational-context artifact:
+The expansion contract is `operational-context.json`:
 
 ```json
 {
@@ -84,7 +77,7 @@ Those are merged into one versioned operational-context artifact:
 }
 ```
 
-The repo-local source example lives at [examples/trust/trust-profile.source.json](examples/trust/trust-profile.source.json). A shared catalog baseline can also be layered in from [examples/trust/trust-catalog.source.json](examples/trust/trust-catalog.source.json), and the workflow now builds `operational-context.json` before running Veridion. That is the integration point other products should target.
+For v1, start without `operational-context.json`. Feed current and baseline Syft, Grype, and Trivy reports into the action and let the decision focus on introduced dependency risk.
 
 V1 example output:
 

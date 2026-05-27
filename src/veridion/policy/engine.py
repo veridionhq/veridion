@@ -46,7 +46,7 @@ def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None)
     decision = _apply_policy_decision(risk, bundle, resolved_policy, reasons)
     required_approvals, approval_triggers = _required_approvals(bundle, resolved_policy)
     recommendations = _recommendations(bundle, risk, decision, required_approvals)
-    decision = _align_decision_with_release_gates(decision, required_approvals, recommendations, reasons)
+    decision = _align_decision_with_release_gates(decision, resolved_policy, required_approvals, recommendations, reasons)
 
     return PolicyDecision(
         score=risk.score,
@@ -364,11 +364,15 @@ def _recommendations(
 
 def _align_decision_with_release_gates(
     decision: str,
+    policy: PolicyConfig,
     required_approvals: tuple[str, ...],
     recommendations: tuple[str, ...],
     reasons: list[str],
 ) -> str:
     if decision != "GO":
+        return decision
+
+    if not policy.condition_on_release_controls:
         return decision
 
     if required_approvals or _has_required_operational_gates(recommendations):

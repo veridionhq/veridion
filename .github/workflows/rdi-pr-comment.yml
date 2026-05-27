@@ -44,39 +44,6 @@ jobs:
             : > pr.diff
           fi
 
-      - name: Build PR metadata artifact
-        shell: bash
-        env:
-          PYTHONPATH: src
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          python3 -m veridion.action.metadata_builder \
-            --event-path "${GITHUB_EVENT_PATH}" \
-            --base-ref "${BASE_REF}" \
-            --output-path pr-metadata.json
-
-      - name: Build trust profile artifact
-        shell: bash
-        env:
-          PYTHONPATH: src
-        run: |
-          python3 -m veridion.action.trust_profile_builder \
-            --catalog-path examples/trust/trust-catalog.source.json \
-            --config-path examples/trust/trust-profile.source.json \
-            --output-path trust-profile.json
-
-      - name: Build operational context artifact
-        shell: bash
-        env:
-          PYTHONPATH: src
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          python3 -m veridion.action.operational_context_builder \
-            --event-path "${GITHUB_EVENT_PATH}" \
-            --base-ref "${BASE_REF}" \
-            --trust-profile-path trust-profile.json \
-            --output-path operational-context.json
-
       - name: Prepare baseline worktree
         shell: bash
         env:
@@ -157,7 +124,6 @@ jobs:
             grype=artifacts/baseline-grype.json
             syft=artifacts/baseline-syft.json
           policy-path: examples/policy-packs/dependency-risk-v1.yaml
-          operational-context-path: operational-context.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           decision-contract-path: veridion-decision.json
@@ -193,6 +159,3 @@ jobs:
             veridion-pr-comment.md
             veridion-result.json
             veridion-decision.json
-            pr-metadata.json
-            trust-profile.json
-            operational-context.json

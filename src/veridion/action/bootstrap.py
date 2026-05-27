@@ -12,37 +12,12 @@ POLICY_PACKS = {
 allow_conditional: true
 no_go_below_score: 60
 conditional_go_below_score: 85
-require_approval_for:
-  - dependency_changes
+require_approval_for: []
 require_platform_owner_for: []
 require_service_owner_for: []
 require_sre_owner_for: []
-require_security_owner_for:
-  - dependency_reputation_risk
-historical_instability_score_penalty: 0
-service_criticality_score_penalty: 0
-sensitive_repo_score_penalty: 0
-ai_signal_score_penalty: 0
-ai_authored_commit_score_penalty: 0
-production_deployment_score_penalty: 0
-after_hours_deploy_score_penalty: 0
-public_exposure_score_penalty: 0
-large_blast_radius_score_penalty: 0
-low_team_trust_score_penalty: 0
-unowned_service_score_penalty: 0
-missing_oncall_score_penalty: 0
-cross_team_change_score_penalty: 0
-repo_fragility_score_penalty: 0
-service_fragility_score_penalty: 0
-low_test_coverage_score_penalty: 0
-weak_rollback_readiness_score_penalty: 0
-dependency_reputation_risk_score_penalty: 0
-low_team_deploy_safety_score_penalty: 0
-shared_platform_surface_score_penalty: 0
-database_migration_surface_score_penalty: 0
-payments_surface_score_penalty: 0
-auth_surface_score_penalty: 0
-data_surface_score_penalty: 0
+require_security_owner_for: []
+condition_on_release_controls: false
 """,
     "application-team": """max_severity: critical
 allow_conditional: true
@@ -318,12 +293,7 @@ jobs:
             grype=artifacts/baseline-grype.json
             syft=artifacts/baseline-syft.json
           policy-path: .veridion/policy.yaml
-          trust-profile-source-path: .veridion/trust-profile.source.json
-          trust-catalog-source-path: .veridion/trust-catalog.source.json
           suppression-path: .veridion/suppressions.json
-          approval-map-path: .veridion/approval-map.json
-          request-approvals: "true"
-          verify-approvals: "true"
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           decision-contract-path: veridion-decision.json
@@ -357,44 +327,14 @@ def build_bootstrap_files(
     if preset not in POLICY_PACKS:
         raise ValueError(f"unsupported preset: {preset}")
 
-    trust_profile = {
-        "scope": {
-            "repo_id": repo_id,
-            "service_id": service_id,
-            "team_id": team_id,
-        },
-        "historical": {},
-        "runtime": {},
-        "ownership": {},
-        "trust_baseline": {},
-    }
-    trust_catalog = {
-        "scope": {},
-        "historical": {},
-        "runtime": {},
-        "ownership": {},
-        "trust_baseline": {},
-    }
     suppressions = {
         "schema_version": 1,
         "suppressions": [],
     }
-    approval_map = {
-        "schema_version": 1,
-        "roles": {
-            "platform_owner": {"teams": ["platform-team"]},
-            "security_owner": {"teams": ["security-team"]},
-            "service_owner": {"users": []},
-            "sre_owner": {"teams": ["sre-team"]},
-        },
-    }
 
     return {
         ".veridion/policy.yaml": POLICY_PACKS[preset],
-        ".veridion/trust-profile.source.json": json.dumps(trust_profile, indent=2) + "\n",
-        ".veridion/trust-catalog.source.json": json.dumps(trust_catalog, indent=2) + "\n",
         ".veridion/suppressions.json": json.dumps(suppressions, indent=2) + "\n",
-        ".veridion/approval-map.json": json.dumps(approval_map, indent=2) + "\n",
         ".github/workflows/veridion-rdi.yml": WORKFLOW_TEMPLATE.format(action_ref=action_ref),
     }
 

@@ -13,6 +13,7 @@ max_severity: critical
 allow_conditional: true
 no_go_below_score: 60
 conditional_go_below_score: 85
+condition_on_release_controls: false
 """
     )
 
@@ -23,3 +24,4 @@ conditional_go_below_score: 85
     assert pack.metadata.rollout_stage == "pilot"
     assert pack.config.max_severity == "critical"
     assert pack.config.no_go_below_score == 60
+    assert pack.config.condition_on_release_controls is False
