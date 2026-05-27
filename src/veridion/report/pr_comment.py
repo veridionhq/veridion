@@ -134,11 +134,13 @@ def render_pr_comment_result(
             )
         )
 
-    key_context = (
-        _format_release_context(bundle)
-        if _is_clean_review_case(bundle, decision)
-        else _format_key_context(bundle, compact=compact_render)
-    )
+    key_context = ()
+    if not _is_v1_clean_dependency_go(bundle, decision):
+        key_context = (
+            _format_release_context(bundle)
+            if _is_clean_review_case(bundle, decision)
+            else _format_key_context(bundle, compact=compact_render)
+        )
     if key_context:
         lines.extend(_section("Key Context", key_context))
     if attribution_untrusted:
@@ -174,7 +176,7 @@ def render_pr_comment_result(
         lines.extend(_section("Policy Score Adjustments", decision.score_adjustments))
 
     # For GO decisions the next-steps block is advisory and belongs at the bottom.
-    if decision.decision == "GO":
+    if decision.decision == "GO" and not _is_v1_clean_dependency_go(bundle, decision):
         lines.extend(
             _section(
                 "What must happen next",
@@ -748,4 +750,16 @@ def _is_clean_review_case(bundle: AnalysisBundle, decision: PolicyDecision) -> b
         bundle.summary.introduced_findings == 0
         and decision.decision == "CONDITIONAL GO"
         and "release still requires explicit approvals or operational checks" in decision.reasons
+    )
+
+
+def _is_v1_clean_dependency_go(bundle: AnalysisBundle, decision: PolicyDecision) -> bool:
+    return (
+        decision.decision == "GO"
+        and not decision.policy.condition_on_release_controls
+        and bundle.summary.baseline_attribution_trusted
+        and bundle.summary.change_relevant_findings == 0
+        and bundle.summary.introduced_findings == 0
+        and bundle.summary.suppressed_findings == 0
+        and bundle.summary.expired_suppressions == 0
     )

@@ -99,6 +99,40 @@ def test_render_pr_comment_handles_clean_change_without_approvals() -> None:
     assert comment.endswith("<!-- veridion:rdi:end -->\n")
 
 
+def test_render_pr_comment_v1_clean_dependency_go_hides_release_controls() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="infra/service.yaml",
+                    change_type="modified",
+                    added_lines=4,
+                    removed_lines=2,
+                    signals=("infrastructure", "dependency"),
+                    previous_path="infra/service.yaml",
+                ),
+            )
+        ),
+        runtime_signals=RuntimeSignals(blast_radius="high"),
+    )
+    decision = evaluate_release(
+        bundle,
+        PolicyConfig(condition_on_release_controls=False),
+    )
+
+    comment = render_pr_comment(bundle, decision)
+
+    assert "### ✅ GO" in comment
+    assert "- no introduced findings detected" in comment
+    assert "### Key Context" not in comment
+    assert "runtime:" not in comment
+    assert "blast radius" not in comment
+    assert "### What must happen next" not in comment
+    assert "Run staging smoke tests" not in comment
+
+
 def test_render_pr_comment_downgrades_to_change_relevant_when_baseline_is_missing() -> None:
     bundle = build_analysis_bundle(
         current_findings=[
