@@ -82,7 +82,10 @@ def render_pr_comment_result(
     lines.append("## Release Decision Intelligence")
     lines.append("")
     lines.append(f"### {_decision_icon(decision.decision)} {decision.decision}")
-    lines.append(f"**RDI Score:** {decision.score} | **Confidence:** {_confidence_display(decision)}")
+    if _is_v1_dependency_policy(decision):
+        lines.append(f"**Confidence:** {_confidence_display(decision)}")
+    else:
+        lines.append(f"**RDI Score:** {decision.score} | **Confidence:** {_confidence_display(decision)}")
     lines.append("")
 
     attribution_untrusted = not bundle.summary.baseline_attribution_trusted
@@ -179,7 +182,7 @@ def render_pr_comment_result(
             )
         )
 
-    if decision.score_adjustments:
+    if decision.score_adjustments and not _is_v1_dependency_policy(decision):
         lines.extend(_section("Policy Score Adjustments", decision.score_adjustments))
 
     # For GO decisions the next-steps block is advisory and belongs at the bottom.

@@ -125,6 +125,8 @@ def test_render_pr_comment_v1_clean_dependency_go_hides_release_controls() -> No
     comment = render_pr_comment(bundle, decision)
 
     assert "### ✅ GO" in comment
+    assert "**Confidence:**" in comment
+    assert "RDI Score" not in comment
     assert "- no introduced findings detected" in comment
     assert "### Key Context" not in comment
     assert "runtime:" not in comment
@@ -140,6 +142,8 @@ def test_render_pr_comment_v1_conditional_dependency_review_hides_release_contro
     comment = render_pr_comment(bundle, decision)
 
     assert "### 🟡 CONDITIONAL GO" in comment
+    assert "**Confidence:** HIGH" in comment
+    assert "RDI Score" not in comment
     assert "### What must happen next" in comment
     assert "Review newly introduced dependencies and lockfile updates" in comment
     assert "Prioritize remediation for introduced high-severity findings" in comment
@@ -158,6 +162,8 @@ def test_render_pr_comment_v1_no_go_dependency_block_hides_release_controls() ->
     comment = render_pr_comment(bundle, decision)
 
     assert "### ❌ NO GO" in comment
+    assert "**Confidence:** HIGH" in comment
+    assert "RDI Score" not in comment
     assert "### What must happen next" in comment
     assert "Block release until introduced risk is remediated or policy is adjusted" in comment
     assert "Review newly introduced dependencies and lockfile updates" in comment
