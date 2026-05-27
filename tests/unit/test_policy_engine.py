@@ -265,6 +265,52 @@ def test_evaluate_release_blocks_when_max_severity_policy_is_exceeded() -> None:
     assert "policy max_severity exceeded by introduced high finding(s)" in decision.reasons
 
 
+def test_v1_dependency_policy_keeps_high_only_introduced_risk_conditional_even_when_score_is_low() -> None:
+    findings = [
+        NormalizedFinding(
+            source="grype",
+            finding_type="dependency",
+            rule_id=f"CVE-2026-{index:05d}",
+            title="High dependency issue",
+            severity="high",
+            package_name="urllib3",
+            package_version="1.25.8",
+            location=NormalizedLocation(path="requirements.txt"),
+        )
+        for index in range(12)
+    ]
+    bundle = build_analysis_bundle(
+        current_findings=findings,
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=0,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+        baseline_available=True,
+    )
+    policy = PolicyConfig(
+        max_severity="critical",
+        allow_conditional=True,
+        no_go_below_score=60,
+        conditional_go_below_score=85,
+        condition_on_release_controls=False,
+    )
+
+    decision = evaluate_release(bundle, policy)
+
+    assert decision.score == 0
+    assert decision.decision == "CONDITIONAL GO"
+    assert "policy no_go threshold triggered at score 60" not in decision.reasons
+
+
 def test_evaluate_release_adds_advisory_recommendations_for_historical_trust_signals() -> None:
     bundle = build_analysis_bundle(
         current_findings=[],

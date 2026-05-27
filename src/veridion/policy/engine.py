@@ -75,6 +75,25 @@ def _apply_policy_decision(
         reasons.append(f"policy max_severity exceeded by introduced {strongest_introduced} finding(s)")
         return "NO GO"
 
+    if _is_v1_dependency_policy(policy):
+        if (
+            policy.require_complete_accepted_risk_metadata
+            and bundle.summary.suppressed_findings
+            and bundle.summary.suppression_governance_gaps
+        ):
+            reasons.append("policy requires complete accepted-risk governance metadata")
+            return "NO GO"
+        if bundle.summary.suppressed_findings:
+            reasons.append("accepted risk is present in the current change")
+            if bundle.summary.suppression_governance_gaps:
+                reasons.append("accepted risk governance metadata is incomplete")
+            return "CONDITIONAL GO"
+        if not bundle.summary.baseline_attribution_trusted and bundle.summary.change_relevant_findings:
+            return "CONDITIONAL GO"
+        if risk.features.introduced_high:
+            return "CONDITIONAL GO"
+        return "GO"
+
     runtime_blocker = _runtime_blocking_reason(bundle)
     if runtime_blocker:
         reasons.append(runtime_blocker)
@@ -112,6 +131,10 @@ def _apply_policy_decision(
         return "CONDITIONAL GO"
 
     return risk.decision
+
+
+def _is_v1_dependency_policy(policy: PolicyConfig) -> bool:
+    return not policy.condition_on_release_controls
 
 
 def _strongest_introduced_severity(bundle: AnalysisBundle) -> str | None:
