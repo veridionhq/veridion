@@ -47,8 +47,6 @@ It is the decision layer that decides whether scanner signals should block or co
 
 The implementation already contains broader release-governance primitives such as operational context, approval satisfaction, accepted-risk lifecycle state, decision history, policy simulation, and hosted control-plane foundations. Those are expansion paths. They are not required to understand or adopt the v1 wedge.
 
-The action can consume a versioned operational-context artifact for broader release-governance scenarios. That is an expansion path, not part of the v1 dependency-risk default.
-
 The comment is now only one view of the product. Veridion also emits a first-class machine contract at `veridion-decision.json` so downstream workflow steps can gate, route approvals, and audit accepted risk without scraping prose.
 
 `veridion-result.json` and `veridion-decision.json` are intentionally different:
@@ -58,26 +56,7 @@ The comment is now only one view of the product. Veridion also emits a first-cla
 
 Consumers should build automation against `veridion-decision.json`, not the larger runner envelope.
 
-The expansion contract is `operational-context.json`:
-
-```json
-{
-  "schema_version": 1,
-  "provenance": {
-    "source": "veridion-github-builder",
-    "generated_at": "2026-05-10T00:00:00Z"
-  },
-  "metadata": {},
-  "historical": {},
-  "runtime": {},
-  "ownership": {},
-  "trust_baseline": {},
-  "trust_memory": {},
-  "trust_profile_metadata": {}
-}
-```
-
-For v1, start without `operational-context.json`. Feed current and baseline Syft, Grype, and Trivy reports into the action and let the decision focus on introduced dependency risk.
+For v1, start without operational context. Feed current and baseline Syft, Grype, and Trivy reports into the action and let the decision focus on introduced dependency risk.
 
 V1 example output:
 
@@ -127,6 +106,7 @@ GitHub PR
 - [Design Partner Guide](docs/DESIGN_PARTNER.md)
 - [One-Pager](docs/ONE_PAGER.md)
 - [V1 Release Governance Wedge](docs/roadmap/V1_RELEASE_GOVERNANCE.md)
+- [V1 Canary Matrix](docs/CANARY_MATRIX.md)
 - [Automation Guide](docs/AUTOMATION_GUIDE.md)
 - [Testing Strategy](docs/TESTING_STRATEGY.md)
 - [Support](SUPPORT.md)
@@ -135,7 +115,7 @@ GitHub PR
 - [License](LICENSE)
 - [Releasing](RELEASING.md)
 
-Expansion docs for later hosted, non-GitHub, policy rollout, and cloud paths remain in [docs](docs), but they are not the first-install route.
+Expansion material exists for later policy rollout, event sinks, hosted, and non-GitHub paths, but it is not the first-install route.
 
 ## Current Focus
 
@@ -167,8 +147,8 @@ The repo also contains expansion capabilities such as Semgrep normalization, ope
 The current MVP has also been validated in an external canary repository with:
 
 - a clean docs-only `GO`
-- a deliberately risky dependency `NO GO`
-- a middle-path dependency-risk `CONDITIONAL GO` scenario for product tuning
+- a dependency-risk `CONDITIONAL GO` from introduced high-severity dependency risk
+- a dependency-risk `NO GO` from introduced critical dependency risk
 - an accepted-risk `CONDITIONAL GO` where suppressed findings remain visible
 
 That means the current implementation already handles more than vulnerability status alone. For v1, the default product story stays narrower: introduced dependency risk first, broader release posture second.

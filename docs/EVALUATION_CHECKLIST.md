@@ -5,7 +5,7 @@ Use this during design-partner trials or internal product reviews.
 ## Setup
 
 - External install completed without custom plumbing
-- Bootstrap generated repo-local policy and context files
+- Bootstrap generated repo-local policy and suppression files
 - Workflow ran successfully in a real pull request
 
 ## Decision Quality
@@ -26,7 +26,7 @@ Use this during design-partner trials or internal product reviews.
 
 - Policy defaults were usable without deep tuning
 - Dependency-risk decisions were neither too weak nor too noisy
-- Score behavior did not feel like an unexplained magic model
+- Decisions felt rule-driven rather than like an unexplained scoring model
 
 ## Operational Trust
 

@@ -38,7 +38,7 @@ Use at least four pull request scenarios:
 
 - known issue with an explicit temporary suppression
 - expected result: not a pristine `GO`
-- accepted risk should remain visible in score, reasons, and comment output
+- accepted risk should remain visible in reasons and comment output
 
 ## What Good Output Looks Like
 
@@ -64,7 +64,7 @@ The current MVP has already been validated in an external canary repository with
 
 - a docs-only `GO`
 - a dependency-risk `CONDITIONAL GO`
-- a high-risk dependency `NO GO`
+- a critical dependency-risk `NO GO`
 - an accepted-risk `CONDITIONAL GO` with explicit suppression visibility
 
 This is enough to evaluate the current wedge honestly.

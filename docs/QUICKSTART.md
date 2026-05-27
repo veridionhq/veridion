@@ -60,18 +60,19 @@ This creates:
 - `.veridion/suppressions.json`
 - `.github/workflows/veridion-rdi.yml`
 
-Use `--preset application-team`, `--preset platform-team`, or `--preset regulated-service` later when you are ready to evaluate broader operational context and approval behavior.
+Use broader presets later only when you are ready to evaluate operational context and approval behavior.
 
 ## 3. Choose or adjust the policy pack
 
-Start with one of these presets:
+Start with the v1 dependency-risk policy:
 
 - [Dependency Risk V1](../examples/policy-packs/dependency-risk-v1.yaml)
-- [Application Team](../examples/policy-packs/application-team.yaml)
-- [Platform Team](../examples/policy-packs/platform-team.yaml)
-- [Regulated Service](../examples/policy-packs/regulated-service.yaml)
 
-If you are unsure, start with `dependency-risk-v1.yaml`.
+This policy keeps the first install focused on introduced dependency risk:
+
+- introduced critical dependency risk -> `NO GO`
+- introduced high dependency risk -> `CONDITIONAL GO`
+- no introduced severe dependency risk -> `GO`
 
 ## 4. Add accepted-risk suppressions only when needed
 
@@ -153,9 +154,8 @@ First review:
 
 Then tune:
 
-- `require_*_for`
 - accepted-risk suppressions
-- thresholds only after reviewing real PRs
+- policy behavior only after reviewing real PRs
 
 ## Expansion Integrations
 

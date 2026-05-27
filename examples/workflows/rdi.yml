@@ -120,7 +120,6 @@ jobs:
         shell: bash
         run: |
           echo "Decision: ${{ steps.run-rdi.outputs.decision }}"
-          echo "Score: ${{ steps.run-rdi.outputs.score }}"
           echo "Confidence: ${{ steps.run-rdi.outputs.confidence }}"
           echo "Gate status: ${{ steps.run-rdi.outputs.gate_status }}"
           echo "Decision allowed: ${{ steps.run-rdi.outputs.decision_allowed }}"

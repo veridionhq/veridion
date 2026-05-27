@@ -20,6 +20,7 @@ Those are optional integration layers on top of the deterministic core.
 
 - `gate_status`: `pass`, `review`, or `block`
 - `decision_allowed`: whether the configured gate allows the verdict
+- `confidence`: signal-quality confidence for the decision
 - `required_next_steps_json`
 - `blocking_reasons_json`
 - `blocking_categories_json`
@@ -53,8 +54,6 @@ For a hard deploy gate, let the action fail the job itself:
     reports: ${{ vars.VERIDION_REPORTS }}
     baseline-reports: ${{ vars.VERIDION_BASELINE_REPORTS }}
     policy-path: .veridion/policy.yaml
-    trust-profile-source-path: .veridion/trust-profile.source.json
-    trust-catalog-source-path: .veridion/trust-catalog.source.json
     suppression-path: .veridion/suppressions.json
     decision-contract-path: veridion-decision.json
     enforce-decision: "true"
@@ -222,7 +221,7 @@ Output fields:
 - `sink_delivery_summary_json`
 - `sink_delivery_failures_json`
 
-Supported sink kinds:
+Supported sink kinds include local files, webhooks, and optional cloud or database destinations:
 
 - `local-file:path=/abs/path/event.json`
 - `local-ndjson:path=/abs/path/history.ndjson`
@@ -239,18 +238,7 @@ Supported sink kinds:
 
 Providers requiring cloud/database SDKs use lazy imports and fail clearly if the matching dependency is not installed in the execution environment.
 
-Recommended first production sink:
-
-- S3 as the central append-only event store
-
-When you use the S3 sink, you can either:
-
-- provide an explicit `key=...`
-- or provide `prefix=...` and let Veridion derive the standard partitioned event key automatically
-
-See:
-
-- [AWS Deployment Pattern](./AWS.md)
+For v1, start without a hosted or cloud sink. Add a sink only after the PR decision loop is trusted.
 
 You can deliver the decision contract to an external system:
 
