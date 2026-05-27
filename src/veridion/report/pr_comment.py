@@ -102,6 +102,11 @@ def render_pr_comment_result(
     required_next_steps, advisory_guidance = _split_recommendations(
         filter_approval_echo_recommendations(decision.recommendations, decision.required_approvals)
     )
+    if _is_v1_dependency_policy(decision):
+        required_next_steps, advisory_guidance = _filter_v1_dependency_recommendations(
+            required_next_steps,
+            advisory_guidance,
+        )
     next_steps = _select_next_steps(
         bundle=bundle,
         decision=decision,
@@ -135,7 +140,7 @@ def render_pr_comment_result(
         )
 
     key_context = ()
-    if not _is_v1_clean_dependency_go(bundle, decision):
+    if not _is_v1_dependency_policy(decision):
         key_context = (
             _format_release_context(bundle)
             if _is_clean_review_case(bundle, decision)
@@ -156,6 +161,8 @@ def render_pr_comment_result(
         introduced_threats=introduced_threat_explanations,
         rendered_primary_drivers=summarized_primary_drivers or primary_drivers,
     )
+    if _is_v1_dependency_policy(decision):
+        rendered_primary_drivers = _filter_v1_dependency_drivers(rendered_primary_drivers)
     if rendered_primary_drivers:
         lines.extend(
             _section(
@@ -176,7 +183,7 @@ def render_pr_comment_result(
         lines.extend(_section("Policy Score Adjustments", decision.score_adjustments))
 
     # For GO decisions the next-steps block is advisory and belongs at the bottom.
-    if decision.decision == "GO" and not _is_v1_clean_dependency_go(bundle, decision):
+    if decision.decision == "GO" and not _is_v1_dependency_policy(decision):
         lines.extend(
             _section(
                 "What must happen next",
@@ -268,21 +275,23 @@ def _default_driver_summary(
     if requires_release_gates:
         return ("release still requires explicit approvals or operational checks",)
     if decision.decision == "NO GO" and introduced_threats:
-        return (_headline_blocker_summary(bundle, introduced_threats),) + tuple(
+        v1_dependency_policy = _is_v1_dependency_policy(decision)
+        return (_headline_blocker_summary(bundle, introduced_threats, include_release_context=not v1_dependency_policy),) + tuple(
             item
             for item in (
                 _severity_summary(bundle),
-                "the change includes infrastructure updates" if bundle.summary.infrastructure_changes else "",
+                "the change includes infrastructure updates" if bundle.summary.infrastructure_changes and not v1_dependency_policy else "",
                 "the change introduces vulnerable dependencies" if bundle.summary.introduced_by_finding_type.get("dependency") else "",
             )
             if item
         )
     if decision.decision == "CONDITIONAL GO" and introduced_threats:
-        return (_headline_review_summary(bundle, introduced_threats),) + tuple(
+        v1_dependency_policy = _is_v1_dependency_policy(decision)
+        return (_headline_review_summary(bundle, introduced_threats, include_release_context=not v1_dependency_policy),) + tuple(
             item
             for item in (
                 _severity_summary(bundle),
-                "the change includes infrastructure updates" if bundle.summary.infrastructure_changes else "",
+                "the change includes infrastructure updates" if bundle.summary.infrastructure_changes and not v1_dependency_policy else "",
             )
             if item
         )
@@ -373,13 +382,20 @@ def _summarize_comment_sections(
     return rendered_primary, result.threat_summaries, result.contextual_summary, trace
 
 
-def _headline_blocker_summary(bundle: AnalysisBundle, threats: tuple[ThreatExplanation, ...]) -> str:
+def _headline_blocker_summary(
+    bundle: AnalysisBundle,
+    threats: tuple[ThreatExplanation, ...],
+    *,
+    include_release_context: bool = True,
+) -> str:
     top = threats[0]
     if top.threat_type == "dependency":
         summary = f"this change cannot ship because it introduces {top.severity} vulnerable dependencies"
     else:
         location = f" in {top.location}" if top.location else ""
         summary = f"this change cannot ship because it introduces {top.severity} {top.threat_type} risk{location}"
+    if not include_release_context:
+        return summary
     if bundle.runtime_signals.public_exposure:
         summary += " into a public-facing service"
     elif bundle.runtime_signals.blast_radius in {"high", "critical"}:
@@ -387,13 +403,18 @@ def _headline_blocker_summary(bundle: AnalysisBundle, threats: tuple[ThreatExpla
     return summary
 
 
-def _headline_review_summary(bundle: AnalysisBundle, threats: tuple[ThreatExplanation, ...]) -> str:
+def _headline_review_summary(
+    bundle: AnalysisBundle,
+    threats: tuple[ThreatExplanation, ...],
+    *,
+    include_release_context: bool = True,
+) -> str:
     top = threats[0]
     if top.location:
         summary = f"this change needs review because {top.location} {top.summary}"
     else:
         summary = f"this change needs review because it introduces {top.severity} {top.threat_type} risk"
-    if bundle.summary.infrastructure_changes:
+    if include_release_context and bundle.summary.infrastructure_changes:
         summary += " and it also changes infrastructure"
     return summary
 
@@ -706,6 +727,41 @@ def _select_next_steps(
     return required_next_steps or advisory_guidance or ("Proceed with normal review and deployment checks",)
 
 
+def _filter_v1_dependency_recommendations(
+    required_next_steps: tuple[str, ...],
+    advisory_guidance: tuple[str, ...],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    allowed_prefixes = (
+        "Block release",
+        "Repair or refresh baseline scanner outputs",
+        "Review change-relevant findings manually",
+        "Review newly introduced dependencies",
+        "Prioritize remediation",
+        "Remove or renew expired accepted-risk suppressions",
+        "Fill suppression owner",
+        "Review pending accepted-risk proposals",
+        "Approve or reject accepted-risk renewal requests",
+        "Renew or close accepted-risk exceptions expiring soon",
+    )
+
+    def keep(items: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(item for item in items if item.startswith(allowed_prefixes))
+
+    return keep(required_next_steps), keep(advisory_guidance)
+
+
+def _filter_v1_dependency_drivers(drivers: tuple[str, ...]) -> tuple[str, ...]:
+    excluded_prefixes = (
+        "the change includes infrastructure updates",
+        "deployment target is",
+        "blast radius is",
+        "runtime ",
+        "historically unstable",
+        "release controls need human verification",
+    )
+    return tuple(item for item in drivers if not item.startswith(excluded_prefixes))
+
+
 def _baseline_attribution_lines(bundle: AnalysisBundle) -> tuple[str, ...]:
     lines = [
         "baseline scanner evidence is incomplete for this run; findings in changed files are treated as change-relevant until the baseline is repaired"
@@ -763,3 +819,7 @@ def _is_v1_clean_dependency_go(bundle: AnalysisBundle, decision: PolicyDecision)
         and bundle.summary.suppressed_findings == 0
         and bundle.summary.expired_suppressions == 0
     )
+
+
+def _is_v1_dependency_policy(decision: PolicyDecision) -> bool:
+    return not decision.policy.condition_on_release_controls

@@ -133,6 +133,44 @@ def test_render_pr_comment_v1_clean_dependency_go_hides_release_controls() -> No
     assert "Run staging smoke tests" not in comment
 
 
+def test_render_pr_comment_v1_conditional_dependency_review_hides_release_controls() -> None:
+    bundle = _v1_dependency_bundle(severity="high", signals=("dependency_manifest",))
+    decision = evaluate_release(bundle, PolicyConfig(condition_on_release_controls=False))
+
+    comment = render_pr_comment(bundle, decision)
+
+    assert "### 🟡 CONDITIONAL GO" in comment
+    assert "### What must happen next" in comment
+    assert "Review newly introduced dependencies and lockfile updates" in comment
+    assert "Prioritize remediation for introduced high-severity findings" in comment
+    assert "### Key Context" not in comment
+    assert "runtime:" not in comment
+    assert "blast radius" not in comment
+    assert "Run staging smoke tests" not in comment
+    assert "Use a staged rollout" not in comment
+    assert "also changes infrastructure" not in comment
+
+
+def test_render_pr_comment_v1_no_go_dependency_block_hides_release_controls() -> None:
+    bundle = _v1_dependency_bundle(severity="critical", signals=("dependency_manifest", "infrastructure"))
+    decision = evaluate_release(bundle, PolicyConfig(condition_on_release_controls=False))
+
+    comment = render_pr_comment(bundle, decision)
+
+    assert "### ❌ NO GO" in comment
+    assert "### What must happen next" in comment
+    assert "Block release until introduced risk is remediated or policy is adjusted" in comment
+    assert "Review newly introduced dependencies and lockfile updates" in comment
+    assert "Prioritize remediation for introduced high-severity findings" in comment
+    assert "### Key Context" not in comment
+    assert "runtime:" not in comment
+    assert "blast radius" not in comment
+    assert "Run staging smoke tests" not in comment
+    assert "Use a staged rollout" not in comment
+    assert "high-blast-radius path" not in comment
+    assert "the change includes infrastructure updates" not in comment
+
+
 def test_render_pr_comment_downgrades_to_change_relevant_when_baseline_is_missing() -> None:
     bundle = build_analysis_bundle(
         current_findings=[
@@ -722,4 +760,44 @@ def _bundle_with_iac_and_dependency_risk():
                 ),
             )
         ),
+    )
+
+
+def _v1_dependency_bundle(*, severity: str, signals: tuple[str, ...]):
+    baseline = NormalizedFinding(
+        source="trivy",
+        finding_type="dependency",
+        rule_id="CVE-OLD",
+        title="Existing dependency issue",
+        severity="medium",
+        package_name="oldpkg",
+        package_version="1.0",
+        location=NormalizedLocation(path="requirements.txt"),
+    )
+    introduced = NormalizedFinding(
+        source="trivy",
+        finding_type="dependency",
+        rule_id=f"CVE-{severity.upper()}",
+        title=f"Introduced {severity} dependency issue",
+        severity=severity,
+        package_name="urllib3",
+        package_version="1.0",
+        location=NormalizedLocation(path="requirements.txt"),
+    )
+    return build_analysis_bundle(
+        current_findings=[baseline, introduced],
+        baseline_findings=[baseline],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=1,
+                    signals=signals,
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+        runtime_signals=RuntimeSignals(environment="production", blast_radius="high"),
     )
