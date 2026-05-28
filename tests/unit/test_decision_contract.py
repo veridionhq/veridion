@@ -226,6 +226,8 @@ def test_decision_contract_surfaces_accepted_risk_lifecycle() -> None:
                         "finding_type": "dependency",
                         "package_name": "urllib3",
                         "package_version": "1.25.8",
+                        "reason_type": "risk_reduction",
+                        "reduced_severity": "medium",
                         "reason": "renewal under review",
                         "owner": "platform-security",
                         "approved_by": "security-owner",
@@ -255,6 +257,10 @@ def test_decision_contract_surfaces_accepted_risk_lifecycle() -> None:
     assert accepted_risk["expiring_soon"] == 1
     assert accepted_risk["exceptions"][0]["exception_id"] == "AR-300"
     assert accepted_risk["exceptions"][0]["status"] == "renewal_requested"
+    assert accepted_risk["exceptions"][0]["reason_type"] == "risk_reduction"
+    assert accepted_risk["exceptions"][0]["reduced_severity"] == "medium"
+    assert accepted_risk["suppressed_findings"][0]["reason_type"] == "risk_reduction"
+    assert accepted_risk["suppressed_findings"][0]["reduced_severity"] == "medium"
     assert "accepted-risk renewal pending review: AR-300" in accepted_risk["lifecycle_events"]
     assert contract["automation"]["requires_exception_review"] is True
 

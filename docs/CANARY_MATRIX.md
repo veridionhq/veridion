@@ -52,3 +52,4 @@ Treat these as product regressions:
 - accepted risk reads like a pristine `GO`
 - all-zero provided baseline reports are treated as missing baseline
 - v1 comments reintroduce score-first or runtime-first explanations
+- `veridion-decision.json` omits report evidence, scan provenance, or accepted-risk reason types

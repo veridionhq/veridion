@@ -236,6 +236,15 @@ Accepted-risk lifecycle statuses:
 - `renewal_requested`: active exception that needs renewal review
 - `rejected`: closed exception request that no longer suppresses findings
 
+Accepted-risk reason types:
+
+- `accepted_risk`: risk is real and intentionally accepted for a bounded period
+- `false_positive`: scanner finding is incorrect
+- `no_exposure`: vulnerable code or package is present but not reachable in this context
+- `risk_reduction`: compensating controls reduce practical severity
+
+For `risk_reduction`, include `reduced_severity` as `critical`, `high`, `medium`, or `low`. Veridion records this taxonomy in the decision contract so exception review can distinguish real accepted risk from no-exposure and false-positive cases.
+
 ## Harden accepted-risk governance
 
 You can make incomplete suppression metadata a policy blocker:

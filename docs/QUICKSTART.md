@@ -90,6 +90,7 @@ Example:
       "rule_id": "CVE-2024-1234",
       "package_name": "urllib3",
       "package_version": "1.25.8",
+      "reason_type": "accepted_risk",
       "reason": "temporary exception until upstream vendor patch",
       "owner": "platform-security",
       "approved_by": "security-owner",
@@ -105,9 +106,11 @@ Example:
 Lifecycle fields:
 
 - `exception_id`
+- `reason_type`: `accepted_risk`, `false_positive`, `no_exposure`, or `risk_reduction`
 - `status`: `proposed`, `approved`, `renewal_requested`, or `rejected`
 - `reviewed_at`
 - `renewal_of` for renewal requests
+- `reduced_severity` when `reason_type` is `risk_reduction`
 
 Rules with `status: proposed` do not suppress findings yet. They remain visible until approved.
 

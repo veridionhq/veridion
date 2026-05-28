@@ -32,7 +32,7 @@ Use this during design-partner trials or internal product reviews.
 
 - Introduced dependency risk was clearly separated from pre-existing noise
 - Baseline quality and attribution confidence were clear
-- Accepted-risk exceptions stayed auditable
+- Accepted-risk exceptions stayed auditable and used an explicit reason type
 - Nothing important disappeared silently
 
 ## Follow-Up Questions
