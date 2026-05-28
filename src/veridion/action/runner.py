@@ -166,6 +166,7 @@ def run_action(
         },
         gate=gate,
         policy_pack_metadata=policy_pack.metadata if policy_pack else None,
+        report_diagnostics=report_diagnostics,
     )
 
     return ActionResult(

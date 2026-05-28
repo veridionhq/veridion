@@ -103,6 +103,26 @@ def test_run_action_decision_contract_includes_metadata_and_categories() -> None
     assert contract["contract_version_source"] == "veridion.decision_contract@1"
     assert isinstance(contract["generated_at"], str)
     assert "blocking_categories" in contract["decision"]
+    assert contract["evidence"]["attribution"]["mode"] == "trusted"
+    assert contract["evidence"]["reports"]["current_tools"] == []
+
+
+def test_run_action_decision_contract_surfaces_report_health() -> None:
+    result = run_action(
+        diff_text="diff --git a/requirements.txt b/requirements.txt\nindex 1111111..2222222 100644\n--- a/requirements.txt\n+++ b/requirements.txt\n@@ -1 +1 @@\n-urllib3==2.2.2\n+urllib3==1.25.8\n",
+        current_reports={"semgrep": "tests/fixtures/scanners/semgrep_report.json"},
+        baseline_reports={"semgrep": "tests/fixtures/scanners/semgrep_baseline_empty.json"},
+        policy_text=None,
+    )
+
+    evidence = result.decision_contract["evidence"]
+
+    assert evidence["attribution"]["trusted"] is True
+    assert evidence["attribution"]["mode"] == "trusted"
+    assert evidence["reports"]["current_tools"] == ["semgrep"]
+    assert evidence["reports"]["baseline_tools"] == ["semgrep"]
+    assert evidence["reports"]["zero_finding_baseline_tools"] == ["semgrep"]
+    assert evidence["reports"]["current"]["semgrep"]["normalized_findings"] > 0
 
 
 def test_decision_contract_surfaces_runtime_release_gates() -> None:

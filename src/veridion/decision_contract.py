@@ -72,6 +72,7 @@ def build_decision_contract(
     comment_summary: dict[str, str],
     gate: GateEvaluation,
     policy_pack_metadata: PolicyPackMetadata | None = None,
+    report_diagnostics: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Build the stable decision artifact consumed by downstream automation."""
 
@@ -113,6 +114,7 @@ def build_decision_contract(
             "all_recommendations": list(decision.recommendations),
         },
         "threats": _normalize_threats(threats),
+        "evidence": _evidence_health(report_diagnostics),
         "signals": operational_signals,
         "accepted_risk": {
             "present": bool(bundle.summary.suppressed_findings),
@@ -184,6 +186,41 @@ def build_decision_contract(
             "allow_conditional": decision.policy.allow_conditional,
             "no_go_below_score": decision.policy.no_go_below_score,
             "conditional_go_below_score": decision.policy.conditional_go_below_score,
+        },
+    }
+
+
+def _evidence_health(report_diagnostics: dict[str, object] | None) -> dict[str, object]:
+    if not report_diagnostics:
+        return {
+            "attribution": {
+                "trusted": True,
+                "mode": "trusted",
+                "likely_cause": "",
+            },
+            "reports": {
+                "current_tools": [],
+                "baseline_tools": [],
+                "missing_baseline_tools": [],
+                "zero_finding_baseline_tools": [],
+                "current": {},
+                "baseline": {},
+            },
+        }
+
+    return {
+        "attribution": {
+            "trusted": bool(report_diagnostics.get("attribution_trusted", True)),
+            "mode": str(report_diagnostics.get("attribution_mode", "")),
+            "likely_cause": str(report_diagnostics.get("likely_cause", "")),
+        },
+        "reports": {
+            "current_tools": list(report_diagnostics.get("current_report_tools", [])),
+            "baseline_tools": list(report_diagnostics.get("baseline_report_tools", [])),
+            "missing_baseline_tools": list(report_diagnostics.get("missing_baseline_tools", [])),
+            "zero_finding_baseline_tools": list(report_diagnostics.get("zero_finding_baseline_tools", [])),
+            "current": dict(report_diagnostics.get("current_reports", {})),
+            "baseline": dict(report_diagnostics.get("baseline_reports", {})),
         },
     }
 

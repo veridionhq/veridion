@@ -106,6 +106,7 @@ GitHub PR
 - [Design Partner Guide](docs/DESIGN_PARTNER.md)
 - [One-Pager](docs/ONE_PAGER.md)
 - [V1 Release Governance Wedge](docs/roadmap/V1_RELEASE_GOVERNANCE.md)
+- [Product Security Pipeline Insights](docs/roadmap/PRODSEC_PIPELINE_INSIGHTS.md)
 - [V1 Canary Matrix](docs/CANARY_MATRIX.md)
 - [Automation Guide](docs/AUTOMATION_GUIDE.md)
 - [Testing Strategy](docs/TESTING_STRATEGY.md)

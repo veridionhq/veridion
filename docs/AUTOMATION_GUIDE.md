@@ -38,6 +38,12 @@ Key fields:
 - `decision.gate_status`
 - `decision.decision_allowed`
 - `decision.blocking_categories`
+- `evidence.attribution.trusted`
+- `evidence.attribution.mode`
+- `evidence.reports.current_tools`
+- `evidence.reports.baseline_tools`
+- `evidence.reports.missing_baseline_tools`
+- `evidence.reports.zero_finding_baseline_tools`
 - `actions.required_next_steps`
 - `accepted_risk.governance_gaps`
 
