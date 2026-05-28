@@ -10,6 +10,7 @@ from veridion.util import optional_string, strict_string
 
 SUPPORTED_SUPPRESSION_SCHEMA_VERSION = 1
 VALID_SUPPRESSION_STATUSES = {"proposed", "approved", "renewal_requested", "rejected"}
+VALID_SUPPRESSION_REASON_TYPES = {"accepted_risk", "false_positive", "no_exposure", "risk_reduction"}
 EXPIRING_SOON_DAYS = 14
 
 
@@ -18,6 +19,8 @@ class SuppressionRule:
     """Rule describing a finding that should be treated as accepted risk."""
 
     reason: str
+    reason_type: str = "accepted_risk"
+    reduced_severity: str | None = None
     exception_id: str | None = None
     status: str | None = None
     owner: str | None = None
@@ -104,6 +107,8 @@ class SuppressedFinding:
     title: str
     severity: str
     reason: str
+    reason_type: str = "accepted_risk"
+    reduced_severity: str | None = None
     exception_id: str | None = None
     status: str = "approved"
     owner: str | None = None
@@ -122,6 +127,8 @@ class AcceptedRiskException:
     exception_id: str
     status: str
     reason: str
+    reason_type: str = "accepted_risk"
+    reduced_severity: str | None = None
     owner: str | None = None
     approved_by: str | None = None
     ticket: str | None = None
@@ -174,6 +181,8 @@ def parse_suppressions_payload(payload: dict[str, object]) -> tuple[SuppressionR
             raise ValueError("suppression rule reason is required")
         rule = SuppressionRule(
             reason=reason,
+            reason_type=optional_string(raw_rule.get("reason_type")) or "accepted_risk",
+            reduced_severity=optional_string(raw_rule.get("reduced_severity")),
             exception_id=optional_string(raw_rule.get("exception_id")),
             status=optional_string(raw_rule.get("status")),
             owner=optional_string(raw_rule.get("owner")),
@@ -237,6 +246,8 @@ def apply_suppressions(
                 exception_id=exception_id,
                 status=status,
                 reason=rule.reason,
+                reason_type=rule.reason_type,
+                reduced_severity=rule.reduced_severity,
                 owner=rule.owner,
                 approved_by=rule.approved_by,
                 ticket=rule.ticket,
@@ -288,6 +299,8 @@ def apply_suppressions(
                 title=finding.title,
                 severity=finding.severity,
                 reason=matched_rule.reason,
+                reason_type=matched_rule.reason_type,
+                reduced_severity=matched_rule.reduced_severity,
                 exception_id=matched_rule.exception_id or _fallback_exception_id(matched_rule),
                 status=matched_rule.lifecycle_status,
                 owner=matched_rule.owner,
@@ -355,6 +368,15 @@ def _validate_rule(rule: SuppressionRule) -> None:
     status = rule.lifecycle_status
     if status not in VALID_SUPPRESSION_STATUSES:
         raise ValueError(f"unsupported suppression status: {status}")
+    if rule.reason_type not in VALID_SUPPRESSION_REASON_TYPES:
+        raise ValueError(f"unsupported suppression reason_type: {rule.reason_type}")
+    if rule.reason_type == "risk_reduction" and not rule.reduced_severity:
+        raise ValueError("suppression reduced_severity is required when reason_type is risk_reduction")
+    if rule.reduced_severity:
+        if rule.reason_type != "risk_reduction":
+            raise ValueError("suppression reduced_severity is only supported when reason_type is risk_reduction")
+        if rule.reduced_severity not in {"critical", "high", "medium", "low"}:
+            raise ValueError(f"unsupported suppression reduced_severity: {rule.reduced_severity}")
     if rule.created_at:
         _validate_timestamp(rule.created_at, field_name="created_at")
     if rule.reviewed_at:

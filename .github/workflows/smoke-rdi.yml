@@ -33,12 +33,13 @@ jobs:
           diff-path: pr.diff
           reports: |
             trivy=tests/fixtures/scanners/trivy_report.json
-            semgrep=tests/fixtures/scanners/semgrep_report.json
             grype=tests/fixtures/scanners/grype_report.json
             syft=tests/fixtures/scanners/syft_report.json
           baseline-reports: |
-            semgrep=tests/fixtures/scanners/semgrep_report.json
-          policy-path: tests/fixtures/policies/default_policy.yaml
+            trivy=tests/fixtures/scanners/trivy_report.json
+            grype=tests/fixtures/scanners/grype_report.json
+            syft=tests/fixtures/scanners/syft_report.json
+          policy-path: examples/policy-packs/dependency-risk-v1.yaml
           metadata-path: pr-metadata.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json

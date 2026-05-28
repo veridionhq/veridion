@@ -8,6 +8,17 @@ from pathlib import Path
 
 
 POLICY_PACKS = {
+    "dependency-risk-v1": """max_severity: critical
+allow_conditional: true
+no_go_below_score: 60
+conditional_go_below_score: 85
+require_approval_for: []
+require_platform_owner_for: []
+require_service_owner_for: []
+require_sre_owner_for: []
+require_security_owner_for: []
+condition_on_release_controls: false
+""",
     "application-team": """max_severity: critical
 allow_conditional: true
 no_go_below_score: 60
@@ -217,18 +228,6 @@ jobs:
           mkdir -p artifacts
           git worktree add --detach ../veridion-base "${{{{ github.event.pull_request.base.sha }}}}"
 
-      - name: Install Semgrep CLI
-        shell: bash
-        run: python3 -m pip install semgrep
-
-      - name: Run Semgrep on current workspace
-        shell: bash
-        run: semgrep scan --config auto --json --output artifacts/semgrep.json .
-
-      - name: Run Semgrep on baseline workspace
-        shell: bash
-        run: semgrep scan --config auto --json --output artifacts/baseline-semgrep.json ../veridion-base
-
       - name: Run Trivy on current workspace
         uses: aquasecurity/trivy-action@0.35.0
         with:
@@ -280,6 +279,23 @@ jobs:
         shell: bash
         run: ${{{{ steps.syft.outputs.cmd }}}} ../veridion-base -o syft-json=artifacts/baseline-syft.json
 
+      - name: Write scan metadata
+        shell: bash
+        run: |
+          cat > veridion-scan-metadata.json <<EOF
+          {{
+            "commit_hash": "${{{{ github.event.pull_request.head.sha }}}}",
+            "commit_short": "$(git rev-parse --short '${{{{ github.event.pull_request.head.sha }}}}')",
+            "branch": "${{{{ github.head_ref || github.ref_name }}}}",
+            "scan_timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "scanner_versions": {{
+              "trivy_action": "aquasecurity/trivy-action@0.35.0",
+              "grype_action": "anchore/scan-action@v7",
+              "syft_action": "anchore/sbom-action/download-syft@v0"
+            }}
+          }}
+          EOF
+
       - name: Run Veridion RDI
         id: run-rdi
         uses: {action_ref}
@@ -287,21 +303,15 @@ jobs:
           diff-path: pr.diff
           reports: |
             trivy=artifacts/trivy.json
-            semgrep=artifacts/semgrep.json
             grype=artifacts/grype.json
             syft=artifacts/syft.json
           baseline-reports: |
             trivy=artifacts/baseline-trivy.json
-            semgrep=artifacts/baseline-semgrep.json
             grype=artifacts/baseline-grype.json
             syft=artifacts/baseline-syft.json
           policy-path: .veridion/policy.yaml
-          trust-profile-source-path: .veridion/trust-profile.source.json
-          trust-catalog-source-path: .veridion/trust-catalog.source.json
           suppression-path: .veridion/suppressions.json
-          approval-map-path: .veridion/approval-map.json
-          request-approvals: "true"
-          verify-approvals: "true"
+          scan-metadata-path: veridion-scan-metadata.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           decision-contract-path: veridion-decision.json
@@ -319,13 +329,14 @@ jobs:
             veridion-pr-comment.md
             veridion-result.json
             veridion-decision.json
+            veridion-scan-metadata.json
 """
 
 
 def build_bootstrap_files(
     *,
     preset: str,
-    action_ref: str = "veridionhq/veridion@main",
+    action_ref: str = "veridionhq/veridion@v1.0.0rc1",
     repo_id: str = "",
     service_id: str = "",
     team_id: str = "",
@@ -335,44 +346,14 @@ def build_bootstrap_files(
     if preset not in POLICY_PACKS:
         raise ValueError(f"unsupported preset: {preset}")
 
-    trust_profile = {
-        "scope": {
-            "repo_id": repo_id,
-            "service_id": service_id,
-            "team_id": team_id,
-        },
-        "historical": {},
-        "runtime": {},
-        "ownership": {},
-        "trust_baseline": {},
-    }
-    trust_catalog = {
-        "scope": {},
-        "historical": {},
-        "runtime": {},
-        "ownership": {},
-        "trust_baseline": {},
-    }
     suppressions = {
         "schema_version": 1,
         "suppressions": [],
     }
-    approval_map = {
-        "schema_version": 1,
-        "roles": {
-            "platform_owner": {"teams": ["platform-team"]},
-            "security_owner": {"teams": ["security-team"]},
-            "service_owner": {"users": []},
-            "sre_owner": {"teams": ["sre-team"]},
-        },
-    }
 
     return {
         ".veridion/policy.yaml": POLICY_PACKS[preset],
-        ".veridion/trust-profile.source.json": json.dumps(trust_profile, indent=2) + "\n",
-        ".veridion/trust-catalog.source.json": json.dumps(trust_catalog, indent=2) + "\n",
         ".veridion/suppressions.json": json.dumps(suppressions, indent=2) + "\n",
-        ".veridion/approval-map.json": json.dumps(approval_map, indent=2) + "\n",
         ".github/workflows/veridion-rdi.yml": WORKFLOW_TEMPLATE.format(action_ref=action_ref),
     }
 
@@ -400,7 +381,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Bootstrap Veridion install files from a starter preset")
     parser.add_argument("--preset", required=True, choices=sorted(POLICY_PACKS), help="Starter policy preset")
     parser.add_argument("--output-root", default=".", help="Repo root where files should be written")
-    parser.add_argument("--action-ref", default="veridionhq/veridion@main", help="Action ref to use in the workflow")
+    parser.add_argument("--action-ref", default="veridionhq/veridion@v1.0.0rc1", help="Action ref to use in the workflow")
     parser.add_argument("--repo-id", default="", help="Optional stable repo identifier")
     parser.add_argument("--service-id", default="", help="Optional stable service identifier")
     parser.add_argument("--team-id", default="", help="Optional stable team identifier")

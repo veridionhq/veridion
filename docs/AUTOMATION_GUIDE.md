@@ -7,7 +7,7 @@ Veridion now emits a machine-facing decision contract at `veridion-decision.json
 - `veridion-result.json`: full runner envelope, analysis payload, comment text, and embedded decision contract
 - `veridion-decision.json`: stable machine-facing contract for gates, approvals, and external integrations
 
-If you are writing workflow logic, approval routing, or webhook consumers, prefer `veridion-decision.json`.
+If you are writing workflow logic for the v1 dependency-risk wedge, prefer `veridion-decision.json`.
 
 Important product boundary:
 
@@ -20,14 +20,13 @@ Those are optional integration layers on top of the deterministic core.
 
 - `gate_status`: `pass`, `review`, or `block`
 - `decision_allowed`: whether the configured gate allows the verdict
-- `required_approvals_json`
+- `confidence`: signal-quality confidence for the decision
 - `required_next_steps_json`
 - `blocking_reasons_json`
 - `blocking_categories_json`
 - `accepted_risk_present`
 - `decision_contract_path`
 - `decision_event_path`
-- `sink_delivery_summary_json`
 
 ## Decision contract
 
@@ -39,36 +38,67 @@ Key fields:
 - `decision.gate_status`
 - `decision.decision_allowed`
 - `decision.blocking_categories`
-- `actions.required_approvals`
-- `actions.required_approval_labels`
+- `evidence.attribution.trusted`
+- `evidence.attribution.mode`
+- `evidence.reports.current_tools`
+- `evidence.reports.baseline_tools`
+- `evidence.reports.missing_baseline_tools`
+- `evidence.reports.zero_finding_baseline_tools`
+- `evidence.reports.current.<tool>.sha256`
+- `evidence.reports.baseline.<tool>.sha256`
+- `evidence.scan.metadata`
+- `evidence.scan.recheck_only`
 - `actions.required_next_steps`
 - `accepted_risk.governance_gaps`
-- `signals.runtime.runtime_safety_checks`
-- `signals.runtime.active_runtime_gates`
 
-## Runtime release gates
+## Scanner provenance
 
-Live runtime-readiness gates now flow through the same decision contract.
+When reports are provided, Veridion records basic provenance for each current and baseline report:
 
-Runtime fields Veridion understands:
+- report path
+- SHA-256 hash
+- file size
+- normalized finding count
+- inventory record count
 
-- `deployment_freeze_active`
-- `active_incident`
-- `active_incident_severity`
-- `alert_state`
-- `canary_health`
-- `rollback_viability`
+You can also provide scan-level metadata:
 
-These are surfaced in:
+```yaml
+scan-metadata-path: veridion-scan-metadata.json
+```
 
-- `signals.runtime.active_runtime_gates`
-- `decision.blocking_categories`
-- `actions.required_next_steps`
+Recommended metadata shape:
 
-Examples:
+```json
+{
+  "commit_hash": "abc123...",
+  "commit_short": "abc123",
+  "branch": "feature/dependency-update",
+  "scan_timestamp": "2026-05-27T00:00:00Z",
+  "scanner_versions": {
+    "syft": "1.20.0",
+    "grype": "0.110.0",
+    "trivy": "0.69.3"
+  }
+}
+```
 
-- active freeze or blocked rollback path can force `NO GO`
-- degraded canary health or unverified rollback path can force `CONDITIONAL GO`
+## Recheck existing reports
+
+Use recheck mode when scanner outputs already exist and you only want to re-apply current policy and accepted-risk suppressions.
+
+```yaml
+recheck-only: "true"
+scan-metadata-path: veridion-scan-metadata.json
+```
+
+Recheck mode validates that `scan-metadata-path` contains a `commit_hash` matching the current commit. In GitHub Actions this defaults to `GITHUB_SHA`. You can override it explicitly:
+
+```yaml
+expected-commit: ${{ github.sha }}
+```
+
+This is useful for exception review loops: update `.veridion/suppressions.json`, reuse the same raw scanner reports, and regenerate the decision/comment/contract without rerunning Syft, Grype, or Trivy.
 
 ## Gate a deploy
 
@@ -77,14 +107,12 @@ For a hard deploy gate, let the action fail the job itself:
 ```yaml
 - name: Run Veridion RDI
   id: run-rdi
-  uses: veridionhq/veridion@main
+  uses: veridionhq/veridion@v1.0.0rc1
   with:
     diff-path: pr.diff
     reports: ${{ vars.VERIDION_REPORTS }}
     baseline-reports: ${{ vars.VERIDION_BASELINE_REPORTS }}
     policy-path: .veridion/policy.yaml
-    trust-profile-source-path: .veridion/trust-profile.source.json
-    trust-catalog-source-path: .veridion/trust-catalog.source.json
     suppression-path: .veridion/suppressions.json
     decision-contract-path: veridion-decision.json
     enforce-decision: "true"
@@ -99,7 +127,9 @@ If you want `CONDITIONAL GO` to pass but still be visible, use:
 allowed-decisions: "GO,CONDITIONAL GO"
 ```
 
-## Enforce approval routing
+For v1, use this to gate introduced dependency risk. Runtime release gates and broader operational context are expansion paths.
+
+## Expansion: approval routing
 
 The action can now optionally request GitHub reviewers when you provide an approval map.
 
@@ -141,7 +171,7 @@ Outputs:
 - `requested_reviewers_json`
 - `missing_approval_mappings_json`
 
-## Verify approval satisfaction
+## Expansion: approval satisfaction
 
 The action can also evaluate whether mapped approval roles are currently satisfied on the pull request.
 
@@ -206,6 +236,15 @@ Accepted-risk lifecycle statuses:
 - `renewal_requested`: active exception that needs renewal review
 - `rejected`: closed exception request that no longer suppresses findings
 
+Accepted-risk reason types:
+
+- `accepted_risk`: risk is real and intentionally accepted for a bounded period
+- `false_positive`: scanner finding is incorrect
+- `no_exposure`: vulnerable code or package is present but not reachable in this context
+- `risk_reduction`: compensating controls reduce practical severity
+
+For `risk_reduction`, include `reduced_severity` as `critical`, `high`, `medium`, or `low`. Veridion records this taxonomy in the decision contract so exception review can distinguish real accepted risk from no-exposure and false-positive cases.
+
 ## Harden accepted-risk governance
 
 You can make incomplete suppression metadata a policy blocker:
@@ -222,7 +261,7 @@ require_security_owner_for:
   - accepted_risk_governance_gap
 ```
 
-## Emit decision events
+## Expansion: decision events
 
 Veridion now emits a machine-readable decision event artifact after approval verification so history captures the final enforced state, not just the raw runner verdict.
 
@@ -236,7 +275,7 @@ Inputs:
 - `decision-event-path`
 - `decision-history-path`
 
-## Deliver canonical events to sinks
+## Expansion: canonical event sinks
 
 The canonical transport surface is now `veridion-decision-event.json`.
 
@@ -250,7 +289,7 @@ Output fields:
 - `sink_delivery_summary_json`
 - `sink_delivery_failures_json`
 
-Supported sink kinds:
+Supported sink kinds include local files, webhooks, and optional cloud or database destinations:
 
 - `local-file:path=/abs/path/event.json`
 - `local-ndjson:path=/abs/path/history.ndjson`
@@ -267,18 +306,7 @@ Supported sink kinds:
 
 Providers requiring cloud/database SDKs use lazy imports and fail clearly if the matching dependency is not installed in the execution environment.
 
-Recommended first production sink:
-
-- S3 as the central append-only event store
-
-When you use the S3 sink, you can either:
-
-- provide an explicit `key=...`
-- or provide `prefix=...` and let Veridion derive the standard partitioned event key automatically
-
-See:
-
-- [AWS Deployment Pattern](./AWS.md)
+For v1, start without a hosted or cloud sink. Add a sink only after the PR decision loop is trusted.
 
 You can deliver the decision contract to an external system:
 

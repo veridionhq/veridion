@@ -30,6 +30,7 @@ def test_extract_risk_features_counts_introduced_findings_and_context() -> None:
     assert features.introduced_low == 0
     assert features.introduced_code_findings == 1
     assert features.introduced_dependency_findings == 1
+    assert features.introduced_high_epss == 0
     assert features.changed_files == 4
     assert features.has_dependency_changes is True
     assert features.has_lockfile_changes is True
@@ -79,7 +80,12 @@ def test_score_analysis_bundle_returns_go_for_clean_change() -> None:
     assert result.reasons == ("no introduced findings detected",)
 
 
-def test_score_analysis_bundle_returns_high_confidence_for_well_covered_clean_run() -> None:
+def test_score_analysis_bundle_caps_confidence_to_medium_when_baseline_missing_with_findings() -> None:
+    """Confidence cannot be high when baseline is absent and findings are present.
+
+    Without a baseline we cannot verify which findings are newly introduced,
+    so claiming high confidence about the decision would be dishonest.
+    """
     bundle = build_analysis_bundle(
         current_findings=[
             NormalizedFinding(
@@ -118,6 +124,64 @@ def test_score_analysis_bundle_returns_high_confidence_for_well_covered_clean_ru
 
     assert result.score == 100
     assert result.decision == "GO"
+    assert result.confidence == "medium"
+
+
+def test_score_analysis_bundle_returns_high_confidence_when_baseline_present_and_trusted() -> None:
+    """Confidence reaches high when baseline is trusted and evidence is sufficient."""
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.new",
+                title="Introduced issue",
+                severity="high",
+                location=NormalizedLocation(path="app/routes.py", start_line=12, end_line=12),
+            ),
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.existing",
+                title="Existing issue",
+                severity="medium",
+                location=NormalizedLocation(path="app/routes.py", start_line=4, end_line=4),
+            ),
+        ],
+        baseline_findings=[
+            NormalizedFinding(
+                source="semgrep",
+                finding_type="code",
+                rule_id="python.audit.existing",
+                title="Existing issue",
+                severity="medium",
+                location=NormalizedLocation(path="app/routes.py", start_line=4, end_line=4),
+            )
+        ],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="app/routes.py",
+                    change_type="modified",
+                    added_lines=10,
+                    removed_lines=1,
+                    signals=("application_code",),
+                    previous_path="app/routes.py",
+                ),
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=0,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+    )
+
+    result = score_analysis_bundle(bundle)
+
     assert result.confidence == "high"
 
 
@@ -330,3 +394,182 @@ def _bundle_with_high_code_and_dependency_risk():
         )
     )
     return build_analysis_bundle(current, baseline, change_context)
+
+
+def test_extract_risk_features_counts_introduced_high_epss_findings() -> None:
+    """introduced_high_epss counts only findings with EPSS >= 0.5."""
+    current = [
+        NormalizedFinding(
+            source="trivy",
+            finding_type="dependency",
+            rule_id="CVE-2026-HIGH-EPSS",
+            title="Actively exploited dependency",
+            severity="high",
+            epss_score=0.73,
+            package_name="requests",
+            package_version="2.28.0",
+            location=NormalizedLocation(path="/workspace/requirements.txt"),
+        ),
+        NormalizedFinding(
+            source="trivy",
+            finding_type="dependency",
+            rule_id="CVE-2026-LOW-EPSS",
+            title="Low exploitation probability dependency",
+            severity="high",
+            epss_score=0.12,
+            package_name="urllib3",
+            package_version="2.2.2",
+            location=NormalizedLocation(path="/workspace/requirements.txt"),
+        ),
+        NormalizedFinding(
+            source="trivy",
+            finding_type="dependency",
+            rule_id="CVE-2026-NO-EPSS",
+            title="No EPSS data dependency",
+            severity="medium",
+            epss_score=None,
+            package_name="boto3",
+            package_version="1.34.0",
+            location=NormalizedLocation(path="/workspace/requirements.txt"),
+        ),
+    ]
+    bundle = build_analysis_bundle(
+        current_findings=current,
+        baseline_findings=_trusted_baseline(),
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=3,
+                    removed_lines=0,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+    )
+
+    features = extract_risk_features(bundle)
+
+    assert features.introduced_high_epss == 1
+    assert features.introduced_high == 2
+    assert features.introduced_medium == 1
+
+
+def test_score_analysis_bundle_applies_epss_supplement_penalty() -> None:
+    """EPSS supplement adds -8 per high-EPSS finding on top of severity penalty."""
+    current = [
+        NormalizedFinding(
+            source="trivy",
+            finding_type="dependency",
+            rule_id="CVE-2026-HIGH-EPSS",
+            title="Actively exploited dependency",
+            severity="high",
+            epss_score=0.73,
+            package_name="requests",
+            package_version="2.28.0",
+            location=NormalizedLocation(path="/workspace/requirements.txt"),
+        ),
+    ]
+    bundle = build_analysis_bundle(
+        current_findings=current,
+        baseline_findings=_trusted_baseline(),
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=0,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+    )
+
+    result = score_analysis_bundle(bundle)
+
+    # 100 - 20 (high severity) - 8 (EPSS supplement) - 8 (dependency changes + dep finding) = 64
+    assert result.score == 64
+    assert result.decision == "CONDITIONAL GO"
+    assert any("EPSS" in reason for reason in result.reasons)
+
+
+def test_score_analysis_bundle_epss_at_threshold_is_counted() -> None:
+    """EPSS score exactly 0.5 meets the threshold."""
+    current = [
+        NormalizedFinding(
+            source="trivy",
+            finding_type="dependency",
+            rule_id="CVE-2026-BOUNDARY",
+            title="Boundary EPSS finding",
+            severity="medium",
+            epss_score=0.5,
+            package_name="cryptography",
+            package_version="41.0.0",
+            location=NormalizedLocation(path="/workspace/requirements.txt"),
+        ),
+    ]
+    bundle = build_analysis_bundle(
+        current_findings=current,
+        baseline_findings=_trusted_baseline(),
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=0,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+    )
+
+    features = extract_risk_features(bundle)
+
+    assert features.introduced_high_epss == 1
+
+
+def test_score_analysis_bundle_epss_below_threshold_not_counted() -> None:
+    """EPSS score below 0.5 does not trigger the supplement penalty."""
+    current = [
+        NormalizedFinding(
+            source="trivy",
+            finding_type="dependency",
+            rule_id="CVE-2026-LOW",
+            title="Low EPSS finding",
+            severity="high",
+            epss_score=0.49,
+            package_name="sqlalchemy",
+            package_version="2.0.0",
+            location=NormalizedLocation(path="/workspace/requirements.txt"),
+        ),
+    ]
+    bundle = build_analysis_bundle(
+        current_findings=current,
+        baseline_findings=_trusted_baseline(),
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=0,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+    )
+
+    features = extract_risk_features(bundle)
+    result = score_analysis_bundle(bundle)
+
+    assert features.introduced_high_epss == 0
+    # 100 - 20 (high severity) - 8 (dependency changes + dep finding) = 72
+    assert result.score == 72
+    assert not any("EPSS" in reason for reason in result.reasons)

@@ -1,6 +1,8 @@
 # Policy Simulation
 
-Veridion can now compare multiple policy packs against the same change, scanner results, and operational context.
+Policy simulation is an expansion workflow. It is useful after the v1 dependency-risk wedge is producing trusted decisions.
+
+Veridion can compare multiple policy packs against the same change and scanner results.
 
 This is the safest way to tune policy before changing live release enforcement.
 
@@ -18,13 +20,10 @@ The simulator:
 python3 -m veridion.policy.simulator \
   --diff-path pr.diff \
   --report trivy=artifacts/trivy.json \
-  --report semgrep=artifacts/semgrep.json \
   --report grype=artifacts/grype.json \
   --report syft=artifacts/syft.json \
+  --policy-set v1=examples/policy-packs/dependency-risk-v1.yaml \
   --policy-set app=examples/policy-packs/application-team.yaml \
-  --policy-set platform=examples/policy-packs/platform-team.yaml \
-  --policy-set regulated=examples/policy-packs/regulated-service.yaml \
-  --operational-context-path operational-context.json \
   --output-path policy-simulation.json
 ```
 

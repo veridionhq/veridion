@@ -22,15 +22,12 @@ jobs:
           reports: ${{ vars.VERIDION_REPORTS }}
           baseline-reports: ${{ vars.VERIDION_BASELINE_REPORTS }}
           policy-path: .veridion/policy.yaml
-          trust-profile-source-path: .veridion/trust-profile.source.json
-          trust-catalog-source-path: .veridion/trust-catalog.source.json
           suppression-path: .veridion/suppressions.json
           approval-map-path: .veridion/approval-map.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           decision-contract-path: veridion-decision.json
           decision-event-path: veridion-decision-event.json
-          decision-history-path: veridion-decision-history.ndjson
           enforce-decision: "true"
           allowed-decisions: "GO"
           verify-approvals: "true"
@@ -49,4 +46,4 @@ jobs:
           echo "Blocking categories: ${{ steps.run-rdi.outputs.blocking_categories_json }}"
           echo "Required next steps: ${{ steps.run-rdi.outputs.required_next_steps_json }}"
           echo "Decision event: ${{ steps.run-rdi.outputs.decision_event_path }}"
-          echo "Inspect veridion-decision.json -> signals.runtime.active_runtime_gates for live runtime blockers"
+          echo "Inspect veridion-decision.json for introduced dependency risk and required next steps"

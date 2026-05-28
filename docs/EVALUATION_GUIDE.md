@@ -4,15 +4,14 @@ This guide is for engineers, platform teams, and design partners evaluating Veri
 
 ## What Veridion Should Prove
 
-Veridion is useful if it can answer one question better than existing tooling:
+Veridion v1 is useful if it can answer one narrow question better than scanner output alone:
 
-**Should this change ship?**
+**Did this pull request introduce unacceptable dependency risk?**
 
 That means an evaluation should focus on:
 
-- whether Veridion isolates introduced risk from legacy noise
-- whether it understands the change surface and blast radius
-- whether the policy and approval requirements feel credible
+- whether Veridion isolates introduced dependency risk from legacy noise
+- whether the policy decision feels clear and credible
 - whether the recommended next steps are actionable
 - whether exceptions and accepted risk stay visible without creating chaos
 
@@ -27,20 +26,19 @@ Use at least four pull request scenarios:
 
 2. Real but non-blocking change
 
-- one or two meaningful findings, or moderate operational context
+- one or two meaningful introduced dependency findings
 - expected result: `CONDITIONAL GO`
 
 3. Clearly unsafe change
 
-- high-severity or critical introduced risk
-- public exposure, risky dependency changes, or dangerous infra changes
+- critical introduced dependency risk
 - expected result: `NO GO`
 
 4. Accepted-risk change
 
 - known issue with an explicit temporary suppression
 - expected result: not a pristine `GO`
-- accepted risk should remain visible in score, reasons, and comment output
+- accepted risk should remain visible in reasons and comment output
 
 ## What Good Output Looks Like
 
@@ -49,13 +47,13 @@ A strong Veridion comment should:
 - explain the decision in a few seconds
 - make the primary drivers obvious
 - separate direct blockers from contextual amplifiers
-- show required approvals clearly
+- show required dependency/security review clearly when relevant
 - prescribe next steps, not just surface risk
 
 Red flags:
 
 - scanner noise dominates the decision
-- legacy issues are mixed with introduced issues
+- legacy dependency issues are mixed with introduced issues
 - accepted risk disappears completely
 - required actions are vague or repetitive
 - low-risk changes are blocked without a clear reason
@@ -65,8 +63,8 @@ Red flags:
 The current MVP has already been validated in an external canary repository with:
 
 - a docs-only `GO`
-- a risk-based `CONDITIONAL GO`
-- a high-risk dependency and infra `NO GO`
+- a dependency-risk `CONDITIONAL GO`
+- a critical dependency-risk `NO GO`
 - an accepted-risk `CONDITIONAL GO` with explicit suppression visibility
 
 This is enough to evaluate the current wedge honestly.
@@ -85,8 +83,8 @@ Veridion is not yet a full deployment control plane.
 
 It is currently:
 
-- a release decision engine
-- a portable policy and context layer
+- a release decision engine for introduced dependency risk
+- a portable policy and decision-contract layer
 - a GitHub Action wedge
 
 It is not yet:

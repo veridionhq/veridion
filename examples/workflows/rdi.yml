@@ -42,18 +42,6 @@ jobs:
             cp -R . ../veridion-base
           fi
 
-      - name: Install Semgrep CLI
-        shell: bash
-        run: python3 -m pip install "semgrep>=1,<2"
-
-      - name: Run Semgrep on current workspace
-        shell: bash
-        run: semgrep scan --config auto --json --output artifacts/semgrep.json .
-
-      - name: Run Semgrep on baseline workspace
-        shell: bash
-        run: semgrep scan --config auto --json --output artifacts/baseline-semgrep.json ../veridion-base
-
       - name: Run Trivy on current workspace
         uses: aquasecurity/trivy-action@0.35.0
         with:
@@ -105,6 +93,23 @@ jobs:
         shell: bash
         run: ${{ steps.syft.outputs.cmd }} ../veridion-base -o syft-json=artifacts/baseline-syft.json
 
+      - name: Write scan metadata
+        shell: bash
+        run: |
+          cat > veridion-scan-metadata.json <<EOF
+          {
+            "commit_hash": "${{ github.event.pull_request.head.sha }}",
+            "commit_short": "$(git rev-parse --short '${{ github.event.pull_request.head.sha }}')",
+            "branch": "${{ github.head_ref || github.ref_name }}",
+            "scan_timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "scanner_versions": {
+              "trivy_action": "aquasecurity/trivy-action@0.35.0",
+              "grype_action": "anchore/scan-action@v7.4.0",
+              "syft_action": "anchore/sbom-action/download-syft@v0.24.0"
+            }
+          }
+          EOF
+
       - name: Run Veridion RDI
         id: run-rdi
         uses: ./
@@ -112,30 +117,18 @@ jobs:
           diff-path: pr.diff
           reports: |
             trivy=artifacts/trivy.json
-            semgrep=artifacts/semgrep.json
             grype=artifacts/grype.json
             syft=artifacts/syft.json
           baseline-reports: |
             trivy=artifacts/baseline-trivy.json
-            semgrep=artifacts/baseline-semgrep.json
             grype=artifacts/baseline-grype.json
             syft=artifacts/baseline-syft.json
-          policy-path: examples/policy-packs/application-team.yaml
-          trust-profile-source-path: examples/trust/trust-profile.source.json
-          trust-catalog-source-path: examples/trust/trust-catalog.source.json
+          policy-path: examples/policy-packs/dependency-risk-v1.yaml
           suppression-path: .veridion/suppressions.json
-          approval-map-path: .veridion/approval-map.json
-          comment-summary-provider: ${{ vars.VERIDION_COMMENT_SUMMARY_PROVIDER }}
-          comment-summary-model: ${{ vars.VERIDION_COMMENT_SUMMARY_MODEL }}
-          comment-summary-api-key: ${{ secrets.VERIDION_COMMENT_SUMMARY_API_KEY }}
-          comment-summary-base-url: ${{ vars.VERIDION_COMMENT_SUMMARY_BASE_URL }}
-          comment-summary-region: ${{ vars.VERIDION_COMMENT_SUMMARY_REGION }}
-          comment-summary-style: terse
+          scan-metadata-path: veridion-scan-metadata.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           decision-contract-path: veridion-decision.json
-          request-approvals: "true"
-          verify-approvals: "true"
           post-comment: "true"
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
@@ -145,7 +138,6 @@ jobs:
         shell: bash
         run: |
           echo "Decision: ${{ steps.run-rdi.outputs.decision }}"
-          echo "Score: ${{ steps.run-rdi.outputs.score }}"
           echo "Confidence: ${{ steps.run-rdi.outputs.confidence }}"
           echo "Gate status: ${{ steps.run-rdi.outputs.gate_status }}"
           echo "Decision allowed: ${{ steps.run-rdi.outputs.decision_allowed }}"
@@ -173,3 +165,4 @@ jobs:
             veridion-pr-comment.md
             veridion-result.json
             veridion-decision.json
+            veridion-scan-metadata.json

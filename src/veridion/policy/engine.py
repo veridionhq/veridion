@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from veridion.analysis import AnalysisBundle
 from veridion.normalize.common import SEVERITY_ORDER
@@ -24,6 +24,7 @@ class PolicyDecision:
     required_approvals: tuple[str, ...]
     policy: PolicyConfig
     risk: RdiResult
+    required_approval_triggers: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None) -> PolicyDecision:
@@ -43,9 +44,9 @@ def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None)
     reasons.extend(_trust_baseline_reasons(bundle))
     reasons.extend(_trust_memory_reasons(bundle))
     decision = _apply_policy_decision(risk, bundle, resolved_policy, reasons)
-    required_approvals = _required_approvals(bundle, resolved_policy)
+    required_approvals, approval_triggers = _required_approvals(bundle, resolved_policy)
     recommendations = _recommendations(bundle, risk, decision, required_approvals)
-    decision = _align_decision_with_release_gates(decision, required_approvals, recommendations, reasons)
+    decision = _align_decision_with_release_gates(decision, resolved_policy, required_approvals, recommendations, reasons)
 
     return PolicyDecision(
         score=risk.score,
@@ -57,6 +58,7 @@ def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None)
         required_approvals=required_approvals,
         policy=resolved_policy,
         risk=risk,
+        required_approval_triggers=approval_triggers,
     )
 
 
@@ -72,6 +74,25 @@ def _apply_policy_decision(
     if strongest_introduced is not None and SEVERITY_ORDER.index(strongest_introduced) <= max_allowed_index:
         reasons.append(f"policy max_severity exceeded by introduced {strongest_introduced} finding(s)")
         return "NO GO"
+
+    if _is_v1_dependency_policy(policy):
+        if (
+            policy.require_complete_accepted_risk_metadata
+            and bundle.summary.suppressed_findings
+            and bundle.summary.suppression_governance_gaps
+        ):
+            reasons.append("policy requires complete accepted-risk governance metadata")
+            return "NO GO"
+        if bundle.summary.suppressed_findings:
+            reasons.append("accepted risk is present in the current change")
+            if bundle.summary.suppression_governance_gaps:
+                reasons.append("accepted risk governance metadata is incomplete")
+            return "CONDITIONAL GO"
+        if not bundle.summary.baseline_attribution_trusted and bundle.summary.change_relevant_findings:
+            return "CONDITIONAL GO"
+        if risk.features.introduced_high:
+            return "CONDITIONAL GO"
+        return "GO"
 
     runtime_blocker = _runtime_blocking_reason(bundle)
     if runtime_blocker:
@@ -112,6 +133,10 @@ def _apply_policy_decision(
     return risk.decision
 
 
+def _is_v1_dependency_policy(policy: PolicyConfig) -> bool:
+    return not policy.condition_on_release_controls
+
+
 def _strongest_introduced_severity(bundle: AnalysisBundle) -> str | None:
     severities = {finding.severity for finding in bundle.baseline_comparison.introduced}
     for severity in SEVERITY_ORDER:
@@ -120,30 +145,58 @@ def _strongest_introduced_severity(bundle: AnalysisBundle) -> str | None:
     return None
 
 
-def _required_approvals(bundle: AnalysisBundle, policy: PolicyConfig) -> tuple[str, ...]:
-    approvals: list[str] = []
+def _required_approvals(
+    bundle: AnalysisBundle,
+    policy: PolicyConfig,
+) -> tuple[tuple[str, ...], dict[str, tuple[str, ...]]]:
+    """Return (ordered approval roles, per-role triggering conditions).
+
+    Each role lists the policy trigger labels that caused it to be required,
+    so callers can explain *why* an approver is needed, not just who.
+    """
+    triggers_by_role: dict[str, list[str]] = {}
+
+    def _add(role: str, trigger_label: str) -> None:
+        triggers_by_role.setdefault(role, [])
+        if trigger_label not in triggers_by_role[role]:
+            triggers_by_role[role].append(trigger_label)
 
     if "production_iac" in policy.require_approval_for and bundle.summary.infrastructure_changes:
-        approvals.append("platform_owner")
+        _add("platform_owner", "production_iac")
 
     if "dependency_changes" in policy.require_approval_for and (
         bundle.summary.dependency_changes or bundle.summary.lockfile_changes
     ):
-        approvals.append("security_owner")
+        _add("security_owner", "dependency_changes")
 
-    if _matches_policy_trigger(policy.require_platform_owner_for, bundle):
-        approvals.append("platform_owner")
+    for trigger in policy.require_platform_owner_for:
+        if _trigger_matches(trigger, bundle):
+            _add("platform_owner", trigger)
 
-    if _matches_policy_trigger(policy.require_service_owner_for, bundle):
-        approvals.append("service_owner")
+    for trigger in policy.require_service_owner_for:
+        if _trigger_matches(trigger, bundle):
+            _add("service_owner", trigger)
 
-    if _matches_policy_trigger(policy.require_sre_owner_for, bundle):
-        approvals.append("sre_owner")
+    for trigger in policy.require_sre_owner_for:
+        if _trigger_matches(trigger, bundle):
+            _add("sre_owner", trigger)
 
-    if _matches_policy_trigger(policy.require_security_owner_for, bundle):
-        approvals.append("security_owner")
+    for trigger in policy.require_security_owner_for:
+        if _trigger_matches(trigger, bundle):
+            _add("security_owner", trigger)
 
-    return tuple(dict.fromkeys(approvals))
+    # Preserve insertion order; deduplicate roles while keeping first occurrence
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for role in triggers_by_role:
+        if role not in seen:
+            ordered.append(role)
+            seen.add(role)
+
+    return (
+        tuple(ordered),
+        {role: tuple(labels) for role, labels in triggers_by_role.items()},
+    )
 
 
 def _recommendations(
@@ -334,11 +387,15 @@ def _recommendations(
 
 def _align_decision_with_release_gates(
     decision: str,
+    policy: PolicyConfig,
     required_approvals: tuple[str, ...],
     recommendations: tuple[str, ...],
     reasons: list[str],
 ) -> str:
     if decision != "GO":
+        return decision
+
+    if not policy.condition_on_release_controls:
         return decision
 
     if required_approvals or _has_required_operational_gates(recommendations):
@@ -789,6 +846,7 @@ def _apply_policy_score_adjustments(
             score=adjusted_score,
             decision=risk.decision,
             confidence=risk.confidence,
+            confidence_ceiling_reason=risk.confidence_ceiling_reason,
             reasons=risk.reasons,
             features=risk.features,
         ),

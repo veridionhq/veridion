@@ -93,6 +93,27 @@ require_approval_for:
         )
 
 
+def test_parse_policy_yaml_rejects_inverted_score_thresholds() -> None:
+    with __import__("pytest").raises(ValueError, match=r"no_go_below_score \(90\) must not exceed conditional_go_below_score \(80\)"):
+        parse_policy_yaml("no_go_below_score: 90\nconditional_go_below_score: 80\n")
+
+
+def test_parse_policy_yaml_rejects_out_of_range_score_thresholds() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match=r"no_go_below_score must be between 0 and 100"):
+        parse_policy_yaml("no_go_below_score: 105\n")
+
+    with pytest.raises(ValueError, match=r"conditional_go_below_score must be between 0 and 100"):
+        parse_policy_yaml("conditional_go_below_score: 110\n")
+
+
+def test_parse_policy_yaml_accepts_equal_score_thresholds() -> None:
+    policy = parse_policy_yaml("no_go_below_score: 75\nconditional_go_below_score: 75\n")
+    assert policy.no_go_below_score == 75
+    assert policy.conditional_go_below_score == 75
+
+
 def test_evaluate_release_applies_required_approvals_and_recommendations() -> None:
     bundle = _bundle_with_iac_and_dependency_risk()
     policy = parse_policy_yaml(DEFAULT_POLICY_PATH.read_text())
@@ -242,6 +263,52 @@ def test_evaluate_release_blocks_when_max_severity_policy_is_exceeded() -> None:
 
     assert decision.decision == "NO GO"
     assert "policy max_severity exceeded by introduced high finding(s)" in decision.reasons
+
+
+def test_v1_dependency_policy_keeps_high_only_introduced_risk_conditional_even_when_score_is_low() -> None:
+    findings = [
+        NormalizedFinding(
+            source="grype",
+            finding_type="dependency",
+            rule_id=f"CVE-2026-{index:05d}",
+            title="High dependency issue",
+            severity="high",
+            package_name="urllib3",
+            package_version="1.25.8",
+            location=NormalizedLocation(path="requirements.txt"),
+        )
+        for index in range(12)
+    ]
+    bundle = build_analysis_bundle(
+        current_findings=findings,
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=0,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+        baseline_available=True,
+    )
+    policy = PolicyConfig(
+        max_severity="critical",
+        allow_conditional=True,
+        no_go_below_score=60,
+        conditional_go_below_score=85,
+        condition_on_release_controls=False,
+    )
+
+    decision = evaluate_release(bundle, policy)
+
+    assert decision.score == 0
+    assert decision.decision == "CONDITIONAL GO"
+    assert "policy no_go threshold triggered at score 60" not in decision.reasons
 
 
 def test_evaluate_release_adds_advisory_recommendations_for_historical_trust_signals() -> None:
@@ -1112,6 +1179,76 @@ def _bundle_with_iac_and_dependency_risk():
             )
         ),
     )
+
+
+def test_evaluate_release_populates_required_approval_triggers() -> None:
+    """Each required approval role must carry the policy triggers that caused it.
+
+    This allows callers to render 'security owner (required: dependency changes,
+    public exposure)' so approvers understand *what* they are signing off on.
+    """
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="trivy",
+                finding_type="dependency",
+                rule_id="CVE-2026-99",
+                title="Vulnerable dep",
+                severity="high",
+                package_name="urllib3",
+                package_version="2.0.0",
+                location=NormalizedLocation(path="/workspace/requirements.txt"),
+            )
+        ],
+        baseline_findings=[
+            NormalizedFinding(
+                source="trivy",
+                finding_type="dependency",
+                rule_id="CVE-2025-00",
+                title="Pre-existing dep",
+                severity="low",
+                package_name="requests",
+                package_version="2.28.0",
+                location=NormalizedLocation(path="/workspace/requirements.txt"),
+            )
+        ],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=0,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+                ParsedFileChange(
+                    path="k8s/deploy.yaml",
+                    change_type="modified",
+                    added_lines=2,
+                    removed_lines=0,
+                    signals=("infrastructure",),
+                    previous_path="k8s/deploy.yaml",
+                ),
+            )
+        ),
+        runtime_signals=RuntimeSignals(environment="production", public_exposure=True),
+    )
+    policy = PolicyConfig(
+        require_approval_for=("production_iac", "dependency_changes"),
+        require_security_owner_for=("public_exposure",),
+    )
+
+    decision = evaluate_release(bundle, policy)
+
+    assert "platform_owner" in decision.required_approvals
+    assert "security_owner" in decision.required_approvals
+    # platform_owner triggered by production_iac (infrastructure change)
+    assert "production_iac" in decision.required_approval_triggers.get("platform_owner", ())
+    # security_owner triggered by both dependency_changes and public_exposure
+    security_triggers = decision.required_approval_triggers.get("security_owner", ())
+    assert "dependency_changes" in security_triggers
+    assert "public_exposure" in security_triggers
 
 
 def _bundle_with_single_high_code_issue():

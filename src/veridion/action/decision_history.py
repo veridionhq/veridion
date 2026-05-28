@@ -88,6 +88,17 @@ def analyze_history_events(events: tuple[dict[str, object], ...]) -> dict[str, o
         "by_repository": _counter_dict(item.get("repository", "") for item in events),
         "by_policy_pack": _pack_breakdown(events),
         "top_blocking_categories": _counter_pairs(item["decision"].get("blocking_categories", []) for item in events),
+        "confidence_health": {
+            "by_confidence": _counter_dict(item["decision"].get("confidence", "") for item in events),
+            "degraded_confidence_events": sum(
+                1 for item in events if item["decision"].get("confidence_ceiling_reason", "")
+            ),
+            "by_confidence_ceiling_reason": _counter_dict(
+                item["decision"].get("confidence_ceiling_reason", "")
+                for item in events
+                if item["decision"].get("confidence_ceiling_reason", "")
+            ),
+        },
         "approval_freshness": {
             "stale_approval_events": sum(1 for item in events if item["automation"].get("stale_approvals")),
             "approval_blocked_events": sum(

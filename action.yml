@@ -1,15 +1,15 @@
 name: "Veridion RDI"
-description: "Release Decision Intelligence for pull requests"
+description: "GitHub-native release decisions for introduced dependency risk"
 inputs:
   diff-path:
     description: "Path to a unified diff file for the current change"
     required: true
   reports:
-    description: "Newline-delimited TOOL=PATH mappings for current scanner reports"
+    description: "Newline-delimited TOOL=PATH mappings for current scanner reports; v1 defaults to Syft, Grype, and Trivy"
     required: false
     default: ""
   baseline-reports:
-    description: "Newline-delimited TOOL=PATH mappings for baseline scanner reports"
+    description: "Newline-delimited TOOL=PATH mappings for baseline scanner reports used to separate introduced risk from existing backlog"
     required: false
     default: ""
   policy-path:
@@ -17,7 +17,7 @@ inputs:
     required: false
     default: ""
   operational-context-path:
-    description: "Path to optional versioned operational-context JSON; when provided, metadata-path and trust-profile-path are ignored"
+    description: "Expansion path: optional versioned operational-context JSON; when provided, metadata-path and trust-profile-path are ignored"
     required: false
     default: ""
   trust-profile-source-path:
@@ -29,7 +29,7 @@ inputs:
     required: false
     default: ""
   metadata-path:
-    description: "Path to optional pull request metadata JSON for AI attribution; ignored when operational-context-path is provided"
+    description: "Expansion path: optional pull request metadata JSON for attribution; ignored when operational-context-path is provided"
     required: false
     default: ""
   trust-profile-path:
@@ -40,8 +40,20 @@ inputs:
     description: "Path to optional accepted-risk suppression JSON"
     required: false
     default: ""
+  scan-metadata-path:
+    description: "Path to optional scan provenance metadata JSON with commit, timestamp, and scanner versions"
+    required: false
+    default: ""
+  recheck-only:
+    description: "Re-evaluate existing reports and current policy/suppressions without rerunning scanners"
+    required: false
+    default: "false"
+  expected-commit:
+    description: "Expected commit SHA for recheck validation; defaults to GITHUB_SHA or git HEAD"
+    required: false
+    default: ""
   comment-summary-provider:
-    description: "Optional wording model provider for PR comment summarization: openai, anthropic, or bedrock"
+    description: "Expansion path: optional wording model provider for PR comment summarization: openai, anthropic, or bedrock"
     required: false
     default: ""
   comment-summary-model:
@@ -81,11 +93,11 @@ inputs:
     required: false
     default: "veridion-decision-event.json"
   decision-history-path:
-    description: "Optional path to append NDJSON decision history events"
+    description: "Expansion path: optional path to append NDJSON decision history events"
     required: false
     default: ""
   decision-sinks:
-    description: "Newline-delimited sink specs for canonical decision-event delivery"
+    description: "Expansion path: newline-delimited sink specs for canonical decision-event delivery"
     required: false
     default: ""
   fail-on-sink-error:
@@ -101,7 +113,7 @@ inputs:
     required: false
     default: "GO,CONDITIONAL GO"
   approval-map-path:
-    description: "Path to optional approval role map JSON for GitHub reviewer requests"
+    description: "Expansion path: path to optional approval role map JSON for GitHub reviewer requests"
     required: false
     default: ""
   request-approvals:
@@ -303,6 +315,9 @@ runs:
         INPUT_METADATA_PATH: ${{ inputs.metadata-path }}
         INPUT_TRUST_PROFILE_PATH: ${{ inputs.trust-profile-path }}
         INPUT_SUPPRESSION_PATH: ${{ inputs.suppression-path }}
+        INPUT_SCAN_METADATA_PATH: ${{ inputs.scan-metadata-path }}
+        INPUT_RECHECK_ONLY: ${{ inputs.recheck-only }}
+        INPUT_EXPECTED_COMMIT: ${{ inputs.expected-commit }}
         INPUT_COMMENT_SUMMARY_PROVIDER: ${{ inputs.comment-summary-provider }}
         INPUT_COMMENT_SUMMARY_MODEL: ${{ inputs.comment-summary-model }}
         INPUT_COMMENT_SUMMARY_API_KEY: ${{ inputs.comment-summary-api-key }}
@@ -355,6 +370,13 @@ runs:
         if [[ -n "${INPUT_SUPPRESSION_PATH}" ]]; then
           suppression_args+=(--suppression-path "${INPUT_SUPPRESSION_PATH}")
         fi
+        provenance_args=()
+        if [[ -n "${INPUT_SCAN_METADATA_PATH}" ]]; then
+          provenance_args+=(--scan-metadata-path "${INPUT_SCAN_METADATA_PATH}")
+        fi
+        if [[ -n "${INPUT_EXPECTED_COMMIT}" ]]; then
+          provenance_args+=(--expected-commit "${INPUT_EXPECTED_COMMIT}")
+        fi
         summary_args=()
         if [[ -n "${INPUT_COMMENT_SUMMARY_PROVIDER}" ]]; then
           summary_args+=(--comment-summary-provider "${INPUT_COMMENT_SUMMARY_PROVIDER}")
@@ -383,10 +405,12 @@ runs:
           "${metadata_args[@]}" \
           "${trust_profile_args[@]}" \
           "${suppression_args[@]}" \
+          "${provenance_args[@]}" \
           "${summary_args[@]}" \
           --comment-path "${INPUT_COMMENT_PATH}" \
           --json-output-path "${INPUT_JSON_OUTPUT_PATH}" \
           --decision-contract-path "${INPUT_DECISION_CONTRACT_PATH}" \
+          --recheck-only "${INPUT_RECHECK_ONLY}" \
           --enforce-decision "${INPUT_ENFORCE_DECISION}" \
           --allowed-decisions "${INPUT_ALLOWED_DECISIONS}"
     - name: Request required GitHub approvals

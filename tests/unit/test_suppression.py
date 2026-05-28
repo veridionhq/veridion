@@ -24,6 +24,7 @@ def test_parse_suppressions_payload_and_apply_by_rule_id() -> None:
                     "exception_id": "AR-123",
                     "status": "approved",
                     "rule_id": "python.lang.security.audit.dangerous-subprocess-use",
+                    "reason_type": "no_exposure",
                     "reason": "accepted temporarily while refactor is in progress",
                     "owner": "platform-security",
                     "approved_by": "security-owner",
@@ -48,6 +49,8 @@ def test_parse_suppressions_payload_and_apply_by_rule_id() -> None:
     assert report.expired_rules == 0
     assert report.suppressed_baseline_findings == 0
     assert report.suppressed_findings[0].reason == "accepted temporarily while refactor is in progress"
+    assert report.suppressed_findings[0].reason_type == "no_exposure"
+    assert report.suppressed_findings[0].reduced_severity is None
     assert report.suppressed_findings[0].exception_id == "AR-123"
     assert report.suppressed_findings[0].status == "approved"
     assert report.suppressed_findings[0].owner == "platform-security"
@@ -61,7 +64,35 @@ def test_parse_suppressions_payload_and_apply_by_rule_id() -> None:
     assert report.renewal_pending == 0
     assert report.expiring_soon == 0
     assert report.exceptions[0].exception_id == "AR-123"
+    assert report.exceptions[0].reason_type == "no_exposure"
     assert report.exceptions[0].active is True
+
+
+def test_parse_suppressions_payload_accepts_risk_reduction_reason_type() -> None:
+    rules = parse_suppressions_payload(
+        {
+            "schema_version": 1,
+            "suppressions": [
+                {
+                    "exception_id": "AR-REDUCE",
+                    "status": "approved",
+                    "rule_id": "CVE-2025-99999",
+                    "reason_type": "risk_reduction",
+                    "reduced_severity": "medium",
+                    "reason": "compensating control reduces practical exposure",
+                    "owner": "platform-security",
+                    "approved_by": "security-owner",
+                    "ticket": "SEC-999",
+                    "created_at": "2026-05-10T00:00:00Z",
+                    "reviewed_at": "2026-05-10T01:00:00Z",
+                    "expires_on": "2026-12-31",
+                }
+            ],
+        }
+    )
+
+    assert rules[0].reason_type == "risk_reduction"
+    assert rules[0].reduced_severity == "medium"
 
 
 def test_apply_suppressions_ignores_expired_rules() -> None:
@@ -284,6 +315,38 @@ def test_parse_suppressions_payload_rejects_unsupported_status() -> None:
                         "status": "paused",
                         "rule_id": "CVE-2025-99999",
                         "reason": "invalid status",
+                    }
+                ],
+            }
+        )
+
+
+def test_parse_suppressions_payload_rejects_unsupported_reason_type() -> None:
+    with pytest.raises(ValueError, match="unsupported suppression reason_type: temporary"):
+        parse_suppressions_payload(
+            {
+                "schema_version": 1,
+                "suppressions": [
+                    {
+                        "rule_id": "CVE-2025-99999",
+                        "reason_type": "temporary",
+                        "reason": "invalid type",
+                    }
+                ],
+            }
+        )
+
+
+def test_parse_suppressions_payload_requires_reduced_severity_for_risk_reduction() -> None:
+    with pytest.raises(ValueError, match="reduced_severity is required"):
+        parse_suppressions_payload(
+            {
+                "schema_version": 1,
+                "suppressions": [
+                    {
+                        "rule_id": "CVE-2025-99999",
+                        "reason_type": "risk_reduction",
+                        "reason": "missing reduction target",
                     }
                 ],
             }

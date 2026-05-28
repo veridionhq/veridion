@@ -56,12 +56,14 @@ def render_pr_comment(
     *,
     summarizer: CommentSummarizer | None = None,
     summary_style: str = "terse",
+    report_diagnostics: dict[str, object] | None = None,
 ) -> str:
     return render_pr_comment_result(
         bundle,
         decision,
         summarizer=summarizer,
         summary_style=summary_style,
+        report_diagnostics=report_diagnostics,
     ).markdown
 
 
@@ -71,6 +73,7 @@ def render_pr_comment_result(
     *,
     summarizer: CommentSummarizer | None = None,
     summary_style: str = "terse",
+    report_diagnostics: dict[str, object] | None = None,
 ) -> RenderedComment:
     """Render a deterministic PR comment for the current release decision."""
 
@@ -79,7 +82,10 @@ def render_pr_comment_result(
     lines.append("## Release Decision Intelligence")
     lines.append("")
     lines.append(f"### {_decision_icon(decision.decision)} {decision.decision}")
-    lines.append(f"**RDI Score:** {decision.score} | **Confidence:** {decision.confidence.upper()}")
+    if _is_v1_dependency_policy(decision):
+        lines.append(f"**Confidence:** {_confidence_display(decision)}")
+    else:
+        lines.append(f"**RDI Score:** {decision.score} | **Confidence:** {_confidence_display(decision)}")
     lines.append("")
 
     attribution_untrusted = not bundle.summary.baseline_attribution_trusted
@@ -99,6 +105,11 @@ def render_pr_comment_result(
     required_next_steps, advisory_guidance = _split_recommendations(
         filter_approval_echo_recommendations(decision.recommendations, decision.required_approvals)
     )
+    if _is_v1_dependency_policy(decision):
+        required_next_steps, advisory_guidance = _filter_v1_dependency_recommendations(
+            required_next_steps,
+            advisory_guidance,
+        )
     next_steps = _select_next_steps(
         bundle=bundle,
         decision=decision,
@@ -115,15 +126,35 @@ def render_pr_comment_result(
         summary_style=summary_style,
     )
 
-    key_context = (
-        _format_release_context(bundle)
-        if _is_clean_review_case(bundle, decision)
-        else _format_key_context(bundle, compact=compact_render)
-    )
+    # For NO GO and CONDITIONAL GO, surface the action block immediately after the verdict
+    # so engineers see who must approve and what to fix before reading context and reasons.
+    if decision.decision != "GO":
+        if decision.required_approvals:
+            approvals = tuple(
+                _format_approval_with_triggers(name, decision.required_approval_triggers)
+                for name in decision.required_approvals
+            )
+            lines.extend(_section("Required Approvals", approvals))
+        lines.extend(
+            _section(
+                "What must happen next",
+                _truncate_items(next_steps, MAX_REQUIRED_NEXT_STEP_ITEMS, "required step"),
+            )
+        )
+
+    key_context = ()
+    if not _is_v1_dependency_policy(decision):
+        key_context = (
+            _format_release_context(bundle)
+            if _is_clean_review_case(bundle, decision)
+            else _format_key_context(bundle, compact=compact_render)
+        )
     if key_context:
         lines.extend(_section("Key Context", key_context))
     if attribution_untrusted:
         lines.extend(_section("Baseline Attribution", _baseline_attribution_lines(bundle)))
+        if report_diagnostics:
+            lines.extend(_section("Report Health", _report_health_lines(report_diagnostics)))
     if bundle.summary.suppressed_findings or bundle.summary.expired_suppressions:
         lines.extend(_section("Accepted Risk", _format_suppressions(bundle)))
 
@@ -133,6 +164,8 @@ def render_pr_comment_result(
         introduced_threats=introduced_threat_explanations,
         rendered_primary_drivers=summarized_primary_drivers or primary_drivers,
     )
+    if _is_v1_dependency_policy(decision):
+        rendered_primary_drivers = _filter_v1_dependency_drivers(rendered_primary_drivers)
     if rendered_primary_drivers:
         lines.extend(
             _section(
@@ -149,19 +182,17 @@ def render_pr_comment_result(
             )
         )
 
-    if decision.score_adjustments:
+    if decision.score_adjustments and not _is_v1_dependency_policy(decision):
         lines.extend(_section("Policy Score Adjustments", decision.score_adjustments))
 
-    if decision.required_approvals:
-        approvals = tuple(_format_approval(name) for name in decision.required_approvals)
-        lines.extend(_section("Required Approvals", approvals))
-
-    lines.extend(
-        _section(
-            "What must happen next",
-            _truncate_items(next_steps, MAX_REQUIRED_NEXT_STEP_ITEMS, "required step"),
+    # For GO decisions the next-steps block is advisory and belongs at the bottom.
+    if decision.decision == "GO" and not _is_v1_dependency_policy(decision):
+        lines.extend(
+            _section(
+                "What must happen next",
+                _truncate_items(next_steps, MAX_REQUIRED_NEXT_STEP_ITEMS, "required step"),
+            )
         )
-    )
 
     return RenderedComment(
         markdown=wrap_pr_comment("\n".join(lines).rstrip() + "\n"),
@@ -174,6 +205,16 @@ def wrap_pr_comment(body: str) -> str:
     """Wrap a rendered PR comment with stable Veridion markers."""
 
     return f"{COMMENT_MARKER_START}\n{body.rstrip()}\n{COMMENT_MARKER_END}\n"
+
+
+def _confidence_display(decision: PolicyDecision) -> str:
+    label = decision.confidence.upper()
+    reason = decision.risk.confidence_ceiling_reason
+    if reason == "missing_baseline":
+        return f"{label} (limited: baseline unavailable)"
+    if reason == "suspicious_baseline":
+        return f"{label} (limited: baseline comparison unreliable)"
+    return label
 
 
 def _decision_icon(decision: str) -> str:
@@ -197,6 +238,15 @@ def _section(title: str, items: tuple[str, ...] | list[str]) -> list[str]:
 
 def _format_approval(value: str) -> str:
     return format_approval_label(value)
+
+
+def _format_approval_with_triggers(role: str, triggers_by_role: dict[str, tuple[str, ...]]) -> str:
+    label = format_approval_label(role)
+    triggers = triggers_by_role.get(role, ())
+    if not triggers:
+        return label
+    trigger_text = ", ".join(t.replace("_", " ") for t in triggers)
+    return f"{label} (required: {trigger_text})"
 
 
 def _drivers_title(decision: str) -> str:
@@ -228,21 +278,23 @@ def _default_driver_summary(
     if requires_release_gates:
         return ("release still requires explicit approvals or operational checks",)
     if decision.decision == "NO GO" and introduced_threats:
-        return (_headline_blocker_summary(bundle, introduced_threats),) + tuple(
+        v1_dependency_policy = _is_v1_dependency_policy(decision)
+        return (_headline_blocker_summary(bundle, introduced_threats, include_release_context=not v1_dependency_policy),) + tuple(
             item
             for item in (
                 _severity_summary(bundle),
-                "the change includes infrastructure updates" if bundle.summary.infrastructure_changes else "",
+                "the change includes infrastructure updates" if bundle.summary.infrastructure_changes and not v1_dependency_policy else "",
                 "the change introduces vulnerable dependencies" if bundle.summary.introduced_by_finding_type.get("dependency") else "",
             )
             if item
         )
     if decision.decision == "CONDITIONAL GO" and introduced_threats:
-        return (_headline_review_summary(bundle, introduced_threats),) + tuple(
+        v1_dependency_policy = _is_v1_dependency_policy(decision)
+        return (_headline_review_summary(bundle, introduced_threats, include_release_context=not v1_dependency_policy),) + tuple(
             item
             for item in (
                 _severity_summary(bundle),
-                "the change includes infrastructure updates" if bundle.summary.infrastructure_changes else "",
+                "the change includes infrastructure updates" if bundle.summary.infrastructure_changes and not v1_dependency_policy else "",
             )
             if item
         )
@@ -333,13 +385,20 @@ def _summarize_comment_sections(
     return rendered_primary, result.threat_summaries, result.contextual_summary, trace
 
 
-def _headline_blocker_summary(bundle: AnalysisBundle, threats: tuple[ThreatExplanation, ...]) -> str:
+def _headline_blocker_summary(
+    bundle: AnalysisBundle,
+    threats: tuple[ThreatExplanation, ...],
+    *,
+    include_release_context: bool = True,
+) -> str:
     top = threats[0]
     if top.threat_type == "dependency":
         summary = f"this change cannot ship because it introduces {top.severity} vulnerable dependencies"
     else:
         location = f" in {top.location}" if top.location else ""
         summary = f"this change cannot ship because it introduces {top.severity} {top.threat_type} risk{location}"
+    if not include_release_context:
+        return summary
     if bundle.runtime_signals.public_exposure:
         summary += " into a public-facing service"
     elif bundle.runtime_signals.blast_radius in {"high", "critical"}:
@@ -347,13 +406,18 @@ def _headline_blocker_summary(bundle: AnalysisBundle, threats: tuple[ThreatExpla
     return summary
 
 
-def _headline_review_summary(bundle: AnalysisBundle, threats: tuple[ThreatExplanation, ...]) -> str:
+def _headline_review_summary(
+    bundle: AnalysisBundle,
+    threats: tuple[ThreatExplanation, ...],
+    *,
+    include_release_context: bool = True,
+) -> str:
     top = threats[0]
     if top.location:
         summary = f"this change needs review because {top.location} {top.summary}"
     else:
         summary = f"this change needs review because it introduces {top.severity} {top.threat_type} risk"
-    if bundle.summary.infrastructure_changes:
+    if include_release_context and bundle.summary.infrastructure_changes:
         summary += " and it also changes infrastructure"
     return summary
 
@@ -666,6 +730,41 @@ def _select_next_steps(
     return required_next_steps or advisory_guidance or ("Proceed with normal review and deployment checks",)
 
 
+def _filter_v1_dependency_recommendations(
+    required_next_steps: tuple[str, ...],
+    advisory_guidance: tuple[str, ...],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    allowed_prefixes = (
+        "Block release",
+        "Repair or refresh baseline scanner outputs",
+        "Review change-relevant findings manually",
+        "Review newly introduced dependencies",
+        "Prioritize remediation",
+        "Remove or renew expired accepted-risk suppressions",
+        "Fill suppression owner",
+        "Review pending accepted-risk proposals",
+        "Approve or reject accepted-risk renewal requests",
+        "Renew or close accepted-risk exceptions expiring soon",
+    )
+
+    def keep(items: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(item for item in items if item.startswith(allowed_prefixes))
+
+    return keep(required_next_steps), keep(advisory_guidance)
+
+
+def _filter_v1_dependency_drivers(drivers: tuple[str, ...]) -> tuple[str, ...]:
+    excluded_prefixes = (
+        "the change includes infrastructure updates",
+        "deployment target is",
+        "blast radius is",
+        "runtime ",
+        "historically unstable",
+        "release controls need human verification",
+    )
+    return tuple(item for item in drivers if not item.startswith(excluded_prefixes))
+
+
 def _baseline_attribution_lines(bundle: AnalysisBundle) -> tuple[str, ...]:
     lines = [
         "baseline scanner evidence is incomplete for this run; findings in changed files are treated as change-relevant until the baseline is repaired"
@@ -679,6 +778,29 @@ def _baseline_attribution_lines(bundle: AnalysisBundle) -> tuple[str, ...]:
     return tuple(lines)
 
 
+def _report_health_lines(report_diagnostics: dict[str, object]) -> tuple[str, ...]:
+    items: list[str] = []
+    attribution_mode = str(report_diagnostics.get("attribution_mode", "")).strip()
+    likely_cause = str(report_diagnostics.get("likely_cause", "")).strip()
+    baseline_tools = report_diagnostics.get("baseline_report_tools")
+    zero_finding_tools = report_diagnostics.get("zero_finding_baseline_tools")
+    missing_tools = report_diagnostics.get("missing_baseline_tools")
+    current_tools = report_diagnostics.get("current_report_tools")
+    if attribution_mode:
+        items.append(f"attribution mode: {attribution_mode}")
+    if likely_cause:
+        items.append(f"likely cause: {likely_cause}")
+    if isinstance(current_tools, list) and current_tools:
+        items.append("current tools: " + ", ".join(str(item) for item in current_tools))
+    if isinstance(baseline_tools, list):
+        items.append("baseline tools: " + (", ".join(str(item) for item in baseline_tools) if baseline_tools else "none"))
+    if isinstance(zero_finding_tools, list) and zero_finding_tools:
+        items.append("baseline tools with zero normalized findings: " + ", ".join(str(item) for item in zero_finding_tools))
+    if isinstance(missing_tools, list) and missing_tools:
+        items.append("missing baseline tools: " + ", ".join(str(item) for item in missing_tools))
+    return tuple(items)
+
+
 def _is_clean_review_case(bundle: AnalysisBundle, decision: PolicyDecision) -> bool:
     return (
         bundle.summary.baseline_attribution_trusted
@@ -688,3 +810,19 @@ def _is_clean_review_case(bundle: AnalysisBundle, decision: PolicyDecision) -> b
         and decision.decision == "CONDITIONAL GO"
         and "release still requires explicit approvals or operational checks" in decision.reasons
     )
+
+
+def _is_v1_clean_dependency_go(bundle: AnalysisBundle, decision: PolicyDecision) -> bool:
+    return (
+        decision.decision == "GO"
+        and not decision.policy.condition_on_release_controls
+        and bundle.summary.baseline_attribution_trusted
+        and bundle.summary.change_relevant_findings == 0
+        and bundle.summary.introduced_findings == 0
+        and bundle.summary.suppressed_findings == 0
+        and bundle.summary.expired_suppressions == 0
+    )
+
+
+def _is_v1_dependency_policy(decision: PolicyDecision) -> bool:
+    return not decision.policy.condition_on_release_controls

@@ -67,6 +67,7 @@ def test_write_github_outputs_emits_gate_and_contract_fields(tmp_path, monkeypat
     assert "required_approvals_json=[]" in content
     assert "accepted_risk_present=false" in content
     assert "blocking_categories_json=[]" in content
+    assert "confidence_ceiling_reason=" in content
 
     blocking_line = next(line for line in content.splitlines() if line.startswith("blocking_reasons_json="))
     assert json.loads(blocking_line.split("=", maxsplit=1)[1]) == []
@@ -102,6 +103,57 @@ def test_run_action_decision_contract_includes_metadata_and_categories() -> None
     assert contract["contract_version_source"] == "veridion.decision_contract@1"
     assert isinstance(contract["generated_at"], str)
     assert "blocking_categories" in contract["decision"]
+    assert contract["evidence"]["attribution"]["mode"] == "trusted"
+    assert contract["evidence"]["reports"]["current_tools"] == []
+
+
+def test_run_action_decision_contract_surfaces_report_health() -> None:
+    result = run_action(
+        diff_text="diff --git a/requirements.txt b/requirements.txt\nindex 1111111..2222222 100644\n--- a/requirements.txt\n+++ b/requirements.txt\n@@ -1 +1 @@\n-urllib3==2.2.2\n+urllib3==1.25.8\n",
+        current_reports={"semgrep": "tests/fixtures/scanners/semgrep_report.json"},
+        baseline_reports={"semgrep": "tests/fixtures/scanners/semgrep_baseline_empty.json"},
+        policy_text=None,
+    )
+
+    evidence = result.decision_contract["evidence"]
+
+    assert evidence["attribution"]["trusted"] is True
+    assert evidence["attribution"]["mode"] == "trusted"
+    assert evidence["reports"]["current_tools"] == ["semgrep"]
+    assert evidence["reports"]["baseline_tools"] == ["semgrep"]
+    assert evidence["reports"]["zero_finding_baseline_tools"] == ["semgrep"]
+    assert evidence["reports"]["current"]["semgrep"]["normalized_findings"] > 0
+    assert "sha256" in evidence["reports"]["current"]["semgrep"]
+
+
+def test_run_action_decision_contract_surfaces_scan_provenance_for_recheck() -> None:
+    result = run_action(
+        diff_text="diff --git a/README.md b/README.md\nindex 1111111..2222222 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n hello\n+world\n",
+        current_reports={},
+        baseline_reports={},
+        policy_text=None,
+        scan_metadata_text=json.dumps(
+            {
+                "commit_hash": "abc123",
+                "commit_short": "abc123",
+                "branch": "feature/deps",
+                "scan_timestamp": "2026-05-27T00:00:00Z",
+                "scanner_versions": {
+                    "trivy": "0.69.3",
+                    "grype": "0.110.0",
+                    "syft": "1.20.0",
+                },
+            }
+        ),
+        recheck_only=True,
+        expected_commit="abc123",
+    )
+
+    scan = result.decision_contract["evidence"]["scan"]
+
+    assert scan["recheck_only"] is True
+    assert scan["metadata"]["commit_hash"] == "abc123"
+    assert scan["metadata"]["scanner_versions"]["trivy"] == "0.69.3"
 
 
 def test_decision_contract_surfaces_runtime_release_gates() -> None:
@@ -174,6 +226,8 @@ def test_decision_contract_surfaces_accepted_risk_lifecycle() -> None:
                         "finding_type": "dependency",
                         "package_name": "urllib3",
                         "package_version": "1.25.8",
+                        "reason_type": "risk_reduction",
+                        "reduced_severity": "medium",
                         "reason": "renewal under review",
                         "owner": "platform-security",
                         "approved_by": "security-owner",
@@ -203,6 +257,10 @@ def test_decision_contract_surfaces_accepted_risk_lifecycle() -> None:
     assert accepted_risk["expiring_soon"] == 1
     assert accepted_risk["exceptions"][0]["exception_id"] == "AR-300"
     assert accepted_risk["exceptions"][0]["status"] == "renewal_requested"
+    assert accepted_risk["exceptions"][0]["reason_type"] == "risk_reduction"
+    assert accepted_risk["exceptions"][0]["reduced_severity"] == "medium"
+    assert accepted_risk["suppressed_findings"][0]["reason_type"] == "risk_reduction"
+    assert accepted_risk["suppressed_findings"][0]["reduced_severity"] == "medium"
     assert "accepted-risk renewal pending review: AR-300" in accepted_risk["lifecycle_events"]
     assert contract["automation"]["requires_exception_review"] is True
 

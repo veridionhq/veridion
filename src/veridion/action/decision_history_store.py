@@ -25,6 +25,12 @@ STORE_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("006_control_plane_audit", "operator auth and admin action audit trail"),
 )
 
+# Allowlist for tables passed to _count_*_rows helpers (F-01: prevent f-string injection).
+_ALLOWED_COUNT_TABLES: frozenset[str] = frozenset({"decision_events", "materialization_runs"})
+
+# Per-process cache: skip repeated schema application within the same server instance (F-07).
+_SCHEMA_ENSURED: set[str] = set()
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Manage persistent Veridion decision-history storage")
@@ -93,8 +99,13 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def ensure_history_store(*, sqlite_path: str | Path = "", store_dsn: str = "") -> None:
+    key = str(sqlite_path) if sqlite_path else store_dsn
+    if key and key in _SCHEMA_ENSURED:
+        return
     with open_history_store(sqlite_path=sqlite_path, store_dsn=store_dsn) as store:
         store.ensure_schema()
+    if key:
+        _SCHEMA_ENSURED.add(key)
 
 
 def upsert_history_store(
@@ -679,6 +690,12 @@ class SQLiteHistoryStore(HistoryStore):
         token = secrets.token_urlsafe(24)
         token_hash = _token_hash(token)
         token_prefix = token[:8]
+        # Check existence BEFORE the upsert so the "created" vs "rotated" label is accurate
+        # even under concurrent access (mirrors the Postgres implementation).
+        existed = bool(self.connection.execute(
+            "SELECT 1 FROM producer_clients WHERE tenant_id = ? AND client_id = ? LIMIT 1",
+            (tenant_id, client_id),
+        ).fetchone())
         self.connection.execute(
             """
             INSERT OR REPLACE INTO producer_clients
@@ -687,17 +704,14 @@ class SQLiteHistoryStore(HistoryStore):
               ?, ?, ?, ?, ?, ?, ?,
               COALESCE((SELECT created_at FROM producer_clients WHERE tenant_id = ? AND client_id = ?), CURRENT_TIMESTAMP),
               CURRENT_TIMESTAMP,
-              CASE WHEN EXISTS(SELECT 1 FROM producer_clients WHERE tenant_id = ? AND client_id = ?) THEN CURRENT_TIMESTAMP ELSE '' END,
+              CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE '' END,
               '',
               COALESCE((SELECT last_used_at FROM producer_clients WHERE tenant_id = ? AND client_id = ?), '')
             )
             """,
-            (tenant_id, client_id, display_name, token_hash, token_prefix, roles_csv, status, tenant_id, client_id, tenant_id, client_id, tenant_id, client_id),
+            (tenant_id, client_id, display_name, token_hash, token_prefix, roles_csv, status, tenant_id, client_id, existed, tenant_id, client_id),
         )
-        action = "rotated" if self.connection.execute(
-            "SELECT 1 FROM producer_client_audit WHERE tenant_id = ? AND client_id = ? LIMIT 1",
-            (tenant_id, client_id),
-        ).fetchone() else "created"
+        action = "rotated" if existed else "created"
         self.connection.execute(
             """
             INSERT INTO producer_client_audit
@@ -762,11 +776,15 @@ class SQLiteHistoryStore(HistoryStore):
         return tuple(_control_plane_audit_row(row) for row in rows)
 
     def resolve_producer_token(self, *, token: str) -> HistoryToken | None:
-        row = self.connection.execute(
+        # Fetch ALL rows sharing the 8-char prefix so that two clients with the same
+        # prefix don't shadow each other (F-02: prefix collision fix).
+        rows = self.connection.execute(
             "SELECT tenant_id, client_id, display_name, token_hash, roles_csv, status FROM producer_clients WHERE token_prefix = ?",
             (token[:8],),
-        ).fetchone()
-        if row is None or not secrets.compare_digest(str(row[3]), _token_hash(token)):
+        ).fetchall()
+        token_hash = _token_hash(token)
+        row = next((r for r in rows if secrets.compare_digest(str(r[3]), token_hash)), None)
+        if row is None:
             return None
         self.connection.execute(
             "UPDATE producer_clients SET last_used_at = CURRENT_TIMESTAMP WHERE tenant_id = ? AND client_id = ?",
@@ -1239,13 +1257,17 @@ class PostgresHistoryStore(HistoryStore):
         return tuple(_control_plane_audit_row(row) for row in rows)
 
     def resolve_producer_token(self, *, token: str) -> HistoryToken | None:
+        # Fetch ALL rows sharing the 8-char prefix so that two clients with the same
+        # prefix don't shadow each other (F-02: prefix collision fix).
         with self.connection.cursor() as cursor:
             cursor.execute(
                 "SELECT tenant_id, client_id, display_name, token_hash, roles_csv, status FROM producer_clients WHERE token_prefix = %s",
                 (token[:8],),
             )
-            row = cursor.fetchone()
-        if row is None or not secrets.compare_digest(str(row[3]), _token_hash(token)):
+            rows = cursor.fetchall()
+        token_hash = _token_hash(token)
+        row = next((r for r in rows if secrets.compare_digest(str(r[3]), token_hash)), None)
+        if row is None:
             return None
         with self.connection.cursor() as cursor:
             cursor.execute(
@@ -1433,6 +1455,9 @@ def _apply_sqlite_migrations(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    # Legacy upgrade shims for databases created before schema 005 added these columns.
+    # New columns MUST be defined in the CREATE TABLE statement above and tracked via
+    # STORE_MIGRATIONS — do NOT add new _sqlite_add_column_if_missing calls here.
     _sqlite_add_column_if_missing(connection, "producer_clients", "last_issued_at", "TEXT NOT NULL DEFAULT ''")
     _sqlite_add_column_if_missing(connection, "producer_clients", "last_rotated_at", "TEXT NOT NULL DEFAULT ''")
     _sqlite_add_column_if_missing(connection, "producer_clients", "last_used_at", "TEXT NOT NULL DEFAULT ''")
@@ -1700,6 +1725,8 @@ def _postgres_add_column_if_missing(cursor, table: str, column: str, definition:
 
 
 def _count_sqlite_rows(connection: sqlite3.Connection, table: str, *, tenant_id: str) -> int:
+    if table not in _ALLOWED_COUNT_TABLES:
+        raise ValueError(f"table {table!r} is not in the allowed list for row counting")
     query = f"SELECT COUNT(*) FROM {table}"
     params: list[object] = []
     if tenant_id:
@@ -1709,6 +1736,8 @@ def _count_sqlite_rows(connection: sqlite3.Connection, table: str, *, tenant_id:
 
 
 def _count_postgres_rows(connection, table: str, *, tenant_id: str) -> int:
+    if table not in _ALLOWED_COUNT_TABLES:
+        raise ValueError(f"table {table!r} is not in the allowed list for row counting")
     query = f"SELECT COUNT(*) FROM {table}"
     params: list[object] = []
     if tenant_id:

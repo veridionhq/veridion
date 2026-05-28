@@ -2,28 +2,6 @@ name: hosted-app-smoke
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches:
-      - develop
-      - main
-    paths:
-      - ".github/workflows/hosted-app-smoke.yml"
-      - "src/veridion/action/runner.py"
-      - "src/veridion/action/decision_history_service.py"
-      - "src/veridion/action/decision_history_store.py"
-      - "tests/integration/test_action_runner.py"
-      - "tests/unit/test_decision_history_service.py"
-  push:
-    branches:
-      - develop
-      - main
-    paths:
-      - ".github/workflows/hosted-app-smoke.yml"
-      - "src/veridion/action/runner.py"
-      - "src/veridion/action/decision_history_service.py"
-      - "src/veridion/action/decision_history_store.py"
-      - "tests/integration/test_action_runner.py"
-      - "tests/unit/test_decision_history_service.py"
 
 jobs:
   smoke:
@@ -42,7 +20,7 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install -e .[dev]
 
-      - name: Run hosted control-plane smoke
+      - name: Run hosted control-plane expansion smoke
         run: python3 -m pytest tests/unit/test_decision_history_service.py tests/integration/test_action_runner.py -q
 
       - name: Build hosted smoke artifact
@@ -58,14 +36,15 @@ jobs:
               diff_text=diff_text,
               current_reports={
                   "trivy": "tests/fixtures/scanners/trivy_report.json",
-                  "semgrep": "tests/fixtures/scanners/semgrep_report.json",
                   "grype": "tests/fixtures/scanners/grype_report.json",
                   "syft": "tests/fixtures/scanners/syft_report.json",
               },
               baseline_reports={
-                  "semgrep": "tests/fixtures/scanners/semgrep_report.json",
+                  "trivy": "tests/fixtures/scanners/trivy_report.json",
+                  "grype": "tests/fixtures/scanners/grype_report.json",
+                  "syft": "tests/fixtures/scanners/syft_report.json",
               },
-              policy_text=Path("tests/fixtures/policies/default_policy.yaml").read_text(),
+              policy_text=Path("examples/policy-packs/dependency-risk-v1.yaml").read_text(),
               metadata_text=Path("tests/fixtures/pr/pr_metadata.json").read_text(),
               trust_profile_text=Path("tests/fixtures/pr/trust_profile.json").read_text(),
           )

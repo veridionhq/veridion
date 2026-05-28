@@ -2,17 +2,17 @@
 
 ## What It Is
 
-Veridion is the operational trust layer for autonomous software delivery.
+Veridion is a GitHub-native release decision engine for introduced dependency risk.
 
-It determines whether a software change should safely ship by combining:
+It determines whether a pull request introduced unacceptable dependency risk by combining:
 
-- introduced-risk detection
-- blast-radius intelligence
-- operational context
-- policy-driven approvals and scoring
+- SBOM and vulnerability signals
+- baseline comparison
+- introduced versus pre-existing attribution
+- simple policy-driven release decisions
 - accepted-risk governance
 
-Security is one input into that trust decision, not the category itself.
+Security scanners produce signals. Veridion decides whether those signals should block or condition a release.
 
 ## What Problem It Solves
 
@@ -20,10 +20,9 @@ Most tools stop at finding issues.
 
 Teams still need to decide:
 
-- does this change introduce new risk?
-- how serious is the blast radius?
-- what policy applies?
-- who must approve?
+- did this PR introduce a vulnerable dependency?
+- was the risk already present in the baseline?
+- what policy applies to the introduced risk?
 - what needs to happen next?
 
 Veridion turns that into a decision artifact:
@@ -32,7 +31,7 @@ Veridion turns that into a decision artifact:
 - `CONDITIONAL GO`
 - `NO GO`
 
-Daybreak-style systems focus on finding and fixing vulnerabilities.
+Scanner and remediation systems focus on finding and fixing vulnerabilities.
 Veridion answers a different question:
 
 **Should this change safely reach production?**
@@ -43,8 +42,8 @@ AI is increasing:
 
 - code velocity
 - deployment frequency
-- infrastructure churn
-- autonomous engineering behavior
+- dependency update volume
+- automated remediation
 
 Faster than organizations are increasing:
 
@@ -55,35 +54,26 @@ Faster than organizations are increasing:
 That gap is the opportunity.
 
 The bottleneck is no longer just vulnerability discovery.
-It is production governance for increasingly autonomous software systems.
+It is deciding whether newly introduced dependency risk should block a release.
 
-## What The MVP Does Today
+## What V1 Does
 
 - runs as a GitHub Action
-- normalizes Trivy, Grype, Semgrep, and Syft
-- isolates introduced risk from legacy noise
-- infers parts of blast radius from the change surface
-- applies policy-driven approvals and score adjustments
+- normalizes Syft, Grype, and Trivy dependency signals
+- isolates introduced dependency risk from legacy vulnerability backlog
+- applies clear policy-driven release decisions
 - renders an explainable PR decision comment
 - governs accepted-risk suppressions with visible reason and expiry
 
-This is deliberately broader than AI security scanning:
-
-- security
-- reliability
-- deployment safety
-- operational fragility
-- rollback confidence
-- runtime context
-- release timing
+The implementation also supports broader release-governance signals, but those are expansion paths. The first product wedge is introduced dependency risk.
 
 ## What Has Been Proven
 
 The current MVP has been validated in an external canary repository with:
 
 - a `GO` case
-- a `CONDITIONAL GO` case from real introduced risk
-- a `NO GO` case from dependency and infra risk
+- a `CONDITIONAL GO` case from real introduced dependency risk
+- a `NO GO` case from dependency risk
 - an accepted-risk `CONDITIONAL GO` case where suppressions remain visible
 
 ## Best Initial Buyer
@@ -91,8 +81,9 @@ The current MVP has been validated in an external canary repository with:
 Early platform, security, DevOps, or engineering productivity teams that:
 
 - already review risky PRs manually
+- already run dependency or container vulnerability scanners
 - want clearer release decisions
-- care about autonomous engineering governance
+- care about release governance
 
 ## Category
 
@@ -106,4 +97,4 @@ Veridion is not:
 
 Veridion is:
 
-**the control layer for operational trust in software delivery**
+**the release decision layer for introduced dependency risk**

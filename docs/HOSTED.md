@@ -99,12 +99,12 @@ Recommended production posture:
 
 ## First GitHub producer path
 
-The repo's `hosted-producer` workflow is the dedicated push-driven hosted producer.
+Hosted ingestion is now an expansion path, not part of the v1 dependency-risk default.
+
+The repo's `hosted-producer-expansion` workflow is manual-only. It is intended for hosted-control-plane experiments after the GitHub-native v1 wedge is trusted.
 
 It runs on:
 
-- pushes to `develop`
-- pushes to `main`
 - manual dispatch
 
 It sends `veridion-decision-event.json` directly to:
@@ -117,7 +117,7 @@ when these are set:
 - repo variable `VERIDION_HOSTED_TENANT_ID`
 - repo secret `VERIDION_HOSTED_INGESTOR_TOKEN`
 
-The repo's internal `rdi-pr-comment` workflow can also use the same sink on PR/self-test paths.
+The repo's internal `rdi-pr-comment` workflow no longer emits to the hosted service by default. It should stay focused on the v1 pull-request decision path.
 
 ## Worker model
 
