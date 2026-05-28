@@ -15,6 +15,7 @@ def test_build_bootstrap_files_scaffolds_expected_paths() -> None:
     assert set(files) == {
         ".veridion/policy.yaml",
         ".veridion/suppressions.json",
+        ".veridion/README.md",
         ".github/workflows/veridion-rdi.yml",
     }
     assert "require_approval_for:" in files[".veridion/policy.yaml"]
@@ -24,12 +25,19 @@ def test_build_bootstrap_files_scaffolds_expected_paths() -> None:
     assert "suppression-path: .veridion/suppressions.json" in files[".github/workflows/veridion-rdi.yml"]
     assert "scan-metadata-path: veridion-scan-metadata.json" in files[".github/workflows/veridion-rdi.yml"]
     assert "scanner_versions" in files[".github/workflows/veridion-rdi.yml"]
+    assert "Clean up baseline worktree" in files[".github/workflows/veridion-rdi.yml"]
+    assert "Show Veridion decision" in files[".github/workflows/veridion-rdi.yml"]
     assert "trust-profile-source-path" not in files[".github/workflows/veridion-rdi.yml"]
     assert "approval-map-path" not in files[".github/workflows/veridion-rdi.yml"]
     assert 'request-approvals: "true"' not in files[".github/workflows/veridion-rdi.yml"]
     assert 'verify-approvals: "true"' not in files[".github/workflows/veridion-rdi.yml"]
     assert "decision-contract-path: veridion-decision.json" in files[".github/workflows/veridion-rdi.yml"]
     assert "semgrep" not in files[".github/workflows/veridion-rdi.yml"].lower()
+    assert "Repo: acme/payments-platform" in files[".veridion/README.md"]
+    assert "Service: payments/api" in files[".veridion/README.md"]
+    assert "Team: platform-trust" in files[".veridion/README.md"]
+    assert "reason_type" in files[".veridion/README.md"]
+    assert "Do not add operational context" in files[".veridion/README.md"]
 
 
 def test_dependency_risk_v1_preset_stays_narrow() -> None:

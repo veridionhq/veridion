@@ -13,7 +13,7 @@ Veridion releases should be cut from `main`, not `develop`.
 
 The current release target is:
 
-- `v1.0.0`
+- `v1.0.1`
 
 Before cutting it:
 
@@ -29,14 +29,14 @@ There are two supported paths.
 
 Run the `Release` workflow from GitHub Actions with:
 
-- `version`: `1.0.0`
+- `version`: `1.0.1`
 - `ref`: `main`
 
 The workflow will:
 
 1. validate version metadata
 2. run the test suite
-3. create and push the `v1.0.0` tag
+3. create and push the `v1.0.1` tag
 4. build the Python distribution
 5. create a GitHub release with attached artifacts
 
@@ -45,16 +45,16 @@ The workflow will:
 If you already created a tag from `main`, push it:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.0.1
+git push origin v1.0.1
 ```
 
 The same release workflow will build artifacts and create the GitHub release on tag push.
 
 ## After release
 
-After `v1.0.0` exists:
+After `v1.0.1` exists:
 
-- prefer `uses: veridionhq/veridion@v1.0.0` in external workflows
-- prefer `git+https://github.com/veridionhq/veridion.git@v1.0.0` for documented install examples
+- prefer `uses: veridionhq/veridion@v1.0.1` in external workflows
+- prefer `git+https://github.com/veridionhq/veridion.git@v1.0.1` for documented install examples
 - continue feature work on `develop`

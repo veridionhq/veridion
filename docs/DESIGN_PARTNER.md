@@ -43,6 +43,8 @@ Use these docs as the design-partner package:
 
 - [One-Pager](ONE_PAGER.md)
 - [Quickstart](QUICKSTART.md)
+- [Design-Partner Trial Kit](TRIAL_KIT.md)
+- [Troubleshooting](TROUBLESHOOTING.md)
 - [Evaluation Checklist](EVALUATION_CHECKLIST.md)
 - [V1 Canary Matrix](CANARY_MATRIX.md)
 - [V1 Release Readiness](V1_READINESS.md)

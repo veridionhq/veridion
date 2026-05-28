@@ -104,6 +104,8 @@ GitHub PR
 - [Evaluation Guide](docs/EVALUATION_GUIDE.md)
 - [Evaluation Checklist](docs/EVALUATION_CHECKLIST.md)
 - [Design Partner Guide](docs/DESIGN_PARTNER.md)
+- [Design-Partner Trial Kit](docs/TRIAL_KIT.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [One-Pager](docs/ONE_PAGER.md)
 - [V1 Release Governance Wedge](docs/roadmap/V1_RELEASE_GOVERNANCE.md)
 - [Product Security Pipeline Insights](docs/roadmap/PRODSEC_PIPELINE_INSIGHTS.md)
@@ -162,7 +164,7 @@ For the shortest path to a first install:
 1. Install Veridion from GitHub in the repo where you want to bootstrap:
 
 ```bash
-python3 -m pip install "git+https://github.com/veridionhq/veridion.git@v1.0.0"
+python3 -m pip install "git+https://github.com/veridionhq/veridion.git@v1.0.1"
 ```
 
 2. Run:

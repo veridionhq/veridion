@@ -6,7 +6,7 @@ Use this during design-partner trials or internal product reviews.
 
 - External install completed without custom plumbing
 - Bootstrap generated repo-local policy and suppression files
-- Workflow uses `veridionhq/veridion@v1.0.0`
+- Workflow uses `veridionhq/veridion@v1.0.1`
 - Workflow ran successfully in a real pull request
 - Current and baseline Syft, Grype, and Trivy reports were present
 
