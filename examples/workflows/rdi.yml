@@ -112,7 +112,7 @@ jobs:
 
       - name: Run Veridion RDI
         id: run-rdi
-        uses: ./
+        uses: veridionhq/veridion@v1.0.0
         with:
           diff-path: pr.diff
           reports: |

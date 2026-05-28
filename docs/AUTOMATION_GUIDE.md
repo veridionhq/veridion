@@ -107,7 +107,7 @@ For a hard deploy gate, let the action fail the job itself:
 ```yaml
 - name: Run Veridion RDI
   id: run-rdi
-  uses: veridionhq/veridion@v1.0.0rc1
+  uses: veridionhq/veridion@v1.0.0
   with:
     diff-path: pr.diff
     reports: ${{ vars.VERIDION_REPORTS }}
@@ -128,6 +128,17 @@ allowed-decisions: "GO,CONDITIONAL GO"
 ```
 
 For v1, use this to gate introduced dependency risk. Runtime release gates and broader operational context are expansion paths.
+
+## V1 override discipline
+
+Keep first-install override behavior explicit:
+
+- `accepted_risk`: the risk is real and accepted for a bounded period
+- `false_positive`: the scanner finding is incorrect
+- `no_exposure`: the package or code is present but not reachable in this context
+- `risk_reduction`: compensating controls reduce practical severity
+
+Use `.veridion/suppressions.json` for those cases. Do not use broad ignore rules as a substitute for accepted-risk governance.
 
 ## Expansion: approval routing
 

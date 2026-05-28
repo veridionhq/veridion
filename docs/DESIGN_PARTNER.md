@@ -33,12 +33,25 @@ For a first pilot:
 1. Install Veridion in one repository.
 2. Run it on several low-risk and high-risk PRs.
 3. Compare the output with real reviewer expectations.
-4. Tune only:
-
-- policy thresholds for introduced dependency risk
-- accepted-risk suppressions
+4. Tune only policy thresholds for introduced dependency risk and accepted-risk suppressions.
 
 Avoid changing the core model immediately.
+
+## Trial Package
+
+Use these docs as the design-partner package:
+
+- [One-Pager](ONE_PAGER.md)
+- [Quickstart](QUICKSTART.md)
+- [Evaluation Checklist](EVALUATION_CHECKLIST.md)
+- [V1 Canary Matrix](CANARY_MATRIX.md)
+- [V1 Release Readiness](V1_READINESS.md)
+
+The first trial should produce at least three real PR examples:
+
+- a clean dependency or docs-only change that should `GO`
+- a high-severity introduced dependency risk that should be `CONDITIONAL GO`
+- a critical introduced dependency risk or accepted-risk case that forces a clear governance decision
 
 ## What Success Looks Like
 

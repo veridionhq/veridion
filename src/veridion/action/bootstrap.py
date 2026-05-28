@@ -336,7 +336,7 @@ jobs:
 def build_bootstrap_files(
     *,
     preset: str,
-    action_ref: str = "veridionhq/veridion@v1.0.0rc1",
+    action_ref: str = "veridionhq/veridion@v1.0.0",
     repo_id: str = "",
     service_id: str = "",
     team_id: str = "",
@@ -381,7 +381,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Bootstrap Veridion install files from a starter preset")
     parser.add_argument("--preset", required=True, choices=sorted(POLICY_PACKS), help="Starter policy preset")
     parser.add_argument("--output-root", default=".", help="Repo root where files should be written")
-    parser.add_argument("--action-ref", default="veridionhq/veridion@v1.0.0rc1", help="Action ref to use in the workflow")
+    parser.add_argument("--action-ref", default="veridionhq/veridion@v1.0.0", help="Action ref to use in the workflow")
     parser.add_argument("--repo-id", default="", help="Optional stable repo identifier")
     parser.add_argument("--service-id", default="", help="Optional stable service identifier")
     parser.add_argument("--team-id", default="", help="Optional stable team identifier")

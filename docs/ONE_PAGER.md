@@ -64,8 +64,17 @@ It is deciding whether newly introduced dependency risk should block a release.
 - applies clear policy-driven release decisions
 - renders an explainable PR decision comment
 - governs accepted-risk suppressions with visible reason and expiry
+- emits `veridion-decision.json` for workflow gates and audit trails
 
 The implementation also supports broader release-governance signals, but those are expansion paths. The first product wedge is introduced dependency risk.
+
+## What V1 Does Not Require
+
+- an LLM
+- a hosted service
+- S3, Athena, Postgres, or a cloud account
+- Semgrep as a required scanner
+- runtime or operational-context inputs
 
 ## What Has Been Proven
 
