@@ -22,6 +22,8 @@ def test_build_bootstrap_files_scaffolds_expected_paths() -> None:
     assert "uses: veridionhq/veridion@main" in files[".github/workflows/veridion-rdi.yml"]
     assert "policy-path: .veridion/policy.yaml" in files[".github/workflows/veridion-rdi.yml"]
     assert "suppression-path: .veridion/suppressions.json" in files[".github/workflows/veridion-rdi.yml"]
+    assert "scan-metadata-path: veridion-scan-metadata.json" in files[".github/workflows/veridion-rdi.yml"]
+    assert "scanner_versions" in files[".github/workflows/veridion-rdi.yml"]
     assert "trust-profile-source-path" not in files[".github/workflows/veridion-rdi.yml"]
     assert "approval-map-path" not in files[".github/workflows/veridion-rdi.yml"]
     assert 'request-approvals: "true"' not in files[".github/workflows/veridion-rdi.yml"]

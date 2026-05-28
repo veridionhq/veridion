@@ -44,8 +44,61 @@ Key fields:
 - `evidence.reports.baseline_tools`
 - `evidence.reports.missing_baseline_tools`
 - `evidence.reports.zero_finding_baseline_tools`
+- `evidence.reports.current.<tool>.sha256`
+- `evidence.reports.baseline.<tool>.sha256`
+- `evidence.scan.metadata`
+- `evidence.scan.recheck_only`
 - `actions.required_next_steps`
 - `accepted_risk.governance_gaps`
+
+## Scanner provenance
+
+When reports are provided, Veridion records basic provenance for each current and baseline report:
+
+- report path
+- SHA-256 hash
+- file size
+- normalized finding count
+- inventory record count
+
+You can also provide scan-level metadata:
+
+```yaml
+scan-metadata-path: veridion-scan-metadata.json
+```
+
+Recommended metadata shape:
+
+```json
+{
+  "commit_hash": "abc123...",
+  "commit_short": "abc123",
+  "branch": "feature/dependency-update",
+  "scan_timestamp": "2026-05-27T00:00:00Z",
+  "scanner_versions": {
+    "syft": "1.20.0",
+    "grype": "0.110.0",
+    "trivy": "0.69.3"
+  }
+}
+```
+
+## Recheck existing reports
+
+Use recheck mode when scanner outputs already exist and you only want to re-apply current policy and accepted-risk suppressions.
+
+```yaml
+recheck-only: "true"
+scan-metadata-path: veridion-scan-metadata.json
+```
+
+Recheck mode validates that `scan-metadata-path` contains a `commit_hash` matching the current commit. In GitHub Actions this defaults to `GITHUB_SHA`. You can override it explicitly:
+
+```yaml
+expected-commit: ${{ github.sha }}
+```
+
+This is useful for exception review loops: update `.veridion/suppressions.json`, reuse the same raw scanner reports, and regenerate the decision/comment/contract without rerunning Syft, Grype, or Trivy.
 
 ## Gate a deploy
 

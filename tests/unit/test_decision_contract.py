@@ -123,6 +123,37 @@ def test_run_action_decision_contract_surfaces_report_health() -> None:
     assert evidence["reports"]["baseline_tools"] == ["semgrep"]
     assert evidence["reports"]["zero_finding_baseline_tools"] == ["semgrep"]
     assert evidence["reports"]["current"]["semgrep"]["normalized_findings"] > 0
+    assert "sha256" in evidence["reports"]["current"]["semgrep"]
+
+
+def test_run_action_decision_contract_surfaces_scan_provenance_for_recheck() -> None:
+    result = run_action(
+        diff_text="diff --git a/README.md b/README.md\nindex 1111111..2222222 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n hello\n+world\n",
+        current_reports={},
+        baseline_reports={},
+        policy_text=None,
+        scan_metadata_text=json.dumps(
+            {
+                "commit_hash": "abc123",
+                "commit_short": "abc123",
+                "branch": "feature/deps",
+                "scan_timestamp": "2026-05-27T00:00:00Z",
+                "scanner_versions": {
+                    "trivy": "0.69.3",
+                    "grype": "0.110.0",
+                    "syft": "1.20.0",
+                },
+            }
+        ),
+        recheck_only=True,
+        expected_commit="abc123",
+    )
+
+    scan = result.decision_contract["evidence"]["scan"]
+
+    assert scan["recheck_only"] is True
+    assert scan["metadata"]["commit_hash"] == "abc123"
+    assert scan["metadata"]["scanner_versions"]["trivy"] == "0.69.3"
 
 
 def test_decision_contract_surfaces_runtime_release_gates() -> None:

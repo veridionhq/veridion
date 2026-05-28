@@ -279,6 +279,23 @@ jobs:
         shell: bash
         run: ${{{{ steps.syft.outputs.cmd }}}} ../veridion-base -o syft-json=artifacts/baseline-syft.json
 
+      - name: Write scan metadata
+        shell: bash
+        run: |
+          cat > veridion-scan-metadata.json <<EOF
+          {{
+            "commit_hash": "${{{{ github.event.pull_request.head.sha }}}}",
+            "commit_short": "$(git rev-parse --short '${{{{ github.event.pull_request.head.sha }}}}')",
+            "branch": "${{{{ github.head_ref || github.ref_name }}}}",
+            "scan_timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "scanner_versions": {{
+              "trivy_action": "aquasecurity/trivy-action@0.35.0",
+              "grype_action": "anchore/scan-action@v7",
+              "syft_action": "anchore/sbom-action/download-syft@v0"
+            }}
+          }}
+          EOF
+
       - name: Run Veridion RDI
         id: run-rdi
         uses: {action_ref}
@@ -294,6 +311,7 @@ jobs:
             syft=artifacts/baseline-syft.json
           policy-path: .veridion/policy.yaml
           suppression-path: .veridion/suppressions.json
+          scan-metadata-path: veridion-scan-metadata.json
           comment-path: veridion-pr-comment.md
           json-output-path: veridion-result.json
           decision-contract-path: veridion-decision.json
@@ -311,6 +329,7 @@ jobs:
             veridion-pr-comment.md
             veridion-result.json
             veridion-decision.json
+            veridion-scan-metadata.json
 """
 
 

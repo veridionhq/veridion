@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import subprocess
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -78,6 +80,9 @@ def run_action(
     metadata_text: str | None = None,
     trust_profile_text: str | None = None,
     suppression_text: str | None = None,
+    scan_metadata_text: str | None = None,
+    recheck_only: bool = False,
+    expected_commit: str | None = None,
     comment_summary_provider: str | None = None,
     comment_summary_model: str | None = None,
     comment_summary_api_key: str | None = None,
@@ -95,6 +100,9 @@ def run_action(
     policy = policy_pack.config if policy_pack else PolicyConfig()
     operational_context_payload = _parse_optional_json_text(operational_context_text, label="operational context")
     suppressions_payload = _parse_optional_json_text(suppression_text, label="suppressions")
+    scan_metadata = _parse_optional_json_text(scan_metadata_text, label="scan metadata")
+    if recheck_only:
+        _validate_recheck_metadata(scan_metadata, expected_commit=expected_commit)
     suppression_rules = parse_suppressions_payload(suppressions_payload)
 
     if operational_context_text:
@@ -136,6 +144,8 @@ def run_action(
         current_report_diagnostics=current_report_diagnostics,
         baseline_report_diagnostics=baseline_report_diagnostics,
         bundle=bundle,
+        scan_metadata=scan_metadata,
+        recheck_only=recheck_only,
     )
     decision = evaluate_release(bundle, policy)
     summarizer = build_comment_summarizer(
@@ -200,6 +210,7 @@ def main(argv: list[str] | None = None) -> int:
     metadata_text = Path(args.metadata_path).read_text() if args.metadata_path else None
     trust_profile_text = Path(args.trust_profile_path).read_text() if args.trust_profile_path else None
     suppression_text = Path(args.suppression_path).read_text() if args.suppression_path else None
+    scan_metadata_text = Path(args.scan_metadata_path).read_text() if args.scan_metadata_path else None
 
     result = run_action(
         diff_text=diff_text,
@@ -210,6 +221,9 @@ def main(argv: list[str] | None = None) -> int:
         metadata_text=metadata_text,
         trust_profile_text=trust_profile_text,
         suppression_text=suppression_text,
+        scan_metadata_text=scan_metadata_text,
+        recheck_only=_as_bool_flag(args.recheck_only),
+        expected_commit=args.expected_commit,
         comment_summary_provider=args.comment_summary_provider,
         comment_summary_model=args.comment_summary_model,
         comment_summary_api_key=args.comment_summary_api_key,
@@ -257,6 +271,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--metadata-path", help="Path to optional pull request metadata JSON")
     parser.add_argument("--trust-profile-path", help="Path to optional trust profile JSON")
     parser.add_argument("--suppression-path", help="Path to optional accepted-risk suppression JSON")
+    parser.add_argument("--scan-metadata-path", help="Path to optional scan provenance metadata JSON")
+    parser.add_argument("--recheck-only", default="false", help="Re-evaluate existing reports and validate scan metadata")
+    parser.add_argument("--expected-commit", help="Expected commit SHA for recheck validation; defaults to GITHUB_SHA or git HEAD")
     parser.add_argument("--comment-summary-provider", help="Optional wording model provider: openai, anthropic, bedrock")
     parser.add_argument("--comment-summary-model", help="Optional wording model id")
     parser.add_argument("--comment-summary-api-key", help="Optional wording model API key for OpenAI/Anthropic")
@@ -297,9 +314,12 @@ def _load_findings(report_paths: dict[str, str]) -> tuple[list[NormalizedFinding
         except Exception as exc:
             raise RuntimeError(f"failed to load {tool_name} report from {path}") from exc
         normalized = normalize_report(tool_name, report)
+        report_path = Path(path)
         findings.extend(normalized)
         diagnostics[tool_name] = {
             "path": path,
+            "sha256": _file_sha256(report_path),
+            "size_bytes": report_path.stat().st_size,
             "normalized_findings": len([finding for finding in normalized if not finding.is_inventory_only]),
             "inventory_records": len([finding for finding in normalized if finding.is_inventory_only]),
         }
@@ -313,6 +333,8 @@ def _build_report_diagnostics(
     current_report_diagnostics: dict[str, dict[str, object]],
     baseline_report_diagnostics: dict[str, dict[str, object]],
     bundle: AnalysisBundle,
+    scan_metadata: dict[str, object] | None = None,
+    recheck_only: bool = False,
 ) -> dict[str, object]:
     current_tools = tuple(sorted(current_reports))
     baseline_tools = tuple(sorted(baseline_reports))
@@ -342,10 +364,55 @@ def _build_report_diagnostics(
         "zero_finding_baseline_tools": list(zero_finding_baseline_tools),
         "current_reports": current_report_diagnostics,
         "baseline_reports": baseline_report_diagnostics,
+        "scan_metadata": scan_metadata or {},
+        "recheck_only": recheck_only,
         "existing_match_counts_by_source": dict(sorted(existing_match_counts.items())),
         "change_relevant_counts_by_source": dict(sorted(change_relevant_counts.items())),
         "unattributed_counts_by_source": dict(sorted(unattributed_counts.items())),
     }
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _validate_recheck_metadata(scan_metadata: dict[str, object], *, expected_commit: str | None) -> None:
+    if not scan_metadata:
+        raise RuntimeError("recheck-only requires --scan-metadata-path")
+
+    scanned_commit = str(scan_metadata.get("commit_hash") or scan_metadata.get("commit") or "").strip()
+    if not scanned_commit:
+        raise RuntimeError("scan metadata must include commit_hash for recheck-only")
+
+    current_commit = (expected_commit or os.environ.get("GITHUB_SHA") or _current_git_commit()).strip()
+    if not current_commit:
+        raise RuntimeError("could not determine current commit for recheck-only validation")
+
+    if scanned_commit != current_commit:
+        raise RuntimeError(
+            "recheck-only commit mismatch: "
+            f"scan metadata was generated for {scanned_commit}, current commit is {current_commit}"
+        )
+
+
+def _current_git_commit() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
 
 
 def _parse_optional_json_text(text: str | None, *, label: str) -> dict[str, object]:

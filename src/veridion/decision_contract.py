@@ -206,6 +206,10 @@ def _evidence_health(report_diagnostics: dict[str, object] | None) -> dict[str, 
                 "current": {},
                 "baseline": {},
             },
+            "scan": {
+                "metadata": {},
+                "recheck_only": False,
+            },
         }
 
     return {
@@ -221,6 +225,10 @@ def _evidence_health(report_diagnostics: dict[str, object] | None) -> dict[str, 
             "zero_finding_baseline_tools": list(report_diagnostics.get("zero_finding_baseline_tools", [])),
             "current": dict(report_diagnostics.get("current_reports", {})),
             "baseline": dict(report_diagnostics.get("baseline_reports", {})),
+        },
+        "scan": {
+            "metadata": dict(report_diagnostics.get("scan_metadata", {})),
+            "recheck_only": bool(report_diagnostics.get("recheck_only", False)),
         },
     }
 

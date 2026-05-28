@@ -122,6 +122,35 @@ def test_run_action_rejects_invalid_suppressions_schema_version() -> None:
         )
 
 
+def test_run_action_recheck_requires_scan_metadata() -> None:
+    diff_text = Path("tests/fixtures/diffs/sample_pr.diff").read_text()
+
+    with pytest.raises(RuntimeError, match=r"recheck-only requires --scan-metadata-path"):
+        run_action(
+            diff_text=diff_text,
+            current_reports={},
+            baseline_reports={},
+            policy_text=None,
+            recheck_only=True,
+            expected_commit="abc123",
+        )
+
+
+def test_run_action_recheck_rejects_commit_mismatch() -> None:
+    diff_text = Path("tests/fixtures/diffs/sample_pr.diff").read_text()
+
+    with pytest.raises(RuntimeError, match=r"recheck-only commit mismatch"):
+        run_action(
+            diff_text=diff_text,
+            current_reports={},
+            baseline_reports={},
+            policy_text=None,
+            scan_metadata_text='{"commit_hash": "old"}',
+            recheck_only=True,
+            expected_commit="new",
+        )
+
+
 def test_run_action_rejects_unsupported_operational_context_schema_version() -> None:
     diff_text = Path("tests/fixtures/diffs/sample_pr.diff").read_text()
 

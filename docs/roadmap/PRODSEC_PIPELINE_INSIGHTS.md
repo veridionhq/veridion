@@ -72,3 +72,13 @@ current reports + baseline reports + dependency policy + accepted-risk file
   -> PR comment
   -> veridion-decision.json
 ```
+
+## Implemented Next
+
+Veridion now supports the first two candidates in a v1-safe form:
+
+- report diagnostics include per-report SHA-256 hashes and sizes
+- `scan-metadata-path` can carry commit, branch, timestamp, and scanner versions into `veridion-decision.json`
+- `recheck-only` validates the scan metadata commit before reusing existing reports
+
+This keeps scanner execution outside Veridion while making the decision layer more trustworthy and auditable.
