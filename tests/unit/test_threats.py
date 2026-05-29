@@ -125,6 +125,54 @@ def test_explain_introduced_threats_groups_duplicate_dependency_advisories() -> 
     )
 
 
+def test_explain_introduced_threats_groups_dependency_advisories_case_insensitively() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="grype",
+                finding_type="dependency",
+                rule_id="CVE-2020-1747",
+                title="PyYAML: incomplete fix for CVE-2020-1747",
+                severity="critical",
+                package_name="PyYAML",
+                package_version="5.3.1",
+                location=NormalizedLocation(path="/workspace/requirements.txt"),
+            ),
+            NormalizedFinding(
+                source="trivy",
+                finding_type="dependency",
+                rule_id="CVE-2020-14343",
+                title="Improper Input Validation in PyYAML",
+                severity="critical",
+                package_name="pyyaml",
+                package_version="5.3.1",
+                location=NormalizedLocation(path="/workspace/requirements.txt"),
+            ),
+        ],
+        baseline_findings=_trusted_baseline(),
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=0,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+    )
+
+    threats = explain_introduced_threats(bundle)
+
+    assert len(threats) == 1
+    assert threats[0].advisory_count == 2
+    assert render_threat_line(threats[0]) == (
+        "critical dependency risk in requirements.txt: pyyaml 5.3.1 (Improper Input Validation in PyYAML; PyYAML: incomplete fix for CVE-2020-1747)"
+    )
+
+
 def test_explain_introduced_threats_summarizes_privilege_escalation_patterns() -> None:
     bundle = build_analysis_bundle(
         current_findings=[

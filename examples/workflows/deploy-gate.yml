@@ -16,7 +16,7 @@ jobs:
 
       - name: Run Veridion RDI
         id: run-rdi
-        uses: veridionhq/veridion@v1.0.1
+        uses: veridionhq/veridion@v1.0.2
         with:
           diff-path: pr.diff
           reports: ${{ vars.VERIDION_REPORTS }}

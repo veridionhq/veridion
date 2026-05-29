@@ -48,10 +48,12 @@ Baseline unavailable with findings -> CONDITIONAL GO with degraded confidence
 - canary `smoke/conditional` produces `CONDITIONAL GO`
 - canary `smoke/no-go` produces `NO GO`
 - canary `smoke/accepted-risk` produces `CONDITIONAL GO`
+- outside-install smoke repo reproduces the four expected v1 outcomes
 - PR comments do not show `RDI Score`
 - comments do not lead with runtime, hosted, or AI framing
 - decision contract includes report evidence and scan provenance
 - accepted-risk records include reason taxonomy
+- dependency key threats are grouped across scanner package-name casing differences
 
 ## Design-Partner Entry Criteria
 

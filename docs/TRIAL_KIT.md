@@ -17,7 +17,7 @@ Do not evaluate hosted control planes, runtime gates, AI wording, or broad opera
 Install the stable v1 release:
 
 ```bash
-python3 -m pip install "git+https://github.com/veridionhq/veridion.git@v1.0.1"
+python3 -m pip install "git+https://github.com/veridionhq/veridion.git@v1.0.2"
 ```
 
 Bootstrap the target repo:
@@ -84,6 +84,21 @@ The trial is successful when:
 - the four expected outcomes are reproducible
 - reviewers understand why each decision happened
 - no one needs a hosted service, cloud sink, or LLM to complete the trial
+
+## First Outside-Install Result
+
+The first controlled outside install used `veridionhq/veridion-v1-install-smoke` with Veridion `v1.0.1`.
+
+Observed results:
+
+| Scenario | Decision | Confidence | Key result |
+| --- | --- | --- | --- |
+| Bootstrap install PR | `GO` | `HIGH` | `0` introduced findings, `3` existing findings |
+| `smoke/conditional` | `CONDITIONAL GO` | `HIGH` | introduced `urllib3 1.25.8` high/medium dependency risk |
+| `smoke/no-go` | `NO GO` | `HIGH` | introduced critical `PyYAML 5.3.1` dependency risk |
+| `smoke/accepted-risk` | `CONDITIONAL GO` | `HIGH` | `20` findings suppressed and accepted risk remained visible |
+
+This validated the most important v1 behavior outside the Veridion codebase: introduced risk is separated from existing backlog, and accepted risk is visible rather than treated as a pristine `GO`.
 
 ## Follow-Up Package
 

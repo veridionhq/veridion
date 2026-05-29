@@ -9,7 +9,7 @@ The default v1 path is intentionally narrow: decide whether a pull request intro
 For a GitHub-hosted install:
 
 ```bash
-python3 -m pip install "git+https://github.com/veridionhq/veridion.git@v1.0.1"
+python3 -m pip install "git+https://github.com/veridionhq/veridion.git@v1.0.2"
 ```
 
 Then the CLIs are available as:
@@ -132,7 +132,7 @@ The bootstrap command already creates `.github/workflows/veridion-rdi.yml`.
 The generated workflow uses:
 
 ```yaml
-uses: veridionhq/veridion@v1.0.1
+uses: veridionhq/veridion@v1.0.2
 ```
 
 If you want to adapt the example manually, minimal edits are:

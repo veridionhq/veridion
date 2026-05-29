@@ -107,7 +107,7 @@ For a hard deploy gate, let the action fail the job itself:
 ```yaml
 - name: Run Veridion RDI
   id: run-rdi
-  uses: veridionhq/veridion@v1.0.1
+  uses: veridionhq/veridion@v1.0.2
   with:
     diff-path: pr.diff
     reports: ${{ vars.VERIDION_REPORTS }}

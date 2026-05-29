@@ -2,7 +2,7 @@
 
 This matrix is the acceptance check for the v1 dependency-risk wedge.
 
-The canary repository is wired to `veridion@v1.0.1` and uses the `dependency-risk-v1` policy. The goal is to keep the product behavior narrow, explainable, and aligned with the v1 rules.
+The canary repository is wired to `veridion@v1.0.2` and uses the `dependency-risk-v1` policy. The goal is to keep the product behavior narrow, explainable, and aligned with the v1 rules.
 
 ## Expected Outcomes
 
@@ -53,3 +53,4 @@ Treat these as product regressions:
 - all-zero provided baseline reports are treated as missing baseline
 - v1 comments reintroduce score-first or runtime-first explanations
 - `veridion-decision.json` omits report evidence, scan provenance, or accepted-risk reason types
+- duplicate-looking key threats appear only because scanner package names differ by case
