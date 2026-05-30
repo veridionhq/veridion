@@ -20,10 +20,14 @@ jobs:
 
       - name: Generate diff artifact
         shell: bash
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             git diff --no-ext-diff --unified=0 \
-              "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" > pr.diff
+              "${PR_BASE_SHA}...${PR_HEAD_SHA}" > pr.diff
           elif git rev-parse HEAD^ >/dev/null 2>&1; then
             git diff --no-ext-diff --unified=0 HEAD^ HEAD > pr.diff
           else
@@ -32,10 +36,13 @@ jobs:
 
       - name: Prepare baseline worktree
         shell: bash
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           mkdir -p artifacts
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git worktree add --detach ../veridion-base "${{ github.event.pull_request.base.sha }}"
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            git worktree add --detach ../veridion-base "${PR_BASE_SHA}"
           elif git rev-parse HEAD^ >/dev/null 2>&1; then
             git worktree add --detach ../veridion-base HEAD^
           else
@@ -95,24 +102,40 @@ jobs:
 
       - name: Write scan metadata
         shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
-          cat > veridion-scan-metadata.json <<EOF
-          {
-            "commit_hash": "${{ github.event.pull_request.head.sha }}",
-            "commit_short": "$(git rev-parse --short '${{ github.event.pull_request.head.sha }}')",
-            "branch": "${{ github.head_ref || github.ref_name }}",
-            "scan_timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "scanner_versions": {
-              "trivy_action": "aquasecurity/trivy-action@0.35.0",
-              "grype_action": "anchore/scan-action@v7.4.0",
-              "syft_action": "anchore/sbom-action/download-syft@v0.24.0"
-            }
+          python3 - <<'PY'
+          import datetime
+          import json
+          import os
+          import subprocess
+
+          head_sha = os.environ["PR_HEAD_SHA"]
+          short_sha = subprocess.check_output(
+              ["git", "rev-parse", "--short", head_sha],
+              text=True,
+          ).strip()
+          payload = {
+              "commit_hash": head_sha,
+              "commit_short": short_sha,
+              "branch": os.environ["PR_BRANCH"],
+              "scan_timestamp": datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+              "scanner_versions": {
+                  "trivy_action": "aquasecurity/trivy-action@0.35.0",
+                  "grype_action": "anchore/scan-action@v7.4.0",
+                  "syft_action": "anchore/sbom-action/download-syft@v0.24.0",
+              },
           }
-          EOF
+          with open("veridion-scan-metadata.json", "w", encoding="utf-8") as handle:
+              json.dump(payload, handle, indent=2)
+              handle.write("\n")
+          PY
 
       - name: Run Veridion RDI
         id: run-rdi
-        uses: veridionhq/veridion@v1.0.2
+        uses: veridionhq/veridion@v1.0.3
         with:
           diff-path: pr.diff
           reports: |

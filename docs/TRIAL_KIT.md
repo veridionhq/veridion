@@ -17,7 +17,7 @@ Do not evaluate hosted control planes, runtime gates, AI wording, or broad opera
 Install the stable v1 release:
 
 ```bash
-python3 -m pip install "git+https://github.com/veridionhq/veridion.git@v1.0.2"
+python3 -m pip install "git+https://github.com/veridionhq/veridion.git@v1.0.3"
 ```
 
 Bootstrap the target repo:

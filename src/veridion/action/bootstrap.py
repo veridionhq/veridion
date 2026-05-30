@@ -218,15 +218,20 @@ jobs:
 
       - name: Generate diff artifact
         shell: bash
+        env:
+          PR_BASE_SHA: ${{{{ github.event.pull_request.base.sha }}}}
+          PR_HEAD_SHA: ${{{{ github.event.pull_request.head.sha }}}}
         run: |
           git diff --no-ext-diff --unified=0 \
-            "${{{{ github.event.pull_request.base.sha }}}}...${{{{ github.event.pull_request.head.sha }}}}" > pr.diff
+            "${{PR_BASE_SHA}}...${{PR_HEAD_SHA}}" > pr.diff
 
       - name: Prepare baseline worktree
         shell: bash
+        env:
+          PR_BASE_SHA: ${{{{ github.event.pull_request.base.sha }}}}
         run: |
           mkdir -p artifacts
-          git worktree add --detach ../veridion-base "${{{{ github.event.pull_request.base.sha }}}}"
+          git worktree add --detach ../veridion-base "${{PR_BASE_SHA}}"
 
       - name: Run Trivy on current workspace
         uses: aquasecurity/trivy-action@0.35.0
@@ -281,20 +286,36 @@ jobs:
 
       - name: Write scan metadata
         shell: bash
+        env:
+          PR_HEAD_SHA: ${{{{ github.event.pull_request.head.sha }}}}
+          PR_BRANCH: ${{{{ github.head_ref || github.ref_name }}}}
         run: |
-          cat > veridion-scan-metadata.json <<EOF
-          {{
-            "commit_hash": "${{{{ github.event.pull_request.head.sha }}}}",
-            "commit_short": "$(git rev-parse --short '${{{{ github.event.pull_request.head.sha }}}}')",
-            "branch": "${{{{ github.head_ref || github.ref_name }}}}",
-            "scan_timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "scanner_versions": {{
-              "trivy_action": "aquasecurity/trivy-action@0.35.0",
-              "grype_action": "anchore/scan-action@v7",
-              "syft_action": "anchore/sbom-action/download-syft@v0"
-            }}
+          python3 - <<'PY'
+          import datetime
+          import json
+          import os
+          import subprocess
+
+          head_sha = os.environ["PR_HEAD_SHA"]
+          short_sha = subprocess.check_output(
+              ["git", "rev-parse", "--short", head_sha],
+              text=True,
+          ).strip()
+          payload = {{
+              "commit_hash": head_sha,
+              "commit_short": short_sha,
+              "branch": os.environ["PR_BRANCH"],
+              "scan_timestamp": datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+              "scanner_versions": {{
+                  "trivy_action": "aquasecurity/trivy-action@0.35.0",
+                  "grype_action": "anchore/scan-action@v7",
+                  "syft_action": "anchore/sbom-action/download-syft@v0",
+              }},
           }}
-          EOF
+          with open("veridion-scan-metadata.json", "w", encoding="utf-8") as handle:
+              json.dump(payload, handle, indent=2)
+              handle.write("\\n")
+          PY
 
       - name: Run Veridion RDI
         id: run-rdi
@@ -418,7 +439,7 @@ Example suppression:
 def build_bootstrap_files(
     *,
     preset: str,
-    action_ref: str = "veridionhq/veridion@v1.0.2",
+    action_ref: str = "veridionhq/veridion@v1.0.3",
     repo_id: str = "",
     service_id: str = "",
     team_id: str = "",
@@ -470,7 +491,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Bootstrap Veridion install files from a starter preset")
     parser.add_argument("--preset", required=True, choices=sorted(POLICY_PACKS), help="Starter policy preset")
     parser.add_argument("--output-root", default=".", help="Repo root where files should be written")
-    parser.add_argument("--action-ref", default="veridionhq/veridion@v1.0.2", help="Action ref to use in the workflow")
+    parser.add_argument("--action-ref", default="veridionhq/veridion@v1.0.3", help="Action ref to use in the workflow")
     parser.add_argument("--repo-id", default="", help="Optional stable repo identifier")
     parser.add_argument("--service-id", default="", help="Optional stable service identifier")
     parser.add_argument("--team-id", default="", help="Optional stable team identifier")
