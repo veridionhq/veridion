@@ -17,7 +17,7 @@ Do not evaluate hosted control planes, runtime gates, AI wording, or broad opera
 Install the stable v1 release:
 
 ```bash
-python3 -m pip install "git+https://github.com/veridionhq/veridion.git@v1.0.3"
+python3 -m pip install "git+https://github.com/veridionhq/veridion.git@v1.0.4"
 ```
 
 Bootstrap the target repo:
@@ -36,6 +36,8 @@ Commit the generated files:
 - `.veridion/policy.yaml`
 - `.veridion/suppressions.json`
 - `.veridion/README.md`
+
+If the repository already has Veridion files, use `--only workflow --force` to refresh only the generated workflow without replacing policy or suppression state.
 
 ## Trial PRs
 

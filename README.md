@@ -164,7 +164,7 @@ For the shortest path to a first install:
 1. Install Veridion from GitHub in the repo where you want to bootstrap:
 
 ```bash
-python3 -m pip install "git+https://github.com/veridionhq/veridion.git@v1.0.3"
+python3 -m pip install "git+https://github.com/veridionhq/veridion.git@v1.0.4"
 ```
 
 2. Run:

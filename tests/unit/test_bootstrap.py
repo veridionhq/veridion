@@ -75,7 +75,30 @@ def test_write_bootstrap_files_writes_and_protects_existing_files(tmp_path) -> N
     assert (tmp_path / ".veridion/policy.yaml").read_text() == "hello\n"
     assert (tmp_path / ".github/workflows/veridion-rdi.yml").read_text() == "world\n"
 
-    with pytest.raises(RuntimeError, match=r"refusing to overwrite existing file"):
+    with pytest.raises(RuntimeError, match=r"--force"):
         write_bootstrap_files(output_root=str(tmp_path), files=files, force=False)
 
     write_bootstrap_files(output_root=str(tmp_path), files=files, force=True)
+
+
+def test_write_bootstrap_files_can_update_only_workflow(tmp_path) -> None:
+    files = {
+        ".veridion/policy.yaml": "policy-v1\n",
+        ".veridion/suppressions.json": '{"schema_version": 1, "suppressions": [{"rule_id": "keep"}]}\n',
+        ".veridion/README.md": "readme-v1\n",
+        ".github/workflows/veridion-rdi.yml": "workflow-v1\n",
+    }
+    write_bootstrap_files(output_root=str(tmp_path), files=files)
+
+    updated = {
+        ".veridion/policy.yaml": "policy-v2\n",
+        ".veridion/suppressions.json": '{"schema_version": 1, "suppressions": []}\n',
+        ".veridion/README.md": "readme-v2\n",
+        ".github/workflows/veridion-rdi.yml": "workflow-v2\n",
+    }
+    write_bootstrap_files(output_root=str(tmp_path), files=updated, force=True, only={"workflow"})
+
+    assert (tmp_path / ".veridion/policy.yaml").read_text() == "policy-v1\n"
+    assert "keep" in (tmp_path / ".veridion/suppressions.json").read_text()
+    assert (tmp_path / ".veridion/README.md").read_text() == "readme-v1\n"
+    assert (tmp_path / ".github/workflows/veridion-rdi.yml").read_text() == "workflow-v2\n"

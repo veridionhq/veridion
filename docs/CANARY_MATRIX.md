@@ -2,7 +2,7 @@
 
 This matrix is the acceptance check for the v1 dependency-risk wedge.
 
-The canary repository is wired to `veridion@v1.0.3` and uses the `dependency-risk-v1` policy. The goal is to keep the product behavior narrow, explainable, and aligned with the v1 rules.
+The canary repository is wired to `veridion@v1.0.4` and uses the `dependency-risk-v1` policy. The goal is to keep the product behavior narrow, explainable, and aligned with the v1 rules.
 
 ## Expected Outcomes
 

@@ -9,7 +9,7 @@ The default v1 path is intentionally narrow: decide whether a pull request intro
 For a GitHub-hosted install:
 
 ```bash
-python3 -m pip install "git+https://github.com/veridionhq/veridion.git@v1.0.3"
+python3 -m pip install "git+https://github.com/veridionhq/veridion.git@v1.0.4"
 ```
 
 Then the CLIs are available as:
@@ -62,6 +62,20 @@ This creates:
 - `.github/workflows/veridion-rdi.yml`
 
 Use broader presets later only when you are ready to evaluate operational context and approval behavior.
+
+If Veridion is already installed and you only want to refresh the generated workflow, run:
+
+```bash
+veridion-bootstrap \
+  --preset dependency-risk-v1 \
+  --repo-id your-org/your-repo \
+  --service-id your-service \
+  --team-id your-team \
+  --only workflow \
+  --force
+```
+
+That leaves `.veridion/policy.yaml` and `.veridion/suppressions.json` untouched.
 
 ## 3. Choose or adjust the policy pack
 
@@ -132,7 +146,7 @@ The bootstrap command already creates `.github/workflows/veridion-rdi.yml`.
 The generated workflow uses:
 
 ```yaml
-uses: veridionhq/veridion@v1.0.3
+uses: veridionhq/veridion@v1.0.4
 ```
 
 If you want to adapt the example manually, minimal edits are:

@@ -134,3 +134,32 @@ Use only the default v1 path:
 - no LLM configuration
 
 Those expansion paths should wait until the dependency-risk loop is trusted.
+
+## Bootstrap refuses to overwrite files
+
+Bootstrap protects existing files by default so it does not erase policy or accepted-risk exceptions.
+
+For a full regeneration, use:
+
+```bash
+veridion-bootstrap \
+  --preset dependency-risk-v1 \
+  --repo-id your-org/your-repo \
+  --service-id your-service \
+  --team-id your-team \
+  --force
+```
+
+For the safer common case, refresh only the workflow:
+
+```bash
+veridion-bootstrap \
+  --preset dependency-risk-v1 \
+  --repo-id your-org/your-repo \
+  --service-id your-service \
+  --team-id your-team \
+  --only workflow \
+  --force
+```
+
+Use the workflow-only path when `.veridion/suppressions.json` already contains real exceptions.

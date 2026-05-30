@@ -7,6 +7,14 @@ import json
 from pathlib import Path
 
 
+BOOTSTRAP_FILE_KEYS = {
+    "policy": ".veridion/policy.yaml",
+    "suppressions": ".veridion/suppressions.json",
+    "readme": ".veridion/README.md",
+    "workflow": ".github/workflows/veridion-rdi.yml",
+}
+
+
 POLICY_PACKS = {
     "dependency-risk-v1": """max_severity: critical
 allow_conditional: true
@@ -439,7 +447,7 @@ Example suppression:
 def build_bootstrap_files(
     *,
     preset: str,
-    action_ref: str = "veridionhq/veridion@v1.0.3",
+    action_ref: str = "veridionhq/veridion@v1.0.4",
     repo_id: str = "",
     service_id: str = "",
     team_id: str = "",
@@ -473,16 +481,30 @@ def write_bootstrap_files(
     output_root: str,
     files: dict[str, str],
     force: bool = False,
+    only: set[str] | None = None,
 ) -> None:
     """Write scaffolded files to disk."""
 
+    selected_paths = _selected_paths(only)
     root = Path(output_root)
     for relative_path, content in files.items():
+        if selected_paths is not None and relative_path not in selected_paths:
+            continue
         target = root / relative_path
         if target.exists() and not force:
-            raise RuntimeError(f"refusing to overwrite existing file: {target}")
+            raise RuntimeError(
+                f"refusing to overwrite existing file: {target}. "
+                "Use --force to overwrite generated files, or use --only workflow --force "
+                "to refresh only the GitHub Actions workflow."
+            )
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
+
+
+def _selected_paths(only: set[str] | None) -> set[str] | None:
+    if not only or "all" in only:
+        return None
+    return {BOOTSTRAP_FILE_KEYS[item] for item in only}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -491,11 +513,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Bootstrap Veridion install files from a starter preset")
     parser.add_argument("--preset", required=True, choices=sorted(POLICY_PACKS), help="Starter policy preset")
     parser.add_argument("--output-root", default=".", help="Repo root where files should be written")
-    parser.add_argument("--action-ref", default="veridionhq/veridion@v1.0.3", help="Action ref to use in the workflow")
+    parser.add_argument("--action-ref", default="veridionhq/veridion@v1.0.4", help="Action ref to use in the workflow")
     parser.add_argument("--repo-id", default="", help="Optional stable repo identifier")
     parser.add_argument("--service-id", default="", help="Optional stable service identifier")
     parser.add_argument("--team-id", default="", help="Optional stable team identifier")
     parser.add_argument("--force", action="store_true", help="Overwrite existing scaffold files")
+    parser.add_argument(
+        "--only",
+        action="append",
+        choices=("all", "policy", "suppressions", "readme", "workflow"),
+        help=(
+            "Limit generated writes to one file group. Repeat for multiple groups. "
+            "Use --only workflow --force to refresh the workflow without changing policy or suppressions."
+        ),
+    )
     args = parser.parse_args(argv)
 
     files = build_bootstrap_files(
@@ -505,7 +536,7 @@ def main(argv: list[str] | None = None) -> int:
         service_id=args.service_id,
         team_id=args.team_id,
     )
-    write_bootstrap_files(output_root=args.output_root, files=files, force=args.force)
+    write_bootstrap_files(output_root=args.output_root, files=files, force=args.force, only=set(args.only or ()))
     return 0
 
 
