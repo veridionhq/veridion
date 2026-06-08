@@ -7,37 +7,14 @@ from datetime import datetime, timezone
 
 from veridion.analysis import AnalysisBundle
 from veridion.decision_basis import build_decision_basis, decision_basis_input_scope
+from veridion.decision_requirements import build_decision_requirements, requirements_to_dict
 from veridion.normalize.common import severity_rank
 from veridion.policy import PolicyDecision
 from veridion.policy.pack import PolicyPackMetadata
-from veridion.policy.text import (
-    SEVERITY_ISSUE_REASON_RE,
-    filter_approval_echo_recommendations,
-    format_approval_label,
-)
+from veridion.policy.text import SEVERITY_ISSUE_REASON_RE
 from veridion.report import ThreatExplanation
 
 SUPPORTED_DECISION_SCHEMA_VERSION = 1
-
-_REQUIRED_NEXT_STEP_PREFIXES = (
-    "Block release",
-    "Run ",
-    "Review ",
-    "Prioritize ",
-    "Validate ",
-    "Verify ",
-    "Define ",
-    "Remove ",
-    "Restore ",
-    "Avoid ",
-    "Confirm ",
-    "Use ",
-    "Treat ",
-    "Increase ",
-    "Coordinate ",
-    "Schedule ",
-    "Require ",
-)
 
 
 @dataclass(frozen=True)
@@ -77,9 +54,8 @@ def build_decision_contract(
 ) -> dict[str, object]:
     """Build the stable decision artifact consumed by downstream automation."""
 
-    required_next_steps, advisory_guidance = _split_recommendations(
-        filter_approval_echo_recommendations(decision.recommendations, decision.required_approvals)
-    )
+    requirements = build_decision_requirements(bundle, decision)
+    requirement_payload = requirements_to_dict(requirements)
     blocking_reasons = tuple(reason for reason in decision.reasons if _is_blocking_reason(reason, decision.decision))
     operational_signals = _operational_signals(bundle)
 
@@ -99,20 +75,18 @@ def build_decision_contract(
             "blocking_categories": _blocking_categories(bundle, decision),
         },
         "decision_basis": _decision_basis(bundle, decision),
+        "decision_requirements": requirement_payload,
         "reasons": {
             "blocking": list(blocking_reasons),
             "all": list(decision.reasons),
             "score_adjustments": list(decision.score_adjustments),
         },
         "actions": {
-            "required_approvals": list(decision.required_approvals),
-            "required_approval_labels": [_format_approval(value) for value in decision.required_approvals],
-            "required_approval_triggers": {
-                role: list(triggers)
-                for role, triggers in decision.required_approval_triggers.items()
-            },
-            "required_next_steps": list(required_next_steps),
-            "advisory_guidance": list(advisory_guidance),
+            "required_approvals": list(requirements.required_approvals),
+            "required_approval_labels": requirement_payload["required_approval_labels"],
+            "required_approval_triggers": requirement_payload["required_approval_triggers"],
+            "required_next_steps": list(requirements.all_required),
+            "advisory_guidance": list(requirements.advisory),
             "all_recommendations": list(decision.recommendations),
         },
         "threats": _normalize_threats(threats),
@@ -259,19 +233,6 @@ def _gate_status(decision: str) -> str:
     return "pass"
 
 
-def _split_recommendations(recommendations: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    required: list[str] = []
-    advisory: list[str] = []
-
-    for recommendation in recommendations:
-        if recommendation.startswith(_REQUIRED_NEXT_STEP_PREFIXES):
-            required.append(recommendation)
-        else:
-            advisory.append(recommendation)
-
-    return tuple(required), tuple(advisory)
-
-
 def _is_blocking_reason(reason: str, decision: str) -> bool:
     if decision == "GO":
         return False
@@ -286,11 +247,6 @@ def _is_blocking_reason(reason: str, decision: str) -> bool:
             "accepted risk governance metadata is incomplete",
         )
     )
-
-
-def _format_approval(value: str) -> str:
-    return format_approval_label(value)
-
 
 def _operational_signals(bundle: AnalysisBundle) -> dict[str, object]:
     historical = bundle.historical_signals

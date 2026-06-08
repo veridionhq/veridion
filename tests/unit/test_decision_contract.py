@@ -86,6 +86,35 @@ def test_clean_go_contract_keeps_required_next_steps_empty() -> None:
     assert result.decision_contract["actions"]["advisory_guidance"] == [
         "Proceed with normal review and deployment checks"
     ]
+    assert result.decision_contract["decision_requirements"]["has_requirements"] is False
+    assert result.decision_contract["decision_requirements"]["all_required"] == []
+
+
+def test_v1_clean_dependency_go_contract_keeps_requirements_empty() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=1,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+        baseline_available=True,
+    )
+    decision = evaluate_release(bundle, PolicyConfig(condition_on_release_controls=False))
+    contract = _contract_for(bundle, decision)
+
+    assert contract["decision"]["verdict"] == "GO"
+    assert contract["actions"]["required_next_steps"] == []
+    assert contract["decision_requirements"]["has_requirements"] is False
+    assert contract["decision_requirements"]["all_required"] == []
 
 
 def test_run_action_decision_contract_includes_metadata_and_categories() -> None:
@@ -155,6 +184,119 @@ def test_decision_contract_includes_policy_evidence_and_control_basis_for_no_go(
     assert basis["evidence_quality"] == "1 introduced finding(s) were attributed to this change"
     assert basis["control_path"] == "block until remediation or approved policy change"
     assert basis["input_scope"]["introduced_findings"] == 1
+
+    requirements = contract["decision_requirements"]
+    assert requirements["remediation"] == [
+        "Block release until introduced risk is remediated or policy is adjusted",
+        "Review newly introduced dependencies and lockfile updates",
+        "Prioritize remediation for introduced high-severity findings",
+    ]
+    assert requirements["baseline_repair"] == []
+    assert requirements["accepted_risk"] == []
+    assert requirements["release_validation"] == []
+    assert requirements["has_requirements"] is True
+
+
+def test_decision_contract_groups_conditional_dependency_review_requirements() -> None:
+    bundle = _dependency_bundle(severity="high", baseline_available=True)
+    decision = evaluate_release(bundle, PolicyConfig(condition_on_release_controls=False))
+    contract = _contract_for(bundle, decision)
+
+    requirements = contract["decision_requirements"]
+
+    assert contract["decision"]["verdict"] == "CONDITIONAL GO"
+    assert requirements["remediation"] == [
+        "Review newly introduced dependencies and lockfile updates",
+        "Prioritize remediation for introduced high-severity findings",
+    ]
+    assert requirements["baseline_repair"] == []
+    assert requirements["accepted_risk"] == []
+    assert requirements["release_validation"] == []
+
+
+def test_decision_contract_groups_baseline_repair_requirements() -> None:
+    bundle = _dependency_bundle(severity="high", baseline_available=False)
+    decision = evaluate_release(bundle, PolicyConfig(condition_on_release_controls=False))
+    contract = _contract_for(bundle, decision)
+
+    requirements = contract["decision_requirements"]
+
+    assert contract["decision"]["verdict"] == "CONDITIONAL GO"
+    assert requirements["baseline_repair"] == [
+        "Repair or refresh baseline scanner outputs before treating changed-file findings as newly introduced risk",
+        "Review change-relevant findings manually until baseline attribution is repaired",
+    ]
+    assert requirements["remediation"] == [
+        "Review newly introduced dependencies and lockfile updates",
+    ]
+    assert requirements["accepted_risk"] == []
+
+
+def test_decision_contract_groups_accepted_risk_requirements() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="trivy",
+                finding_type="dependency",
+                rule_id="CVE-2025-99999",
+                title="Temporary dependency issue",
+                severity="high",
+                package_name="urllib3",
+                package_version="1.25.8",
+                location=NormalizedLocation(path="requirements.txt"),
+            )
+        ],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=0,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+        suppression_rules=parse_suppressions_payload(
+            {
+                "schema_version": 1,
+                "suppressions": [
+                    {
+                        "exception_id": "AR-301",
+                        "status": "approved",
+                        "finding_type": "dependency",
+                        "package_name": "urllib3",
+                        "package_version": "1.25.8",
+                        "reason_type": "risk_reduction",
+                        "reduced_severity": "medium",
+                        "reason": "temporary exception",
+                        "owner": "platform-security",
+                        "approved_by": "security-owner",
+                        "ticket": "SEC-301",
+                        "created_at": "2026-05-01T00:00:00Z",
+                        "reviewed_at": "2026-05-02T00:00:00Z",
+                        "expires_on": "2026-12-31",
+                    }
+                ],
+            }
+        ),
+        baseline_available=True,
+    )
+    decision = evaluate_release(bundle, PolicyConfig(condition_on_release_controls=False))
+    contract = _contract_for(bundle, decision)
+
+    requirements = contract["decision_requirements"]
+
+    assert contract["decision"]["verdict"] == "CONDITIONAL GO"
+    assert requirements["accepted_risk"] == [
+        "Review accepted-risk exception scope, owner, approval, ticket, and expiry before release"
+    ]
+    assert requirements["remediation"] == [
+        "Review newly introduced dependencies and lockfile updates",
+    ]
+    assert requirements["baseline_repair"] == []
 
 
 def test_run_action_decision_contract_surfaces_report_health() -> None:
@@ -356,3 +498,45 @@ def test_build_decision_contract_deduplicates_equivalent_threats() -> None:
     assert len(threats) == 1
     assert threats[0]["advisory_count"] == 2
     assert threats[0]["subjects"] == ["terraform.rule.one", "terraform.rule.two"]
+
+
+def _dependency_bundle(*, severity: str, baseline_available: bool):
+    return build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="trivy",
+                finding_type="dependency",
+                rule_id=f"CVE-{severity.upper()}",
+                title=f"Introduced {severity} dependency issue",
+                severity=severity,
+                package_name="urllib3",
+                package_version="1.25.8",
+                location=NormalizedLocation(path="requirements.txt"),
+            )
+        ],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=0,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+        baseline_available=baseline_available,
+    )
+
+
+def _contract_for(bundle, decision):
+    return build_decision_contract(
+        bundle=bundle,
+        decision=decision,
+        threats=(),
+        comment_identifier="veridion:rdi",
+        comment_summary={"mode": "deterministic", "provider": "none", "model": "", "error": ""},
+        gate=evaluate_gate(decision.decision, allowed_decisions=("GO", "CONDITIONAL GO")),
+    )

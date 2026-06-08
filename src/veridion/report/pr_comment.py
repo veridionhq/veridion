@@ -6,12 +6,9 @@ from dataclasses import dataclass
 
 from veridion.analysis import AnalysisBundle
 from veridion.decision_basis import build_decision_basis
+from veridion.decision_requirements import approval_label, build_decision_requirements
 from veridion.policy.engine import PolicyDecision
-from veridion.policy.text import (
-    SEVERITY_ISSUE_REASON_RE,
-    filter_approval_echo_recommendations,
-    format_approval_label,
-)
+from veridion.policy.text import SEVERITY_ISSUE_REASON_RE
 from veridion.report.threats import ThreatExplanation, explain_change_relevant_threats, explain_introduced_threats, render_threat_line
 from veridion.summarization import CommentSummarizer, SummarizationRequest, SummarizationTrace, summarize_comment_request
 
@@ -103,14 +100,18 @@ def render_pr_comment_result(
     primary_drivers, contextual_risk = _split_reasons(decision.reasons)
     compact_render = _should_use_compact_render(bundle, decision, primary_drivers, contextual_risk)
     introduced_threat_explanations = explain_change_relevant_threats(bundle) if attribution_untrusted else explain_introduced_threats(bundle)
-    required_next_steps, advisory_guidance = _split_recommendations(
-        filter_approval_echo_recommendations(decision.recommendations, decision.required_approvals)
-    )
-    if _is_v1_dependency_policy(decision):
-        required_next_steps, advisory_guidance = _filter_v1_dependency_recommendations(
-            required_next_steps,
-            advisory_guidance,
-        )
+    requirements = build_decision_requirements(bundle, decision)
+    required_next_steps = requirements.all_required
+    advisory_guidance = requirements.advisory
+    if (
+        decision.decision == "GO"
+        and not _is_v1_dependency_policy(decision)
+        and not required_next_steps
+        and not advisory_guidance
+    ):
+        advisory_guidance = ("Proceed with normal review and deployment checks",)
+    if _is_v1_dependency_policy(decision) and not required_next_steps:
+        advisory_guidance = ()
     next_steps = _select_next_steps(
         bundle=bundle,
         decision=decision,
@@ -134,10 +135,10 @@ def render_pr_comment_result(
     # For NO GO and CONDITIONAL GO, surface the action block immediately after the verdict
     # so engineers see who must approve and what to fix before reading context and reasons.
     if decision.decision != "GO":
-        if decision.required_approvals:
+        if requirements.required_approvals:
             approvals = tuple(
-                _format_approval_with_triggers(name, decision.required_approval_triggers)
-                for name in decision.required_approvals
+                approval_label(name, requirements.approval_triggers)
+                for name in requirements.required_approvals
             )
             lines.extend(_section("Required Approvals", approvals))
         lines.extend(
@@ -239,19 +240,6 @@ def _section(title: str, items: tuple[str, ...] | list[str]) -> list[str]:
         rendered.append("- None")
     rendered.append("")
     return rendered
-
-
-def _format_approval(value: str) -> str:
-    return format_approval_label(value)
-
-
-def _format_approval_with_triggers(role: str, triggers_by_role: dict[str, tuple[str, ...]]) -> str:
-    label = format_approval_label(role)
-    triggers = triggers_by_role.get(role, ())
-    if not triggers:
-        return label
-    trigger_text = ", ".join(t.replace("_", " ") for t in triggers)
-    return f"{label} (required: {trigger_text})"
 
 
 def _drivers_title(decision: str) -> str:
@@ -686,19 +674,6 @@ def _is_primary_driver(reason: str) -> bool:
         "policy does not allow conditional releases",
     )
     return reason.startswith(primary_markers)
-def _split_recommendations(recommendations: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    required: list[str] = []
-    advisory: list[str] = []
-
-    for recommendation in recommendations:
-        if _is_required_next_step(recommendation):
-            required.append(recommendation)
-        else:
-            advisory.append(recommendation)
-
-    return tuple(required), tuple(advisory)
-
-
 def _is_required_next_step(recommendation: str) -> bool:
     return recommendation.startswith(REQUIRED_NEXT_STEP_PREFIXES)
 
@@ -750,29 +725,6 @@ def _select_next_steps(
         if ranked:
             return tuple(ranked[:4])
     return required_next_steps or advisory_guidance or ("Proceed with normal review and deployment checks",)
-
-
-def _filter_v1_dependency_recommendations(
-    required_next_steps: tuple[str, ...],
-    advisory_guidance: tuple[str, ...],
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    allowed_prefixes = (
-        "Block release",
-        "Repair or refresh baseline scanner outputs",
-        "Review change-relevant findings manually",
-        "Review newly introduced dependencies",
-        "Prioritize remediation",
-        "Remove or renew expired accepted-risk suppressions",
-        "Fill suppression owner",
-        "Review pending accepted-risk proposals",
-        "Approve or reject accepted-risk renewal requests",
-        "Renew or close accepted-risk exceptions expiring soon",
-    )
-
-    def keep(items: tuple[str, ...]) -> tuple[str, ...]:
-        return tuple(item for item in items if item.startswith(allowed_prefixes))
-
-    return keep(required_next_steps), keep(advisory_guidance)
 
 
 def _filter_v1_dependency_drivers(drivers: tuple[str, ...]) -> tuple[str, ...]:
