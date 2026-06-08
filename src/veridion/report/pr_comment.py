@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from veridion.analysis import AnalysisBundle
+from veridion.decision_basis import build_decision_basis
 from veridion.policy.engine import PolicyDecision
 from veridion.policy.text import (
     SEVERITY_ISSUE_REASON_RE,
@@ -125,6 +126,10 @@ def render_pr_comment_result(
         required_next_steps=required_next_steps,
         summary_style=summary_style,
     )
+
+    decision_basis = _format_decision_basis(bundle, decision)
+    if decision_basis:
+        lines.extend(_section("Decision Basis", decision_basis))
 
     # For NO GO and CONDITIONAL GO, surface the action block immediately after the verdict
     # so engineers see who must approve and what to fix before reading context and reasons.
@@ -259,6 +264,23 @@ def _drivers_title(decision: str) -> str:
 
 def _threats_title(*, attribution_untrusted: bool = False) -> str:
     return "Change-relevant threats" if attribution_untrusted else "Key threats"
+
+
+def _format_decision_basis(bundle: AnalysisBundle, decision: PolicyDecision) -> tuple[str, ...]:
+    if _is_v1_clean_dependency_go(bundle, decision):
+        return ()
+
+    basis = build_decision_basis(bundle, decision)
+    items = [
+        "action: decide whether this PR can proceed through the release gate",
+        "policy: " + basis.policy_rule,
+        "evidence: " + basis.evidence_quality,
+    ]
+
+    if basis.control_path != "release gate passed":
+        items.append("control path: " + basis.control_path)
+
+    return tuple(items)
 
 
 def _default_driver_summary(

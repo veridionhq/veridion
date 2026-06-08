@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from veridion.analysis import AnalysisBundle
+from veridion.decision_basis import build_decision_basis, decision_basis_input_scope
 from veridion.normalize.common import severity_rank
 from veridion.policy import PolicyDecision
 from veridion.policy.pack import PolicyPackMetadata
@@ -97,6 +98,7 @@ def build_decision_contract(
             "allowed_decisions": list(gate.allowed_decisions),
             "blocking_categories": _blocking_categories(bundle, decision),
         },
+        "decision_basis": _decision_basis(bundle, decision),
         "reasons": {
             "blocking": list(blocking_reasons),
             "all": list(decision.reasons),
@@ -234,6 +236,18 @@ def _evidence_health(report_diagnostics: dict[str, object] | None) -> dict[str, 
             "metadata": dict(report_diagnostics.get("scan_metadata", {})),
             "recheck_only": bool(report_diagnostics.get("recheck_only", False)),
         },
+    }
+
+
+def _decision_basis(bundle: AnalysisBundle, decision: PolicyDecision) -> dict[str, object]:
+    basis = build_decision_basis(bundle, decision)
+    return {
+        "decision_question": basis.decision_question,
+        "action_type": basis.action_type,
+        "policy_rule": basis.policy_rule,
+        "evidence_quality": basis.evidence_quality,
+        "control_path": basis.control_path,
+        "input_scope": decision_basis_input_scope(bundle),
     }
 
 

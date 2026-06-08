@@ -3,7 +3,7 @@ from datetime import date, timedelta
 
 from veridion.analysis import build_analysis_bundle
 from veridion.action.runner import _parse_allowed_decisions, _write_github_outputs, run_action
-from veridion.change_context.diff_parser import ParsedChangeContext
+from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.decision_contract import build_decision_contract, evaluate_gate
 from veridion.policy import PolicyConfig, evaluate_release
@@ -103,8 +103,58 @@ def test_run_action_decision_contract_includes_metadata_and_categories() -> None
     assert contract["contract_version_source"] == "veridion.decision_contract@1"
     assert isinstance(contract["generated_at"], str)
     assert "blocking_categories" in contract["decision"]
+    assert contract["decision_basis"]["decision_question"] == "Should this PR proceed through the release gate?"
+    assert contract["decision_basis"]["action_type"] == "release_gate"
+    assert contract["decision_basis"]["control_path"] == "manual review required before release"
     assert contract["evidence"]["attribution"]["mode"] == "trusted"
     assert contract["evidence"]["reports"]["current_tools"] == []
+
+
+def test_decision_contract_includes_policy_evidence_and_control_basis_for_no_go() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[
+            NormalizedFinding(
+                source="trivy",
+                finding_type="dependency",
+                rule_id="CVE-2020-1747",
+                title="PyYAML incomplete fix",
+                severity="critical",
+                package_name="PyYAML",
+                package_version="5.3.1",
+                location=NormalizedLocation(path="requirements.txt"),
+            )
+        ],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(
+            files=(
+                ParsedFileChange(
+                    path="requirements.txt",
+                    change_type="modified",
+                    added_lines=1,
+                    removed_lines=0,
+                    signals=("dependency_manifest",),
+                    previous_path="requirements.txt",
+                ),
+            )
+        ),
+        baseline_available=True,
+    )
+    decision = evaluate_release(bundle, PolicyConfig(condition_on_release_controls=False))
+    contract = build_decision_contract(
+        bundle=bundle,
+        decision=decision,
+        threats=(),
+        comment_identifier="veridion:rdi",
+        comment_summary={"mode": "deterministic", "provider": "none", "model": "", "error": ""},
+        gate=evaluate_gate(decision.decision, allowed_decisions=("GO", "CONDITIONAL GO")),
+    )
+
+    basis = contract["decision_basis"]
+
+    assert basis["policy_rule"] == "introduced critical dependency risk blocks release unless remediated or governed by policy"
+    assert basis["evidence_quality"] == "1 introduced finding(s) were attributed to this change"
+    assert basis["control_path"] == "block until remediation or approved policy change"
+    assert basis["input_scope"]["introduced_findings"] == 1
 
 
 def test_run_action_decision_contract_surfaces_report_health() -> None:

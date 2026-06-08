@@ -129,6 +129,7 @@ def test_render_pr_comment_v1_clean_dependency_go_hides_release_controls() -> No
     assert "RDI Score" not in comment
     assert "- no introduced findings detected" in comment
     assert "### Key Context" not in comment
+    assert "### Decision Basis" not in comment
     assert "runtime:" not in comment
     assert "blast radius" not in comment
     assert "### What must happen next" not in comment
@@ -144,6 +145,11 @@ def test_render_pr_comment_v1_conditional_dependency_review_hides_release_contro
     assert "### 🟡 CONDITIONAL GO" in comment
     assert "**Confidence:** HIGH" in comment
     assert "RDI Score" not in comment
+    assert "### Decision Basis" in comment
+    assert "- action: decide whether this PR can proceed through the release gate" in comment
+    assert "- policy: introduced high dependency risk requires review before release" in comment
+    assert "- evidence: 1 introduced finding(s) were attributed to this change" in comment
+    assert "- control path: manual review required before release" in comment
     assert "### What must happen next" in comment
     assert "Review newly introduced dependencies and lockfile updates" in comment
     assert "Prioritize remediation for introduced high-severity findings" in comment
@@ -164,6 +170,9 @@ def test_render_pr_comment_v1_no_go_dependency_block_hides_release_controls() ->
     assert "### ❌ NO GO" in comment
     assert "**Confidence:** HIGH" in comment
     assert "RDI Score" not in comment
+    assert "### Decision Basis" in comment
+    assert "- policy: introduced critical dependency risk blocks release unless remediated or governed by policy" in comment
+    assert "- control path: block until remediation or approved policy change" in comment
     assert "### What must happen next" in comment
     assert "Block release until introduced risk is remediated or policy is adjusted" in comment
     assert "Review newly introduced dependencies and lockfile updates" in comment
@@ -214,6 +223,9 @@ def test_render_pr_comment_downgrades_to_change_relevant_when_baseline_is_missin
     comment = render_pr_comment(bundle, decision)
 
     assert "**Summary:** Change-relevant findings: 1 | Existing findings: 0 | Unattributed findings: 0 | Suppressed findings: 0 | Changed files: 1" in comment
+    assert "### Decision Basis" in comment
+    assert "- policy: baseline attribution must be repaired before changed-file findings can be treated as proven introduced risk" in comment
+    assert "- evidence: confidence is capped because baseline scanner evidence is unavailable" in comment
     assert "### Baseline Attribution" in comment
     assert "baseline scanner evidence is incomplete" in comment
     assert "### Change-relevant threats" in comment
