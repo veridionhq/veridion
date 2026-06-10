@@ -44,6 +44,10 @@ inputs:
     description: "Path to optional scan provenance metadata JSON with commit, timestamp, and scanner versions"
     required: false
     default: ""
+  evidence-paths:
+    description: "Newline-delimited paths to native Veridion release evidence JSON files"
+    required: false
+    default: ""
   recheck-only:
     description: "Re-evaluate existing reports and current policy/suppressions without rerunning scanners"
     required: false
@@ -199,6 +203,18 @@ outputs:
   blocking_categories_json:
     description: "JSON array of normalized blocking categories"
     value: ${{ steps.run-rdi.outputs.blocking_categories_json }}
+  release_evidence_json:
+    description: "JSON object with normalized release evidence summary and items"
+    value: ${{ steps.run-rdi.outputs.release_evidence_json }}
+  blocking_evidence_json:
+    description: "JSON array of required evidence items that block release"
+    value: ${{ steps.run-rdi.outputs.blocking_evidence_json }}
+  review_evidence_json:
+    description: "JSON array of required evidence items that require review"
+    value: ${{ steps.run-rdi.outputs.review_evidence_json }}
+  missing_required_evidence_json:
+    description: "JSON array of policy-required evidence selectors that were missing"
+    value: ${{ steps.run-rdi.outputs.missing_required_evidence_json }}
   accepted_risk_present:
     description: "Whether active accepted-risk suppressions are present in the change"
     value: ${{ steps.run-rdi.outputs.accepted_risk_present }}
@@ -316,6 +332,7 @@ runs:
         INPUT_TRUST_PROFILE_PATH: ${{ inputs.trust-profile-path }}
         INPUT_SUPPRESSION_PATH: ${{ inputs.suppression-path }}
         INPUT_SCAN_METADATA_PATH: ${{ inputs.scan-metadata-path }}
+        INPUT_EVIDENCE_PATHS: ${{ inputs.evidence-paths }}
         INPUT_RECHECK_ONLY: ${{ inputs.recheck-only }}
         INPUT_EXPECTED_COMMIT: ${{ inputs.expected-commit }}
         INPUT_COMMENT_SUMMARY_PROVIDER: ${{ inputs.comment-summary-provider }}
@@ -377,6 +394,13 @@ runs:
         if [[ -n "${INPUT_EXPECTED_COMMIT}" ]]; then
           provenance_args+=(--expected-commit "${INPUT_EXPECTED_COMMIT}")
         fi
+        evidence_args=()
+        if [[ -n "${INPUT_EVIDENCE_PATHS}" ]]; then
+          while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            evidence_args+=(--evidence-path "$line")
+          done <<< "${INPUT_EVIDENCE_PATHS}"
+        fi
         summary_args=()
         if [[ -n "${INPUT_COMMENT_SUMMARY_PROVIDER}" ]]; then
           summary_args+=(--comment-summary-provider "${INPUT_COMMENT_SUMMARY_PROVIDER}")
@@ -406,6 +430,7 @@ runs:
           "${trust_profile_args[@]}" \
           "${suppression_args[@]}" \
           "${provenance_args[@]}" \
+          "${evidence_args[@]}" \
           "${summary_args[@]}" \
           --comment-path "${INPUT_COMMENT_PATH}" \
           --json-output-path "${INPUT_JSON_OUTPUT_PATH}" \

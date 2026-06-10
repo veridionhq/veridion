@@ -1,0 +1,17 @@
+policy_pack_id: evidence-gateway
+policy_pack_name: Evidence Gateway
+policy_pack_version: 1
+policy_pack_owner: veridion
+policy_rollout_stage: pilot
+max_severity: critical
+allow_conditional: true
+no_go_below_score: 60
+conditional_go_below_score: 85
+require_evidence:
+  - test_result
+  - ci_check:required checks
+require_approval_for: []
+require_platform_owner_for: []
+require_service_owner_for: []
+require_sre_owner_for: []
+require_security_owner_for: []

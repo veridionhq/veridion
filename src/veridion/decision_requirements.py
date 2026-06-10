@@ -51,6 +51,9 @@ _REQUIRED_PREFIXES = (
     "Coordinate ",
     "Schedule ",
     "Require ",
+    "Resolve required ",
+    "Review required ",
+    "Provide required ",
 )
 
 _REMEDIATION_PREFIXES = (
@@ -102,6 +105,9 @@ _RELEASE_VALIDATION_PREFIXES = (
     "Define a service owner",
     "Run targeted regression coverage",
     "Increase manual validation",
+    "Resolve required ",
+    "Review required ",
+    "Provide required ",
 )
 
 _V1_ALLOWED_PREFIXES = (

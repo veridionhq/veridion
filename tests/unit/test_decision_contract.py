@@ -67,10 +67,41 @@ def test_write_github_outputs_emits_gate_and_contract_fields(tmp_path, monkeypat
     assert "required_approvals_json=[]" in content
     assert "accepted_risk_present=false" in content
     assert "blocking_categories_json=[]" in content
+    assert "release_evidence_json=" in content
+    assert "blocking_evidence_json=[]" in content
+    assert "review_evidence_json=[]" in content
+    assert "missing_required_evidence_json=[]" in content
     assert "confidence_ceiling_reason=" in content
 
     blocking_line = next(line for line in content.splitlines() if line.startswith("blocking_reasons_json="))
     assert json.loads(blocking_line.split("=", maxsplit=1)[1]) == []
+
+
+def test_write_github_outputs_emits_evidence_fields(tmp_path, monkeypatch) -> None:
+    result = run_action(
+        diff_text="diff --git a/README.md b/README.md\nindex 1111111..2222222 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n hello\n+world\n",
+        current_reports={},
+        baseline_reports={},
+        policy_text="""
+require_evidence:
+  - test_result:checkout e2e
+""",
+    )
+    output_path = tmp_path / "github-output.txt"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output_path))
+
+    _write_github_outputs(
+        result,
+        comment_path="veridion-pr-comment.md",
+        json_output_path="veridion-result.json",
+        decision_contract_path="veridion-decision.json",
+    )
+
+    lines = dict(line.split("=", maxsplit=1) for line in output_path.read_text().splitlines() if "=" in line)
+    assert json.loads(lines["release_evidence_json"])["summary"] == {"total": 0, "blocking": 0, "review": 0}
+    assert json.loads(lines["blocking_evidence_json"]) == []
+    assert json.loads(lines["review_evidence_json"]) == []
+    assert json.loads(lines["missing_required_evidence_json"]) == ["test_result:checkout e2e"]
 
 
 def test_clean_go_contract_keeps_required_next_steps_empty() -> None:
@@ -115,6 +146,106 @@ def test_v1_clean_dependency_go_contract_keeps_requirements_empty() -> None:
     assert contract["actions"]["required_next_steps"] == []
     assert contract["decision_requirements"]["has_requirements"] is False
     assert contract["decision_requirements"]["all_required"] == []
+
+
+def test_required_failed_release_evidence_blocks_release() -> None:
+    result = run_action(
+        diff_text="diff --git a/README.md b/README.md\nindex 1111111..2222222 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n hello\n+world\n",
+        current_reports={},
+        baseline_reports={},
+        policy_text=None,
+        evidence_texts=(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "subject": {
+                        "repo": "acme/payments-api",
+                        "commit": "abc123",
+                    },
+                    "evidence": [
+                        {
+                            "evidence_type": "test_result",
+                            "category": "test",
+                            "name": "checkout e2e",
+                            "status": "failed",
+                            "severity": "high",
+                            "required": True,
+                            "source": {"provider": "github_actions"},
+                            "summary": "Checkout flow failed",
+                        }
+                    ],
+                }
+            ),
+        ),
+    )
+
+    contract = result.decision_contract
+
+    assert result.decision.decision == "NO GO"
+    assert contract["decision"]["gate_status"] == "block"
+    assert contract["decision"]["blocking_categories"] == ["required_evidence_blocking"]
+    assert contract["decision_basis"]["policy_rule"] == "required release evidence failed or blocked the release gate"
+    assert contract["decision_basis"]["input_scope"]["blocking_evidence"] == 1
+    assert contract["release_evidence"]["summary"] == {"total": 1, "blocking": 1, "review": 0}
+    assert contract["release_evidence"]["items"][0]["name"] == "checkout e2e"
+    assert contract["decision_requirements"]["release_validation"] == [
+        "Resolve required checkout e2e evidence before release"
+    ]
+
+
+def test_required_uncertain_release_evidence_requires_review() -> None:
+    result = run_action(
+        diff_text="diff --git a/README.md b/README.md\nindex 1111111..2222222 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n hello\n+world\n",
+        current_reports={},
+        baseline_reports={},
+        policy_text=None,
+        evidence_texts=(
+            json.dumps(
+                {
+                    "evidence_type": "load_test",
+                    "category": "test",
+                    "name": "checkout load test",
+                    "status": "missing",
+                    "required": True,
+                }
+            ),
+        ),
+    )
+
+    contract = result.decision_contract
+
+    assert result.decision.decision == "CONDITIONAL GO"
+    assert contract["decision"]["gate_status"] == "review"
+    assert contract["decision"]["blocking_categories"] == ["required_evidence_review"]
+    assert contract["decision_basis"]["policy_rule"] == "required release evidence needs human review before release"
+    assert contract["decision_requirements"]["release_validation"] == [
+        "Review required checkout load test evidence before release"
+    ]
+
+
+def test_policy_required_missing_evidence_is_machine_readable_requirement() -> None:
+    result = run_action(
+        diff_text="diff --git a/README.md b/README.md\nindex 1111111..2222222 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n hello\n+world\n",
+        current_reports={},
+        baseline_reports={},
+        policy_text="""
+require_evidence:
+  - test_result:checkout e2e
+""",
+    )
+
+    contract = result.decision_contract
+
+    assert result.decision.decision == "CONDITIONAL GO"
+    assert contract["decision"]["blocking_categories"] == ["required_evidence_review"]
+    assert contract["decision_basis"]["policy_rule"] == "required release evidence needs human review before release"
+    assert contract["decision_basis"]["evidence_quality"] == "required release evidence is missing or needs review"
+    assert contract["decision_requirements"]["release_validation"] == [
+        "Provide required test_result:checkout e2e evidence before release"
+    ]
+    assert contract["actions"]["required_next_steps"] == [
+        "Provide required test_result:checkout e2e evidence before release"
+    ]
 
 
 def test_run_action_decision_contract_includes_metadata_and_categories() -> None:

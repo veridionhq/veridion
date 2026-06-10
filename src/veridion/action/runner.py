@@ -17,6 +17,7 @@ from veridion.context import (
     resolve_operational_context_artifact,
 )
 from veridion.decision_contract import build_decision_contract, evaluate_gate
+from veridion.evidence import parse_evidence_text
 from veridion.normalize import NormalizedFinding, normalize_report
 from veridion.policy import PolicyDecision, PolicyConfig, evaluate_release, parse_policy_pack_yaml
 from veridion.report import ThreatExplanation, render_pr_comment_result
@@ -81,6 +82,7 @@ def run_action(
     trust_profile_text: str | None = None,
     suppression_text: str | None = None,
     scan_metadata_text: str | None = None,
+    evidence_texts: tuple[str, ...] = (),
     recheck_only: bool = False,
     expected_commit: str | None = None,
     comment_summary_provider: str | None = None,
@@ -104,6 +106,11 @@ def run_action(
     if recheck_only:
         _validate_recheck_metadata(scan_metadata, expected_commit=expected_commit)
     suppression_rules = parse_suppressions_payload(suppressions_payload)
+    evidence = tuple(
+        item
+        for evidence_text in evidence_texts
+        for item in parse_evidence_text(evidence_text)
+    )
 
     if operational_context_text:
         if metadata_text or trust_profile_text:
@@ -136,6 +143,7 @@ def run_action(
         trust_profile_metadata=resolved_context.trust_profile_metadata,
         trust_baseline=resolved_context.trust_baseline,
         trust_memory_signals=resolved_context.trust_memory_signals,
+        evidence=evidence,
         suppression_rules=suppression_rules,
     )
     report_diagnostics = _build_report_diagnostics(
@@ -211,6 +219,7 @@ def main(argv: list[str] | None = None) -> int:
     trust_profile_text = Path(args.trust_profile_path).read_text() if args.trust_profile_path else None
     suppression_text = Path(args.suppression_path).read_text() if args.suppression_path else None
     scan_metadata_text = Path(args.scan_metadata_path).read_text() if args.scan_metadata_path else None
+    evidence_texts = tuple(Path(path).read_text() for path in args.evidence_path)
 
     result = run_action(
         diff_text=diff_text,
@@ -222,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
         trust_profile_text=trust_profile_text,
         suppression_text=suppression_text,
         scan_metadata_text=scan_metadata_text,
+        evidence_texts=evidence_texts,
         recheck_only=_as_bool_flag(args.recheck_only),
         expected_commit=args.expected_commit,
         comment_summary_provider=args.comment_summary_provider,
@@ -272,6 +282,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--trust-profile-path", help="Path to optional trust profile JSON")
     parser.add_argument("--suppression-path", help="Path to optional accepted-risk suppression JSON")
     parser.add_argument("--scan-metadata-path", help="Path to optional scan provenance metadata JSON")
+    parser.add_argument(
+        "--evidence-path",
+        action="append",
+        default=[],
+        help="Path to native Veridion release evidence JSON, repeatable",
+    )
     parser.add_argument("--recheck-only", default="false", help="Re-evaluate existing reports and validate scan metadata")
     parser.add_argument("--expected-commit", help="Expected commit SHA for recheck validation; defaults to GITHUB_SHA or git HEAD")
     parser.add_argument("--comment-summary-provider", help="Optional wording model provider: openai, anthropic, bedrock")
@@ -456,6 +472,10 @@ def _write_github_outputs(
         f"required_next_steps_json={json.dumps(result.decision_contract['actions']['required_next_steps'])}",
         f"blocking_reasons_json={json.dumps(result.decision_contract['reasons']['blocking'])}",
         f"blocking_categories_json={json.dumps(result.decision_contract['decision']['blocking_categories'])}",
+        f"release_evidence_json={json.dumps(result.decision_contract['release_evidence'])}",
+        f"blocking_evidence_json={json.dumps(_evidence_items_by_status(result, {'failed', 'blocked', 'unhealthy', 'invalid', 'unsatisfied', 'expired'}))}",
+        f"review_evidence_json={json.dumps(_evidence_items_by_status(result, {'warning', 'degraded', 'missing', 'unknown', 'skipped', 'stale'}))}",
+        f"missing_required_evidence_json={json.dumps(_missing_required_evidence(result))}",
         f"accepted_risk_present={str(bool(result.bundle.summary.suppressed_findings)).lower()}",
         f"baseline_attribution_trusted={str(result.bundle.summary.baseline_attribution_trusted).lower()}",
         f"baseline_attribution_mode={result.bundle.summary.baseline_attribution_mode}",
@@ -469,6 +489,23 @@ def _write_github_outputs(
 
     with Path(github_output).open("a", encoding="utf-8") as handle:
         handle.write("\n".join(lines) + "\n")
+
+
+def _evidence_items_by_status(result: ActionResult, statuses: set[str]) -> list[dict[str, object]]:
+    return [
+        item
+        for item in result.decision_contract["release_evidence"]["items"]
+        if bool(item.get("required")) and str(item.get("status")) in statuses
+    ]
+
+
+def _missing_required_evidence(result: ActionResult) -> list[str]:
+    prefix = "required evidence is missing: "
+    return [
+        reason[len(prefix):]
+        for reason in result.decision.reasons
+        if reason.startswith(prefix)
+    ]
 
 
 def _parse_allowed_decisions(value: str) -> tuple[str, ...]:

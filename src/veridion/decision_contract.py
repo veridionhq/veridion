@@ -92,6 +92,14 @@ def build_decision_contract(
         "threats": _normalize_threats(threats),
         "evidence": _evidence_health(report_diagnostics),
         "signals": operational_signals,
+        "release_evidence": {
+            "summary": {
+                "total": bundle.summary.evidence_items,
+                "blocking": bundle.summary.blocking_evidence,
+                "review": bundle.summary.review_evidence,
+            },
+            "items": [item.to_dict() for item in bundle.evidence],
+        },
         "accepted_risk": {
             "present": bool(bundle.summary.suppressed_findings),
             "suppressed_findings_count": bundle.summary.suppressed_findings,
@@ -245,6 +253,9 @@ def _is_blocking_reason(reason: str, decision: str) -> bool:
             "the change introduces vulnerable dependencies",
             "accepted risk is present in the current change",
             "accepted risk governance metadata is incomplete",
+            "required evidence blocks release",
+            "required evidence needs review",
+            "required release evidence ",
         )
     )
 
@@ -405,6 +416,13 @@ def _blocking_categories(bundle: AnalysisBundle, decision: PolicyDecision) -> li
         categories.append("accepted_risk_expiring_soon")
     if bundle.summary.expired_suppressions:
         categories.append("expired_accepted_risk")
+    if bundle.summary.blocking_evidence:
+        categories.append("required_evidence_blocking")
+    if bundle.summary.review_evidence or any(
+        reason.startswith(("required evidence needs review", "required evidence is missing"))
+        for reason in decision.reasons
+    ):
+        categories.append("required_evidence_review")
     if bundle.trust_memory_signals.policy_override_count_30d >= 2:
         categories.append("policy_override_burden")
     if bundle.trust_memory_signals.accepted_risk_exception_count >= 5:

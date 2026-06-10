@@ -1,0 +1,52 @@
+name: Veridion Evidence Gateway
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  release-decision:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Veridion
+        run: python3 -m pip install "git+https://github.com/veridionhq/veridion.git@v1.0.4"
+
+      - name: Run tests
+        run: |
+          mkdir -p test-results
+          python3 -m pytest tests --junitxml=test-results/junit.xml
+
+      - name: Build release evidence
+        run: |
+          veridion-evidence ingest \
+            --producer examples/evidence/producers/junit.json \
+            --format junit \
+            --input test-results/junit.xml \
+            --output veridion-evidence.json \
+            --name "unit test suite" \
+            --required \
+            --repo "${{ github.repository }}" \
+            --pull-request "${{ github.event.pull_request.number }}" \
+            --commit "${{ github.sha }}"
+
+      - name: Validate release evidence
+        run: veridion-evidence validate --input veridion-evidence.json --summary
+
+      - name: Build PR diff
+        run: git diff "origin/${{ github.base_ref }}...HEAD" > pr.diff
+
+      - name: Run Veridion decision
+        uses: veridionhq/veridion@v1
+        with:
+          diff-path: pr.diff
+          evidence-paths: |
+            veridion-evidence.json
+          post-comment: "true"
+          github-token: ${{ secrets.GITHUB_TOKEN }}

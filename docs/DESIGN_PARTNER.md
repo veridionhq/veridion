@@ -37,6 +37,28 @@ For a first pilot:
 
 Avoid changing the core model immediately.
 
+## Expansion Pilot Loop
+
+After the dependency-risk decision is trusted, add one release signal through the
+Evidence Gateway.
+
+Good candidates:
+
+- JUnit or e2e test output
+- GitHub check runs
+- load test summary
+- incident or alert state
+- an internal platform validation result
+
+The design partner should be able to provide:
+
+- a producer manifest that declares the signal surface
+- one raw output file or API response sample
+- the expected release behavior when the evidence passes, fails, or is missing
+
+Success means the design partner can connect the signal without Veridion core
+code changing for that company.
+
 ## Trial Package
 
 Use these docs as the design-partner package:
@@ -46,6 +68,8 @@ Use these docs as the design-partner package:
 - [Design-Partner Trial Kit](TRIAL_KIT.md)
 - [Troubleshooting](TROUBLESHOOTING.md)
 - [Evaluation Checklist](EVALUATION_CHECKLIST.md)
+- [Evidence Gateway](EVIDENCE_GATEWAY.md)
+- [MVP Readiness](MVP_READINESS.md)
 - [V1 Canary Matrix](CANARY_MATRIX.md)
 - [V1 Release Readiness](V1_READINESS.md)
 
@@ -63,6 +87,7 @@ A successful early pilot should show at least one of these:
 - reduced noise from pre-existing issues
 - better explanation of why a change was blocked or conditioned
 - faster alignment between application and security reviewers
+- proof that one non-security release signal can be integrated through evidence rather than custom product work
 
 ## What To Avoid
 
@@ -84,6 +109,8 @@ Today Veridion can:
 - apply policy-driven release decisions
 - render clear PR comments with next actions
 - govern accepted-risk suppressions with visible exceptions and expiry
+- ingest native release evidence from external producers
+- validate producer manifests and evidence conformance
 
 The repo also contains broader release-governance capabilities such as Semgrep normalization, operational context, approval satisfaction, decision history, runtime gates, and hosted-control-plane foundations. Do not make those the first design-partner evaluation unless the dependency-risk wedge is already trusted.
 

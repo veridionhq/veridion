@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "producer": {
+    "id": "github-checks",
+    "display_name": "GitHub Check Runs",
+    "version": "1.0.0",
+    "owner": "veridion"
+  },
+  "emits": [
+    {
+      "evidence_type": "ci_check",
+      "statuses": ["passed", "failed", "warning", "unknown"],
+      "subject_keys": ["repo", "commit", "pull_request"]
+    }
+  ]
+}

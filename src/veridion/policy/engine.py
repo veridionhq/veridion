@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from veridion.analysis import AnalysisBundle
+from veridion.evidence.model import BLOCKING_STATUSES, REVIEW_STATUSES, NormalizedEvidence
 from veridion.normalize.common import SEVERITY_ORDER
 from veridion.policy.labels import APPROVAL_LABELS, VALID_POLICY_TRIGGERS
 from veridion.policy.model import PolicyConfig
@@ -39,13 +40,14 @@ def evaluate_release(bundle: AnalysisBundle, policy: PolicyConfig | None = None)
     reasons.extend(_accepted_risk_reasons(bundle))
     reasons.extend(_historical_context_reasons(bundle))
     reasons.extend(_runtime_context_reasons(bundle))
+    reasons.extend(_evidence_reasons(bundle, resolved_policy))
     reasons.extend(_change_surface_reasons(bundle))
     reasons.extend(_ownership_context_reasons(bundle))
     reasons.extend(_trust_baseline_reasons(bundle))
     reasons.extend(_trust_memory_reasons(bundle))
     decision = _apply_policy_decision(risk, bundle, resolved_policy, reasons)
     required_approvals, approval_triggers = _required_approvals(bundle, resolved_policy)
-    recommendations = _recommendations(bundle, risk, decision, required_approvals)
+    recommendations = _recommendations(bundle, risk, decision, required_approvals, resolved_policy)
     decision = _align_decision_with_release_gates(decision, resolved_policy, required_approvals, recommendations, reasons)
 
     return PolicyDecision(
@@ -75,6 +77,13 @@ def _apply_policy_decision(
         reasons.append(f"policy max_severity exceeded by introduced {strongest_introduced} finding(s)")
         return "NO GO"
 
+    evidence_blocker = _blocking_evidence_reason(bundle, policy)
+    if evidence_blocker:
+        reasons.append(evidence_blocker)
+        return "NO GO"
+
+    evidence_review = _review_evidence_reason(bundle, policy)
+
     if _is_v1_dependency_policy(policy):
         if (
             policy.require_complete_accepted_risk_metadata
@@ -89,6 +98,9 @@ def _apply_policy_decision(
                 reasons.append("accepted risk governance metadata is incomplete")
             return "CONDITIONAL GO"
         if not bundle.summary.baseline_attribution_trusted and bundle.summary.change_relevant_findings:
+            return "CONDITIONAL GO"
+        if evidence_review:
+            reasons.append(evidence_review)
             return "CONDITIONAL GO"
         if risk.features.introduced_high:
             return "CONDITIONAL GO"
@@ -128,6 +140,10 @@ def _apply_policy_decision(
         return "CONDITIONAL GO"
 
     if not bundle.summary.baseline_attribution_trusted and bundle.summary.change_relevant_findings:
+        return "CONDITIONAL GO"
+
+    if evidence_review:
+        reasons.append(evidence_review)
         return "CONDITIONAL GO"
 
     return risk.decision
@@ -204,6 +220,7 @@ def _recommendations(
     risk: RdiResult,
     decision: str,
     required_approvals: tuple[str, ...],
+    policy: PolicyConfig,
 ) -> tuple[str, ...]:
     recommendations: list[str] = []
     runtime = bundle.runtime_signals
@@ -320,6 +337,14 @@ def _recommendations(
         runtime.environment == "production" or runtime.blast_radius in {"high", "critical"}
     ):
         recommendations.append("Prefer canary, rolling, or blue-green rollout over a direct production release")
+
+    for item in _effective_required_evidence(bundle, policy):
+        if _evidence_blocks(item):
+            recommendations.append(f"Resolve required {item.name} evidence before release")
+        elif _evidence_needs_review(item):
+            recommendations.append(f"Review required {item.name} evidence before release")
+    for selector in _missing_required_evidence_selectors(bundle, policy):
+        recommendations.append(f"Provide required {selector} evidence before release")
 
     if runtime.deployment_window == "after_hours":
         if ownership_present and not ownership.oncall_defined:
@@ -550,6 +575,80 @@ def _runtime_context_reasons(bundle: AnalysisBundle) -> tuple[str, ...]:
         reasons.append(f"runtime rollback viability is {runtime.rollback_viability}")
 
     return tuple(reasons)
+
+
+def _evidence_reasons(bundle: AnalysisBundle, policy: PolicyConfig) -> tuple[str, ...]:
+    reasons: list[str] = []
+    for item in _effective_required_evidence(bundle, policy):
+        if _evidence_blocks(item):
+            reasons.append(f"required {item.name} evidence is {item.status}")
+        elif _evidence_needs_review(item):
+            reasons.append(f"required {item.name} evidence needs review: {item.status}")
+    for selector in _missing_required_evidence_selectors(bundle, policy):
+        reasons.append(f"required evidence is missing: {selector}")
+    return tuple(reasons)
+
+
+def _blocking_evidence_reason(bundle: AnalysisBundle, policy: PolicyConfig) -> str:
+    blocking = [item for item in _effective_required_evidence(bundle, policy) if _evidence_blocks(item)]
+    if not blocking:
+        return ""
+    if len(blocking) == 1:
+        return f"required evidence blocks release: {blocking[0].name} is {blocking[0].status}"
+    return f"{len(blocking)} required evidence item(s) block release"
+
+
+def _review_evidence_reason(bundle: AnalysisBundle, policy: PolicyConfig) -> str:
+    missing = _missing_required_evidence_selectors(bundle, policy)
+    if missing:
+        if len(missing) == 1:
+            return f"required evidence needs review: {missing[0]} is missing"
+        return f"{len(missing)} required evidence item(s) are missing"
+    review = [item for item in _effective_required_evidence(bundle, policy) if _evidence_needs_review(item)]
+    if not review:
+        return ""
+    if len(review) == 1:
+        return f"required evidence needs review: {review[0].name} is {review[0].status}"
+    return f"{len(review)} required evidence item(s) need review"
+
+
+def _effective_required_evidence(bundle: AnalysisBundle, policy: PolicyConfig | None) -> tuple[NormalizedEvidence, ...]:
+    required = [item for item in bundle.evidence if item.required]
+    selectors = policy.require_evidence if policy else ()
+    for item in bundle.evidence:
+        if item in required:
+            continue
+        if any(_evidence_matches_selector(item, selector) for selector in selectors):
+            required.append(item)
+    return tuple(required)
+
+
+def _missing_required_evidence_selectors(bundle: AnalysisBundle, policy: PolicyConfig | None) -> tuple[str, ...]:
+    if not policy:
+        return ()
+    missing = [
+        selector
+        for selector in policy.require_evidence
+        if not any(_evidence_matches_selector(item, selector) for item in bundle.evidence)
+    ]
+    return tuple(dict.fromkeys(missing))
+
+
+def _evidence_matches_selector(item: NormalizedEvidence, selector: str) -> bool:
+    evidence_type, _, name = selector.partition(":")
+    if item.evidence_type != evidence_type:
+        return False
+    if name and item.name != name:
+        return False
+    return True
+
+
+def _evidence_blocks(item: NormalizedEvidence) -> bool:
+    return item.status in BLOCKING_STATUSES
+
+
+def _evidence_needs_review(item: NormalizedEvidence) -> bool:
+    return item.status in REVIEW_STATUSES
 
 
 def _runtime_blocking_reason(bundle: AnalysisBundle) -> str:

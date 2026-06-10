@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "producer": {
+    "id": "junit",
+    "display_name": "JUnit XML",
+    "version": "1.0.0",
+    "owner": "veridion"
+  },
+  "emits": [
+    {
+      "evidence_type": "test_result",
+      "statuses": ["passed", "failed", "skipped", "unknown"],
+      "subject_keys": ["repo", "commit", "pull_request", "service", "environment"]
+    }
+  ]
+}

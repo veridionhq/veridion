@@ -2,8 +2,9 @@ from veridion.analysis import build_analysis_bundle
 from veridion.attribution import PullRequestMetadata
 from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
 from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals, TrustBaseline
+from veridion.evidence import NormalizedEvidence
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
-from veridion.policy import PolicyConfig, evaluate_release
+from veridion.policy import PolicyConfig, evaluate_release, parse_policy_yaml
 from veridion.report import render_pr_comment, render_pr_comment_result
 from veridion.report.pr_comment import (
     _is_primary_driver,
@@ -133,6 +134,53 @@ def test_render_pr_comment_v1_clean_dependency_go_hides_release_controls() -> No
     assert "runtime:" not in comment
     assert "blast radius" not in comment
     assert "### What must happen next" not in comment
+
+
+def test_render_pr_comment_includes_release_evidence_section() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        evidence=(
+            NormalizedEvidence(
+                evidence_id="junit:test_result:checkout e2e",
+                evidence_type="test_result",
+                category="test",
+                name="checkout e2e",
+                status="failed",
+                required=True,
+                summary="1 failing JUnit test",
+            ),
+        ),
+    )
+    decision = evaluate_release(bundle, PolicyConfig())
+
+    comment = render_pr_comment(bundle, decision)
+
+    assert "### Release Evidence" in comment
+    assert "- checkout e2e | test_result | failed | required | 1 failing JUnit test" in comment
+
+
+def test_render_pr_comment_includes_missing_policy_required_evidence() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+    )
+    decision = evaluate_release(
+        bundle,
+        parse_policy_yaml(
+            """
+require_evidence:
+  - test_result:checkout e2e
+"""
+        ),
+    )
+
+    comment = render_pr_comment(bundle, decision)
+
+    assert "### Release Evidence" in comment
+    assert "- test_result:checkout e2e | missing | required by policy" in comment
     assert "Run staging smoke tests" not in comment
 
 

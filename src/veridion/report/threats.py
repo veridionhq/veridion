@@ -87,6 +87,7 @@ def explain_change_relevant_threats(bundle: AnalysisBundle) -> tuple[ThreatExpla
         trust_profile_metadata=bundle.trust_profile_metadata,
         trust_baseline=bundle.trust_baseline,
         trust_memory_signals=bundle.trust_memory_signals,
+        evidence=bundle.evidence,
         suppression_report=bundle.suppression_report,
         change_context=bundle.change_context,
         baseline_comparison=type(bundle.baseline_comparison)(

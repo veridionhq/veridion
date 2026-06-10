@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "producer": {
+    "id": "datadog-runtime",
+    "display_name": "Datadog Runtime Signals",
+    "version": "1.0.0",
+    "owner": "platform"
+  },
+  "emits": [
+    {
+      "evidence_type": "runtime_signal",
+      "statuses": ["healthy", "degraded", "unhealthy", "unknown", "stale"],
+      "subject_keys": ["repo", "commit", "service", "environment"]
+    }
+  ]
+}

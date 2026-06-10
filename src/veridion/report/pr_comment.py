@@ -20,6 +20,7 @@ MAX_THREAT_ITEMS = 3
 MAX_CONTEXTUAL_RISK_ITEMS = 4
 MAX_REQUIRED_NEXT_STEP_ITEMS = 6
 MAX_ADVISORY_GUIDANCE_ITEMS = 4
+MAX_RELEASE_EVIDENCE_ITEMS = 5
 CLEAN_REVIEW_HEADLINE = "no new findings were introduced, but this release still requires approvals and operational checks"
 BASELINE_UNTRUSTED_HEADLINE = "baseline attribution is incomplete, so findings in changed files are being treated as change-relevant rather than proven introduced"
 BASELINE_UNVERIFIED_HEADLINE = "introduced-vs-existing attribution could not be verified for this run"
@@ -157,6 +158,9 @@ def render_pr_comment_result(
         )
     if key_context:
         lines.extend(_section("Key Context", key_context))
+    release_evidence = _format_release_evidence(bundle, decision)
+    if release_evidence:
+        lines.extend(_section("Release Evidence", release_evidence))
     if attribution_untrusted:
         lines.extend(_section("Baseline Attribution", _baseline_attribution_lines(bundle)))
         if report_diagnostics:
@@ -529,6 +533,37 @@ def _format_release_context(bundle: AnalysisBundle) -> tuple[str, ...]:
         items.append("release controls need human verification: " + ", ".join(control_parts))
 
     return tuple(items)
+
+
+def _format_release_evidence(bundle: AnalysisBundle, decision: PolicyDecision) -> tuple[str, ...]:
+    if not bundle.evidence and not _has_missing_required_evidence(decision):
+        return ()
+
+    items: list[str] = []
+    for evidence in bundle.evidence:
+        if not evidence.required and evidence.status not in {"failed", "blocked", "unhealthy", "invalid", "unsatisfied", "expired", "warning", "degraded", "missing", "unknown", "skipped", "stale"}:
+            continue
+        parts = [
+            evidence.name,
+            evidence.evidence_type,
+            evidence.status,
+        ]
+        if evidence.required:
+            parts.append("required")
+        if evidence.summary:
+            parts.append(evidence.summary)
+        items.append(" | ".join(parts))
+
+    for reason in decision.reasons:
+        prefix = "required evidence is missing: "
+        if reason.startswith(prefix):
+            items.append(reason[len(prefix):] + " | missing | required by policy")
+
+    return tuple(dict.fromkeys(items[:MAX_RELEASE_EVIDENCE_ITEMS]))
+
+
+def _has_missing_required_evidence(decision: PolicyDecision) -> bool:
+    return any(reason.startswith("required evidence is missing: ") for reason in decision.reasons)
 
 
 def _format_key_context(bundle: AnalysisBundle, *, compact: bool) -> tuple[str, ...]:
