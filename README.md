@@ -111,6 +111,7 @@ GitHub PR
 - [Evidence Gateway](docs/EVIDENCE_GATEWAY.md)
 - [Evidence Gateway Quickstart](docs/EVIDENCE_QUICKSTART.md)
 - [MVP Readiness](docs/MVP_READINESS.md)
+- [Demo Script](docs/DEMO_SCRIPT.md)
 - [Design Partner Guide](docs/DESIGN_PARTNER.md)
 - [Design-Partner Trial Kit](docs/TRIAL_KIT.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
