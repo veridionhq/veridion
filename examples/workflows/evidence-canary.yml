@@ -1,0 +1,115 @@
+name: Veridion Evidence Canary
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evidence-canary:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - failed-required-evidence
+          - missing-required-evidence
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Veridion
+        run: python3 -m pip install -e .
+
+      - name: Build policy
+        run: |
+          mkdir -p .veridion
+          cat > .veridion/policy.yaml <<'YAML'
+          policy_pack_id: evidence-canary
+          policy_pack_name: Evidence Canary
+          policy_pack_version: 1
+          policy_pack_owner: veridion
+          policy_rollout_stage: canary
+          max_severity: critical
+          allow_conditional: true
+          no_go_below_score: 60
+          conditional_go_below_score: 85
+          require_evidence:
+            - test_result:canary test suite
+          YAML
+
+      - name: Build diff
+        run: |
+          cat > pr.diff <<'DIFF'
+          diff --git a/README.md b/README.md
+          index 1111111..2222222 100644
+          --- a/README.md
+          +++ b/README.md
+          @@ -1 +1,2 @@
+           Veridion
+          +Evidence canary
+          DIFF
+
+      - name: Build failing evidence
+        if: matrix.scenario == 'failed-required-evidence'
+        run: |
+          mkdir -p test-results
+          cat > test-results/junit.xml <<'XML'
+          <testsuite name="canary" tests="1" failures="1" errors="0" skipped="0">
+            <testcase classname="Canary" name="test_release_signal">
+              <failure message="canary failure" />
+            </testcase>
+          </testsuite>
+          XML
+          veridion-evidence ingest \
+            --producer examples/evidence/producers/junit.json \
+            --format junit \
+            --input test-results/junit.xml \
+            --output veridion-evidence.json \
+            --name "canary test suite" \
+            --repo "${{ github.repository }}" \
+            --commit "${{ github.sha }}" \
+            --required \
+            --summary
+
+      - name: Run Veridion
+        run: |
+          evidence_args=()
+          if [[ -f veridion-evidence.json ]]; then
+            evidence_args+=(--evidence-path veridion-evidence.json)
+          fi
+          python3 -m veridion.action \
+            --diff-path pr.diff \
+            --policy-path .veridion/policy.yaml \
+            "${evidence_args[@]}" \
+            --comment-path veridion-pr-comment.md \
+            --json-output-path veridion-result.json \
+            --decision-contract-path veridion-decision.json
+
+      - name: Assert expected decision
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          decision = json.load(open("veridion-decision.json"))["decision"]["verdict"]
+          scenario = os.environ["SCENARIO"]
+          expected = {
+              "failed-required-evidence": "NO GO",
+              "missing-required-evidence": "CONDITIONAL GO",
+          }[scenario]
+          if decision != expected:
+              raise SystemExit(f"expected {expected}, got {decision}")
+          print(f"{scenario}: {decision}")
+          PY
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: evidence-canary-${{ matrix.scenario }}
+          path: |
+            veridion-decision.json
+            veridion-result.json
+            veridion-pr-comment.md
+            veridion-evidence.json
+          if-no-files-found: ignore

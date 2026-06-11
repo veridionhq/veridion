@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "veridion"
-version = "1.0.0rc1"
+version = "1.0.4"
 description = "Operational trust infrastructure for autonomous engineering systems."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -77,6 +77,7 @@ veridion-build-trust-profile = "veridion.action.trust_profile_builder:main"
 veridion-build-operational-context = "veridion.action.operational_context_builder:main"
 veridion-build-runtime-context = "veridion.action.runtime_context_builder:main"
 veridion-fetch-runtime-context = "veridion.action.runtime_live_fetch:main"
+veridion-evidence = "veridion.evidence.translate:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

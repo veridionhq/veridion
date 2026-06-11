@@ -6,7 +6,9 @@ Use this during design-partner trials or internal product reviews.
 
 - External install completed without custom plumbing
 - Bootstrap generated repo-local policy and suppression files
+- Workflow uses `veridionhq/veridion@v1.0.4`
 - Workflow ran successfully in a real pull request
+- Current and baseline Syft, Grype, and Trivy reports were present
 
 ## Decision Quality
 
@@ -33,6 +35,7 @@ Use this during design-partner trials or internal product reviews.
 - Introduced dependency risk was clearly separated from pre-existing noise
 - Baseline quality and attribution confidence were clear
 - Accepted-risk exceptions stayed auditable and used an explicit reason type
+- `veridion-decision.json` included report evidence and scan provenance
 - Nothing important disappeared silently
 
 ## Follow-Up Questions

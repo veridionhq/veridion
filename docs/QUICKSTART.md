@@ -9,7 +9,7 @@ The default v1 path is intentionally narrow: decide whether a pull request intro
 For a GitHub-hosted install:
 
 ```bash
-python3 -m pip install "git+https://github.com/veridionhq/veridion.git@main"
+python3 -m pip install "git+https://github.com/veridionhq/veridion.git@v1.0.4"
 ```
 
 Then the CLIs are available as:
@@ -58,9 +58,24 @@ This creates:
 
 - `.veridion/policy.yaml`
 - `.veridion/suppressions.json`
+- `.veridion/README.md`
 - `.github/workflows/veridion-rdi.yml`
 
 Use broader presets later only when you are ready to evaluate operational context and approval behavior.
+
+If Veridion is already installed and you only want to refresh the generated workflow, run:
+
+```bash
+veridion-bootstrap \
+  --preset dependency-risk-v1 \
+  --repo-id your-org/your-repo \
+  --service-id your-service \
+  --team-id your-team \
+  --only workflow \
+  --force
+```
+
+That leaves `.veridion/policy.yaml` and `.veridion/suppressions.json` untouched.
 
 ## 3. Choose or adjust the policy pack
 
@@ -128,6 +143,12 @@ Start from:
 
 The bootstrap command already creates `.github/workflows/veridion-rdi.yml`.
 
+The generated workflow uses:
+
+```yaml
+uses: veridionhq/veridion@v1.0.4
+```
+
 If you want to adapt the example manually, minimal edits are:
 
 - point `policy-path` at your chosen policy pack
@@ -179,3 +200,4 @@ Those are optional integrations after the basic PR decision loop is trusted.
 - `operational-context.json` is the portable integration contract for broader release-governance scenarios. Do not feed it into the v1 workflow until the dependency-risk loop is trusted.
 - GitHub is currently the reference v1 producer, not the only intended environment.
 - If you want the lowest-friction first install, do not edit the scoring model yet. Start with introduced dependency risk, baseline quality, and accepted-risk handling first.
+- If the first run is confusing, use [Troubleshooting](TROUBLESHOOTING.md) before changing policy.

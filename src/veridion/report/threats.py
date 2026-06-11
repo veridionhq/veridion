@@ -45,17 +45,18 @@ def explain_introduced_threats(bundle: AnalysisBundle) -> tuple[ThreatExplanatio
         if finding.finding_type == "dependency":
             location = _normalize_location(finding.location.path)
             severity = finding.severity.replace("-", " ")
-            package = " ".join(part for part in (finding.package_name, finding.package_version) if part)
-            subject = package or finding.rule_id
+            subject = _dependency_subject(finding)
+            identity = _dependency_identity(finding)
             # Keep severities separate so the rendered threat lines preserve the highest-risk grouping.
             # advisory_count is therefore per (package, location, severity), not a package-wide total.
-            key = (severity, "dependency", subject, location)
+            key = (severity, "dependency", identity, location)
             grouped_dependencies.setdefault(key, []).append(finding)
             continue
         explanation = _explain_finding(finding)
         explanations.append(explanation)
 
-    for (severity, _, subject, location), findings in grouped_dependencies.items():
+    for (severity, _, _, location), findings in grouped_dependencies.items():
+        subject = _dependency_subject(findings[0])
         explanations.append(_merge_dependency_explanations(findings, severity=severity, subject=subject, location=location))
 
     return tuple(
@@ -86,6 +87,7 @@ def explain_change_relevant_threats(bundle: AnalysisBundle) -> tuple[ThreatExpla
         trust_profile_metadata=bundle.trust_profile_metadata,
         trust_baseline=bundle.trust_baseline,
         trust_memory_signals=bundle.trust_memory_signals,
+        evidence=bundle.evidence,
         suppression_report=bundle.suppression_report,
         change_context=bundle.change_context,
         baseline_comparison=type(bundle.baseline_comparison)(
@@ -118,8 +120,7 @@ def _explain_finding(finding: NormalizedFinding) -> ThreatExplanation:
     severity = finding.severity.replace("-", " ")
 
     if finding.finding_type == "dependency":
-        package = " ".join(part for part in (finding.package_name, finding.package_version) if part)
-        subject = package or finding.rule_id
+        subject = _dependency_subject(finding)
         summary = _summarize_dependency_title(finding)
         why_not_safe = "the change introduces a vulnerable package version"
         return ThreatExplanation(
@@ -147,6 +148,22 @@ def _explain_finding(finding: NormalizedFinding) -> ThreatExplanation:
 def _summarize_dependency_title(finding: NormalizedFinding) -> str:
     title = (finding.title or finding.rule_id).strip()
     return _shorten_title(title)
+
+
+def _dependency_subject(finding: NormalizedFinding) -> str:
+    return " ".join(part for part in (finding.package_name, finding.package_version) if part) or finding.rule_id
+
+
+def _dependency_identity(finding: NormalizedFinding) -> str:
+    name = (finding.package_name or "").strip().lower()
+    version = (finding.package_version or "").strip()
+    if name and version:
+        return f"{name}@{version}"
+    if name:
+        return name
+    if version:
+        return version
+    return finding.rule_id.lower()
 
 
 def _summarize_code_or_config_finding(finding: NormalizedFinding) -> tuple[str, str]:

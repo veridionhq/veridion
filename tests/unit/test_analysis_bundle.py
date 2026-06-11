@@ -199,6 +199,7 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "accepted_risk_exception_count": 0,
             "mean_rdi_score_30d": None,
         },
+        "evidence": [],
         "suppression_report": {
             "suppressed_findings": [],
             "exceptions": [],
@@ -251,6 +252,9 @@ def test_analysis_bundle_to_dict_is_plain_and_stable() -> None:
             "ownership_risk_signals": 0,
             "trust_baseline_risk_signals": 0,
             "trust_memory_risk_signals": 0,
+            "evidence_items": 0,
+            "blocking_evidence": 0,
+            "review_evidence": 0,
             "by_severity": {},
             "introduced_by_severity": {},
             "by_finding_type": {},

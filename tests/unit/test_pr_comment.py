@@ -2,8 +2,9 @@ from veridion.analysis import build_analysis_bundle
 from veridion.attribution import PullRequestMetadata
 from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
 from veridion.context import HistoricalSignals, OwnershipSignals, RuntimeSignals, TrustBaseline
+from veridion.evidence import NormalizedEvidence
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
-from veridion.policy import PolicyConfig, evaluate_release
+from veridion.policy import PolicyConfig, evaluate_release, parse_policy_yaml
 from veridion.report import render_pr_comment, render_pr_comment_result
 from veridion.report.pr_comment import (
     _is_primary_driver,
@@ -129,9 +130,57 @@ def test_render_pr_comment_v1_clean_dependency_go_hides_release_controls() -> No
     assert "RDI Score" not in comment
     assert "- no introduced findings detected" in comment
     assert "### Key Context" not in comment
+    assert "### Decision Basis" not in comment
     assert "runtime:" not in comment
     assert "blast radius" not in comment
     assert "### What must happen next" not in comment
+
+
+def test_render_pr_comment_includes_release_evidence_section() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        evidence=(
+            NormalizedEvidence(
+                evidence_id="junit:test_result:checkout e2e",
+                evidence_type="test_result",
+                category="test",
+                name="checkout e2e",
+                status="failed",
+                required=True,
+                summary="1 failing JUnit test",
+            ),
+        ),
+    )
+    decision = evaluate_release(bundle, PolicyConfig())
+
+    comment = render_pr_comment(bundle, decision)
+
+    assert "### Release Evidence" in comment
+    assert "- checkout e2e | test_result | failed | required | 1 failing JUnit test" in comment
+
+
+def test_render_pr_comment_includes_missing_policy_required_evidence() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+    )
+    decision = evaluate_release(
+        bundle,
+        parse_policy_yaml(
+            """
+require_evidence:
+  - test_result:checkout e2e
+"""
+        ),
+    )
+
+    comment = render_pr_comment(bundle, decision)
+
+    assert "### Release Evidence" in comment
+    assert "- test_result:checkout e2e | missing | required by policy" in comment
     assert "Run staging smoke tests" not in comment
 
 
@@ -144,6 +193,11 @@ def test_render_pr_comment_v1_conditional_dependency_review_hides_release_contro
     assert "### 🟡 CONDITIONAL GO" in comment
     assert "**Confidence:** HIGH" in comment
     assert "RDI Score" not in comment
+    assert "### Decision Basis" in comment
+    assert "- action: decide whether this PR can proceed through the release gate" in comment
+    assert "- policy: introduced high dependency risk requires review before release" in comment
+    assert "- evidence: 1 introduced finding(s) were attributed to this change" in comment
+    assert "- control path: manual review required before release" in comment
     assert "### What must happen next" in comment
     assert "Review newly introduced dependencies and lockfile updates" in comment
     assert "Prioritize remediation for introduced high-severity findings" in comment
@@ -164,6 +218,9 @@ def test_render_pr_comment_v1_no_go_dependency_block_hides_release_controls() ->
     assert "### ❌ NO GO" in comment
     assert "**Confidence:** HIGH" in comment
     assert "RDI Score" not in comment
+    assert "### Decision Basis" in comment
+    assert "- policy: introduced critical dependency risk blocks release unless remediated or governed by policy" in comment
+    assert "- control path: block until remediation or approved policy change" in comment
     assert "### What must happen next" in comment
     assert "Block release until introduced risk is remediated or policy is adjusted" in comment
     assert "Review newly introduced dependencies and lockfile updates" in comment
@@ -214,6 +271,9 @@ def test_render_pr_comment_downgrades_to_change_relevant_when_baseline_is_missin
     comment = render_pr_comment(bundle, decision)
 
     assert "**Summary:** Change-relevant findings: 1 | Existing findings: 0 | Unattributed findings: 0 | Suppressed findings: 0 | Changed files: 1" in comment
+    assert "### Decision Basis" in comment
+    assert "- policy: baseline attribution must be repaired before changed-file findings can be treated as proven introduced risk" in comment
+    assert "- evidence: confidence is capped because baseline scanner evidence is unavailable" in comment
     assert "### Baseline Attribution" in comment
     assert "baseline scanner evidence is incomplete" in comment
     assert "### Change-relevant threats" in comment

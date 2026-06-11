@@ -2,6 +2,11 @@
 
 This guide is for engineers, platform teams, and design partners evaluating Veridion as a product rather than as a codebase.
 
+For the MVP, evaluation should prove two things:
+
+1. the narrow wedge is useful enough to install now
+2. the evidence layer is flexible enough to become the release decision operating layer later
+
 ## What Veridion Should Prove
 
 Veridion v1 is useful if it can answer one narrow question better than scanner output alone:
@@ -105,3 +110,38 @@ The most valuable feedback is concrete:
 - exception flows that felt too easy or too rigid
 
 That is the fastest path to improving decision trust.
+
+## Evidence Gateway Evaluation
+
+After the dependency-risk wedge is understood, test one non-security signal.
+
+Recommended first signal:
+
+- JUnit XML test results, or
+- GitHub check-runs JSON
+
+What to verify:
+
+- the producer manifest validates
+- raw output can be ingested into `veridion-evidence.json`
+- emitted evidence validates against the canonical catalog
+- producer conformance prevents undeclared evidence types or statuses
+- required failed evidence produces `NO GO`
+- required missing, skipped, stale, degraded, or unknown evidence produces `CONDITIONAL GO`
+- `veridion-decision.json` includes the normalized evidence under `release_evidence`
+
+Example:
+
+```bash
+veridion-evidence ingest \
+  --producer examples/evidence/producers/junit.json \
+  --format junit \
+  --input junit.xml \
+  --output veridion-evidence.json \
+  --required \
+  --summary
+```
+
+This is the expansion proof. It should show that Veridion can support
+organization-specific validation without adding a custom core feature for every
+company.

@@ -15,6 +15,7 @@ from veridion.context import (
     TrustMemorySignals,
     TrustProfileMetadata,
 )
+from veridion.evidence import NormalizedEvidence
 from veridion.normalize.models import NormalizedFinding
 from veridion.suppression import SuppressionReport, SuppressionRule, apply_suppressions
 from veridion.util import plain
@@ -55,6 +56,9 @@ class AnalysisSummary:
     ownership_risk_signals: int
     trust_baseline_risk_signals: int
     trust_memory_risk_signals: int
+    evidence_items: int
+    blocking_evidence: int
+    review_evidence: int
     by_severity: dict[str, int]
     introduced_by_severity: dict[str, int]
     by_finding_type: dict[str, int]
@@ -76,6 +80,7 @@ class AnalysisBundle:
     trust_profile_metadata: TrustProfileMetadata
     trust_baseline: TrustBaseline
     trust_memory_signals: TrustMemorySignals
+    evidence: tuple[NormalizedEvidence, ...]
     suppression_report: SuppressionReport
     change_context: ParsedChangeContext
     baseline_comparison: BaselineComparison
@@ -98,6 +103,7 @@ def build_analysis_bundle(
     trust_profile_metadata: TrustProfileMetadata | None = None,
     trust_baseline: TrustBaseline | None = None,
     trust_memory_signals: TrustMemorySignals | None = None,
+    evidence: tuple[NormalizedEvidence, ...] = (),
     suppression_rules: tuple[SuppressionRule, ...] = (),
     baseline_available: bool | None = None,
 ) -> AnalysisBundle:
@@ -139,6 +145,7 @@ def build_analysis_bundle(
         ownership_signals=resolved_ownership_signals,
         trust_baseline=resolved_trust_baseline,
         trust_memory_signals=resolved_trust_memory_signals,
+        evidence=evidence,
         suppression_report=suppression_report,
     )
 
@@ -154,6 +161,7 @@ def build_analysis_bundle(
         trust_profile_metadata=resolved_trust_profile_metadata,
         trust_baseline=resolved_trust_baseline,
         trust_memory_signals=resolved_trust_memory_signals,
+        evidence=evidence,
         suppression_report=suppression_report,
         change_context=change_context,
         baseline_comparison=baseline_comparison,
@@ -173,6 +181,7 @@ def _build_summary(
     ownership_signals: OwnershipSignals,
     trust_baseline: TrustBaseline,
     trust_memory_signals: TrustMemorySignals,
+    evidence: tuple[NormalizedEvidence, ...],
     suppression_report: SuppressionReport,
 ) -> AnalysisSummary:
     return AnalysisSummary(
@@ -206,6 +215,9 @@ def _build_summary(
         ownership_risk_signals=len(ownership_signals.elevated_signals),
         trust_baseline_risk_signals=len(trust_baseline.elevated_signals),
         trust_memory_risk_signals=len(trust_memory_signals.elevated_signals),
+        evidence_items=len(evidence),
+        blocking_evidence=len([item for item in evidence if item.is_blocking]),
+        review_evidence=len([item for item in evidence if item.requires_review]),
         by_severity=_count_by_severity(current_findings),
         introduced_by_severity=_count_by_severity(list(baseline_comparison.introduced)),
         by_finding_type=_count_by_finding_type(current_findings),

@@ -2,99 +2,133 @@
 
 ## What It Is
 
-Veridion is a GitHub-native release decision engine for introduced dependency risk.
+Veridion is the release decision operating layer.
 
-It determines whether a pull request introduced unacceptable dependency risk by combining:
+It starts with a narrow, painful wedge: deciding whether a GitHub pull request
+introduced unacceptable dependency risk. It expands through the Evidence Gateway:
+a semantic integration layer where tests, scanners, runtime signals, approvals,
+and custom platform checks can be declared, validated, normalized, and routed
+into one governed release decision.
 
-- SBOM and vulnerability signals
-- baseline comparison
-- introduced versus pre-existing attribution
-- simple policy-driven release decisions
-- accepted-risk governance
+## The Problem
 
-Security scanners produce signals. Veridion decides whether those signals should block or condition a release.
+Every engineering organization has release gates:
 
-## What Problem It Solves
+- security scans
+- unit, integration, e2e, smoke, load, and migration tests
+- runtime health and canary checks
+- incident and alert state
+- approval and exception workflows
+- internal platform validation
 
-Most tools stop at finding issues.
+No two organizations compose those gates the same way.
 
-Teams still need to decide:
+Most tools produce signals. Teams still need to decide:
 
-- did this PR introduce a vulnerable dependency?
-- was the risk already present in the baseline?
-- what policy applies to the introduced risk?
-- what needs to happen next?
+```text
+Should this change ship?
+If yes, under what conditions?
+If no, exactly why not?
+Who can approve or override it?
+What evidence supported the decision?
+```
 
-Veridion turns that into a decision artifact:
+## The Wedge
 
-- `GO`
-- `CONDITIONAL GO`
-- `NO GO`
+Veridion v1 answers one narrow question better than scanner output alone:
 
-Scanner and remediation systems focus on finding and fixing vulnerabilities.
-Veridion answers a different question:
+```text
+Did this PR introduce unacceptable dependency risk?
+```
 
-**Should this change safely reach production?**
+It does that by:
 
-## Why It Matters Now
+- consuming Syft, Grype, and Trivy reports
+- comparing current reports against baseline reports
+- separating introduced risk from existing backlog
+- applying explicit release policy
+- preserving accepted-risk visibility
+- producing `GO`, `CONDITIONAL GO`, or `NO GO`
+- emitting `veridion-decision.json` for automation
 
-AI is increasing:
+## The Expansion
 
-- code velocity
-- deployment frequency
-- dependency update volume
-- automated remediation
+The wedge creates natural pull for the broader product:
 
-Faster than organizations are increasing:
+```text
+Can we feed in e2e tests?
+Can we feed load test results?
+Can we feed PagerDuty incidents?
+Can we feed GitHub checks?
+Can our internal platform emit release evidence?
+```
 
-- governance
-- operational understanding
-- release trust
+The Evidence Gateway makes that possible without a custom feature for every
+company.
 
-That gap is the opportunity.
+Core primitives:
 
-The bottleneck is no longer just vulnerability discovery.
-It is deciding whether newly introduced dependency risk should block a release.
+- `veridion-evidence catalog`: canonical signal meaning
+- `veridion-evidence validate`: evidence contract validation
+- `veridion-evidence validate-producer`: adapter declaration validation
+- `veridion-evidence ingest`: translate, validate, conform, and write evidence
+- policy `require_evidence`: organization-defined release requirements
 
-## What V1 Does
+## The Moat
 
-- runs as a GitHub Action
-- normalizes Syft, Grype, and Trivy dependency signals
-- isolates introduced dependency risk from legacy vulnerability backlog
-- applies clear policy-driven release decisions
-- renders an explainable PR decision comment
-- governs accepted-risk suppressions with visible reason and expiry
+The hard-to-copy layer is not the `GO` or `NO GO` label.
 
-The implementation also supports broader release-governance signals, but those are expansion paths. The first product wedge is introduced dependency risk.
+The moat is the semantic integration fabric:
+
+```text
+producer manifest + raw output
+  -> translate
+  -> validate native evidence
+  -> check producer conformance
+  -> veridion-evidence.json
+  -> governed release decision
+```
+
+Once an organization’s release evidence flows through Veridion, the product
+becomes the system of record for release decision semantics.
 
 ## What Has Been Proven
 
-The current MVP has been validated in an external canary repository with:
+Current proof points:
 
-- a `GO` case
-- a `CONDITIONAL GO` case from real introduced dependency risk
-- a `NO GO` case from dependency risk
-- an accepted-risk `CONDITIONAL GO` case where suppressions remain visible
+- introduced dependency-risk `GO`
+- introduced dependency-risk `CONDITIONAL GO`
+- introduced dependency-risk `NO GO`
+- accepted-risk `CONDITIONAL GO`
+- native evidence contract
+- JUnit and GitHub check translators
+- producer manifests and conformance checks
+- policy-required evidence
+- evidence surfaced in PR comments and action outputs
+- evidence canary workflow for failed and missing required evidence
 
 ## Best Initial Buyer
 
-Early platform, security, DevOps, or engineering productivity teams that:
+Early platform, security, infrastructure, DevOps, or engineering productivity
+teams that:
 
+- already have release gates across multiple systems
 - already review risky PRs manually
-- already run dependency or container vulnerability scanners
-- want clearer release decisions
-- care about release governance
+- already run scanners or CI validation
+- want fewer bespoke release workflows
+- want decisions, approvals, and audit tied to evidence
 
 ## Category
 
 Veridion is not:
 
 - a scanner wrapper
-- an AI AppSec product
-- a vulnerability remediation tool
+- a test runner
+- an observability tool
+- a deployment platform
 - an AI code review tool
 - a generic DevOps dashboard
 
 Veridion is:
 
-**the release decision layer for introduced dependency risk**
+**the release decision operating layer for fragmented software delivery signals**

@@ -36,6 +36,8 @@ class PolicyConfig:
     # accepted_risk_renewal_pending, accepted_risk_expiring_soon, policy_override_burden,
     # accepted_risk_burden, active_incident, firing_alerts.
     require_security_owner_for: tuple[str, ...] = ()
+    # Evidence selectors use "evidence_type" or "evidence_type:name".
+    require_evidence: tuple[str, ...] = ()
     require_complete_accepted_risk_metadata: bool = False
     condition_on_release_controls: bool = True
     historical_instability_score_penalty: int = 0
@@ -103,6 +105,7 @@ def _policy_from_mapping(parsed: dict[str, object]) -> PolicyConfig:
         require_service_owner_for=_string_list(parsed.get("require_service_owner_for"), "require_service_owner_for"),
         require_sre_owner_for=_string_list(parsed.get("require_sre_owner_for"), "require_sre_owner_for"),
         require_security_owner_for=_string_list(parsed.get("require_security_owner_for"), "require_security_owner_for"),
+        require_evidence=_evidence_selector_list(parsed.get("require_evidence"), "require_evidence"),
         require_complete_accepted_risk_metadata=_as_bool(
             parsed.get("require_complete_accepted_risk_metadata"),
             default=False,
@@ -155,6 +158,24 @@ def _approval_string_list(value: object) -> tuple[str, ...]:
     if invalid:
         raise ValueError(f"require_approval_for contains unsupported value(s): {', '.join(invalid)}")
     return values
+
+
+def _evidence_selector_list(value: object, field_name: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a list")
+    values = tuple(as_string(item, default="").strip() for item in value if as_string(item))
+    invalid = tuple(item for item in values if not _valid_evidence_selector(item))
+    if invalid:
+        raise ValueError(f"{field_name} contains invalid selector(s): {', '.join(invalid)}")
+    return values
+
+
+def _valid_evidence_selector(value: str) -> bool:
+    if not value or value.startswith(":") or value.endswith(":"):
+        return False
+    return value.count(":") <= 1
 
 
 def _parse_scalar(value: str) -> object:

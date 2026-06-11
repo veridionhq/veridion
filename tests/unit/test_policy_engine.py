@@ -4,6 +4,7 @@ from veridion.analysis import build_analysis_bundle
 from veridion.change_context import parse_unified_diff
 from veridion.change_context.diff_parser import ParsedChangeContext, ParsedFileChange
 from veridion.context import HistoricalSignals, RuntimeSignals, TrustBaseline, derive_runtime_signals
+from veridion.evidence import NormalizedEvidence
 from veridion.normalize.models import NormalizedFinding, NormalizedLocation
 from veridion.policy import PolicyConfig, evaluate_release, parse_policy_yaml
 from veridion.suppression import parse_suppressions_payload
@@ -112,6 +113,82 @@ def test_parse_policy_yaml_accepts_equal_score_thresholds() -> None:
     policy = parse_policy_yaml("no_go_below_score: 75\nconditional_go_below_score: 75\n")
     assert policy.no_go_below_score == 75
     assert policy.conditional_go_below_score == 75
+
+
+def test_parse_policy_yaml_accepts_required_evidence_selectors() -> None:
+    policy = parse_policy_yaml(
+        """
+require_evidence:
+  - test_result
+  - ci_check:required checks
+"""
+    )
+
+    assert policy.require_evidence == ("test_result", "ci_check:required checks")
+
+
+def test_parse_policy_yaml_rejects_invalid_required_evidence_selectors() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match=r"require_evidence contains invalid selector"):
+        parse_policy_yaml(
+            """
+require_evidence:
+  - :unit tests
+"""
+        )
+
+
+def test_policy_required_missing_evidence_conditions_release() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+    )
+    policy = parse_policy_yaml(
+        """
+require_evidence:
+  - test_result:checkout e2e
+"""
+    )
+
+    decision = evaluate_release(bundle, policy)
+
+    assert decision.decision == "CONDITIONAL GO"
+    assert "required evidence is missing: test_result:checkout e2e" in decision.reasons
+    assert "required evidence needs review: test_result:checkout e2e is missing" in decision.reasons
+    assert "Provide required test_result:checkout e2e evidence before release" in decision.recommendations
+
+
+def test_policy_required_failed_evidence_blocks_release() -> None:
+    bundle = build_analysis_bundle(
+        current_findings=[],
+        baseline_findings=[],
+        change_context=ParsedChangeContext(files=()),
+        evidence=(
+            NormalizedEvidence(
+                evidence_id="junit:test_result:checkout e2e",
+                evidence_type="test_result",
+                category="test",
+                name="checkout e2e",
+                status="failed",
+                required=False,
+            ),
+        ),
+    )
+    policy = parse_policy_yaml(
+        """
+require_evidence:
+  - test_result:checkout e2e
+"""
+    )
+
+    decision = evaluate_release(bundle, policy)
+
+    assert decision.decision == "NO GO"
+    assert "required checkout e2e evidence is failed" in decision.reasons
+    assert "required evidence blocks release: checkout e2e is failed" in decision.reasons
+    assert "Resolve required checkout e2e evidence before release" in decision.recommendations
 
 
 def test_evaluate_release_applies_required_approvals_and_recommendations() -> None:

@@ -7,6 +7,14 @@ import json
 from pathlib import Path
 
 
+BOOTSTRAP_FILE_KEYS = {
+    "policy": ".veridion/policy.yaml",
+    "suppressions": ".veridion/suppressions.json",
+    "readme": ".veridion/README.md",
+    "workflow": ".github/workflows/veridion-rdi.yml",
+}
+
+
 POLICY_PACKS = {
     "dependency-risk-v1": """max_severity: critical
 allow_conditional: true
@@ -218,15 +226,20 @@ jobs:
 
       - name: Generate diff artifact
         shell: bash
+        env:
+          PR_BASE_SHA: ${{{{ github.event.pull_request.base.sha }}}}
+          PR_HEAD_SHA: ${{{{ github.event.pull_request.head.sha }}}}
         run: |
           git diff --no-ext-diff --unified=0 \
-            "${{{{ github.event.pull_request.base.sha }}}}...${{{{ github.event.pull_request.head.sha }}}}" > pr.diff
+            "${{PR_BASE_SHA}}...${{PR_HEAD_SHA}}" > pr.diff
 
       - name: Prepare baseline worktree
         shell: bash
+        env:
+          PR_BASE_SHA: ${{{{ github.event.pull_request.base.sha }}}}
         run: |
           mkdir -p artifacts
-          git worktree add --detach ../veridion-base "${{{{ github.event.pull_request.base.sha }}}}"
+          git worktree add --detach ../veridion-base "${{PR_BASE_SHA}}"
 
       - name: Run Trivy on current workspace
         uses: aquasecurity/trivy-action@0.35.0
@@ -281,20 +294,36 @@ jobs:
 
       - name: Write scan metadata
         shell: bash
+        env:
+          PR_HEAD_SHA: ${{{{ github.event.pull_request.head.sha }}}}
+          PR_BRANCH: ${{{{ github.head_ref || github.ref_name }}}}
         run: |
-          cat > veridion-scan-metadata.json <<EOF
-          {{
-            "commit_hash": "${{{{ github.event.pull_request.head.sha }}}}",
-            "commit_short": "$(git rev-parse --short '${{{{ github.event.pull_request.head.sha }}}}')",
-            "branch": "${{{{ github.head_ref || github.ref_name }}}}",
-            "scan_timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "scanner_versions": {{
-              "trivy_action": "aquasecurity/trivy-action@0.35.0",
-              "grype_action": "anchore/scan-action@v7",
-              "syft_action": "anchore/sbom-action/download-syft@v0"
-            }}
+          python3 - <<'PY'
+          import datetime
+          import json
+          import os
+          import subprocess
+
+          head_sha = os.environ["PR_HEAD_SHA"]
+          short_sha = subprocess.check_output(
+              ["git", "rev-parse", "--short", head_sha],
+              text=True,
+          ).strip()
+          payload = {{
+              "commit_hash": head_sha,
+              "commit_short": short_sha,
+              "branch": os.environ["PR_BRANCH"],
+              "scan_timestamp": datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+              "scanner_versions": {{
+                  "trivy_action": "aquasecurity/trivy-action@0.35.0",
+                  "grype_action": "anchore/scan-action@v7",
+                  "syft_action": "anchore/sbom-action/download-syft@v0",
+              }},
           }}
-          EOF
+          with open("veridion-scan-metadata.json", "w", encoding="utf-8") as handle:
+              json.dump(payload, handle, indent=2)
+              handle.write("\\n")
+          PY
 
       - name: Run Veridion RDI
         id: run-rdi
@@ -320,6 +349,22 @@ jobs:
           repository: ${{{{ github.repository }}}}
           pull-request-number: ${{{{ github.event.pull_request.number }}}}
 
+      - name: Show Veridion decision
+        shell: bash
+        run: |
+          echo "Decision: ${{{{ steps.run-rdi.outputs.decision }}}}"
+          echo "Confidence: ${{{{ steps.run-rdi.outputs.confidence }}}}"
+          echo "Gate status: ${{{{ steps.run-rdi.outputs.gate_status }}}}"
+          echo "Decision allowed: ${{{{ steps.run-rdi.outputs.decision_allowed }}}}"
+          echo "Decision contract: ${{{{ steps.run-rdi.outputs.decision_contract_path }}}}"
+
+      - name: Clean up baseline worktree
+        if: always()
+        shell: bash
+        run: |
+          git worktree remove ../veridion-base --force 2>/dev/null || true
+          rm -rf ../veridion-base
+
       - name: Upload RDI artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -332,11 +377,77 @@ jobs:
             veridion-scan-metadata.json
 """
 
+VERIDION_README_TEMPLATE = """# Veridion V1
+
+This repo is configured for Veridion v1 dependency-risk governance.
+
+Repo: {repo_id}
+Service: {service_id}
+Team: {team_id}
+Action ref: {action_ref}
+
+## What This Install Does
+
+- runs Syft, Grype, and Trivy on pull-request head and base
+- compares current findings against baseline findings
+- separates introduced dependency risk from existing backlog
+- posts a `GO`, `CONDITIONAL GO`, or `NO GO` PR comment
+- writes `veridion-decision.json` for automation and audit
+
+## Default V1 Rules
+
+```text
+Introduced CRITICAL dependency risk -> NO GO
+Introduced HIGH dependency risk -> CONDITIONAL GO
+No introduced severe dependency risk -> GO
+Accepted-risk suppressions present -> CONDITIONAL GO
+Baseline unavailable with findings -> CONDITIONAL GO with degraded confidence
+```
+
+## Accepted-Risk Suppressions
+
+Use `.veridion/suppressions.json` only for reviewed exceptions. Supported `reason_type` values:
+
+- `accepted_risk`
+- `false_positive`
+- `no_exposure`
+- `risk_reduction`
+
+For `risk_reduction`, include `reduced_severity` as `critical`, `high`, `medium`, or `low`.
+
+Example suppression:
+
+```json
+{{
+  "exception_id": "AR-2026-001",
+  "status": "approved",
+  "rule_id": "CVE-2024-1234",
+  "package_name": "urllib3",
+  "package_version": "1.25.8",
+  "reason_type": "accepted_risk",
+  "reason": "temporary exception until upstream vendor patch",
+  "owner": "platform-security",
+  "approved_by": "security-owner",
+  "ticket": "SEC-1234",
+  "created_at": "2026-05-13T00:00:00Z",
+  "reviewed_at": "2026-05-13T01:00:00Z",
+  "expires_on": "2026-06-30"
+}}
+```
+
+## First-Run Checks
+
+- If confidence is `MEDIUM`, inspect baseline attribution and report health in the PR comment.
+- If findings look newly introduced but should be existing, verify baseline reports came from the PR base commit.
+- If the action cannot comment, verify `pull-requests: write` permission.
+- Do not add operational context, hosted sinks, approval maps, or AI settings until this dependency-risk loop is trusted.
+"""
+
 
 def build_bootstrap_files(
     *,
     preset: str,
-    action_ref: str = "veridionhq/veridion@v1.0.0rc1",
+    action_ref: str = "veridionhq/veridion@v1.0.4",
     repo_id: str = "",
     service_id: str = "",
     team_id: str = "",
@@ -350,10 +461,17 @@ def build_bootstrap_files(
         "schema_version": 1,
         "suppressions": [],
     }
+    install_readme = VERIDION_README_TEMPLATE.format(
+        repo_id=repo_id or "unset",
+        service_id=service_id or "unset",
+        team_id=team_id or "unset",
+        action_ref=action_ref,
+    )
 
     return {
         ".veridion/policy.yaml": POLICY_PACKS[preset],
         ".veridion/suppressions.json": json.dumps(suppressions, indent=2) + "\n",
+        ".veridion/README.md": install_readme,
         ".github/workflows/veridion-rdi.yml": WORKFLOW_TEMPLATE.format(action_ref=action_ref),
     }
 
@@ -363,16 +481,30 @@ def write_bootstrap_files(
     output_root: str,
     files: dict[str, str],
     force: bool = False,
+    only: set[str] | None = None,
 ) -> None:
     """Write scaffolded files to disk."""
 
+    selected_paths = _selected_paths(only)
     root = Path(output_root)
     for relative_path, content in files.items():
+        if selected_paths is not None and relative_path not in selected_paths:
+            continue
         target = root / relative_path
         if target.exists() and not force:
-            raise RuntimeError(f"refusing to overwrite existing file: {target}")
+            raise RuntimeError(
+                f"refusing to overwrite existing file: {target}. "
+                "Use --force to overwrite generated files, or use --only workflow --force "
+                "to refresh only the GitHub Actions workflow."
+            )
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
+
+
+def _selected_paths(only: set[str] | None) -> set[str] | None:
+    if not only or "all" in only:
+        return None
+    return {BOOTSTRAP_FILE_KEYS[item] for item in only}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -381,11 +513,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Bootstrap Veridion install files from a starter preset")
     parser.add_argument("--preset", required=True, choices=sorted(POLICY_PACKS), help="Starter policy preset")
     parser.add_argument("--output-root", default=".", help="Repo root where files should be written")
-    parser.add_argument("--action-ref", default="veridionhq/veridion@v1.0.0rc1", help="Action ref to use in the workflow")
+    parser.add_argument("--action-ref", default="veridionhq/veridion@v1.0.4", help="Action ref to use in the workflow")
     parser.add_argument("--repo-id", default="", help="Optional stable repo identifier")
     parser.add_argument("--service-id", default="", help="Optional stable service identifier")
     parser.add_argument("--team-id", default="", help="Optional stable team identifier")
     parser.add_argument("--force", action="store_true", help="Overwrite existing scaffold files")
+    parser.add_argument(
+        "--only",
+        action="append",
+        choices=("all", "policy", "suppressions", "readme", "workflow"),
+        help=(
+            "Limit generated writes to one file group. Repeat for multiple groups. "
+            "Use --only workflow --force to refresh the workflow without changing policy or suppressions."
+        ),
+    )
     args = parser.parse_args(argv)
 
     files = build_bootstrap_files(
@@ -395,7 +536,7 @@ def main(argv: list[str] | None = None) -> int:
         service_id=args.service_id,
         team_id=args.team_id,
     )
-    write_bootstrap_files(output_root=args.output_root, files=files, force=args.force)
+    write_bootstrap_files(output_root=args.output_root, files=files, force=args.force, only=set(args.only or ()))
     return 0
 
 

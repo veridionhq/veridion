@@ -29,6 +29,11 @@ Should this change ship?
 
 That is a broader question than "is this vulnerable?"
 
+The broader product direction is a release decision operating layer: a semantic
+integration fabric where tests, scanners, runtime signals, approvals, and custom
+platform checks can be declared, validated, normalized, and routed into one
+governed decision contract.
+
 ## Product Wedge
 
 The v1 product is a GitHub-native release decision engine for introduced dependency risk.
@@ -103,11 +108,18 @@ GitHub PR
 - [Quickstart](docs/QUICKSTART.md)
 - [Evaluation Guide](docs/EVALUATION_GUIDE.md)
 - [Evaluation Checklist](docs/EVALUATION_CHECKLIST.md)
+- [Evidence Gateway](docs/EVIDENCE_GATEWAY.md)
+- [Evidence Gateway Quickstart](docs/EVIDENCE_QUICKSTART.md)
+- [MVP Readiness](docs/MVP_READINESS.md)
+- [Demo Script](docs/DEMO_SCRIPT.md)
 - [Design Partner Guide](docs/DESIGN_PARTNER.md)
+- [Design-Partner Trial Kit](docs/TRIAL_KIT.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [One-Pager](docs/ONE_PAGER.md)
 - [V1 Release Governance Wedge](docs/roadmap/V1_RELEASE_GOVERNANCE.md)
 - [Product Security Pipeline Insights](docs/roadmap/PRODSEC_PIPELINE_INSIGHTS.md)
 - [V1 Canary Matrix](docs/CANARY_MATRIX.md)
+- [V1 Release Readiness](docs/V1_READINESS.md)
 - [Automation Guide](docs/AUTOMATION_GUIDE.md)
 - [Testing Strategy](docs/TESTING_STRATEGY.md)
 - [Support](SUPPORT.md)
@@ -123,10 +135,11 @@ Expansion material exists for later policy rollout, event sinks, hosted, and non
 V1 design-partner readiness:
 
 - Keep the public product wedge narrow: introduced dependency risk governance
+- Prove the expansion path through the Evidence Gateway, not bespoke customer features
 - Make the GitHub Action install path boring and reproducible
 - Keep default decisions clear, explainable, and conservative
 - Use Syft, Grype, and Trivy as the primary v1 signal sources
-- Treat hosted control-plane, runtime, AI, and adapter work as expansion paths
+- Treat hosted control-plane, runtime, and AI work as expansion paths
 
 ## Current State
 
@@ -142,6 +155,9 @@ The current v1 path includes:
 - Accepted-risk lifecycle states, renewals, and expiry pressure in the decision contract
 - A narrow `dependency-risk-v1` policy pack for first installs
 - Smoke and PR-commenting workflow examples aligned to the v1 wedge
+- A native `veridion-evidence.json` contract for release evidence
+- `veridion-evidence` commands for catalog, validation, producer manifests, translation, and ingestion
+- Seed producer manifests and an Evidence Gateway workflow example for non-security release evidence
 
 The repo also contains expansion capabilities such as Semgrep normalization, operational context, approval satisfaction, decision history, policy simulation, runtime gates, hosted-service foundations, and GitLab adapters. Those are deliberately not the v1 default.
 
@@ -161,7 +177,7 @@ For the shortest path to a first install:
 1. Install Veridion from GitHub in the repo where you want to bootstrap:
 
 ```bash
-python3 -m pip install "git+https://github.com/veridionhq/veridion.git@main"
+python3 -m pip install "git+https://github.com/veridionhq/veridion.git@v1.0.4"
 ```
 
 2. Run:

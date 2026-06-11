@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Veridion | Release Decisions For Introduced Dependency Risk</title>
-  <meta name="description" content="Veridion is a GitHub-native release decision engine that determines whether a pull request introduced unacceptable dependency risk." />
-  <meta property="og:title" content="Veridion | Release Decisions For Introduced Dependency Risk" />
-  <meta property="og:description" content="Scanner signals are noisy. Veridion decides whether introduced dependency risk should block a release." />
+  <title>Veridion | The Release Decision Operating Layer</title>
+  <meta name="description" content="Veridion normalizes release evidence from tests, scanners, runtime systems, approvals, and custom infrastructure into one governed GO, CONDITIONAL GO, or NO GO decision." />
+  <meta property="og:title" content="Veridion | The Release Decision Operating Layer" />
+  <meta property="og:description" content="Every organization validates releases differently. Veridion turns those signals into one consistent release decision contract." />
   <meta property="og:type" content="website" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -40,12 +40,12 @@
     <div class="hero-copy">
       <div class="hero-badge">
         <span class="badge-dot" aria-hidden="true"></span>
-        Introduced Dependency Risk Governance
+        Release Decision Operating Layer
       </div>
-      <h1>Did this PR<br>introduce risk?</h1>
+      <h1>Every release signal.<br>One decision.</h1>
       <p class="hero-sub">
-        Veridion is a GitHub-native release decision engine.
-        It compares dependency risk against a baseline, decides whether the PR should proceed, and explains what happens next.
+        Veridion normalizes evidence from tests, scanners, runtime systems, approvals, and custom infrastructure into a governed release decision contract.
+        Start with introduced dependency risk. Expand into the release decision OS.
       </p>
       <div class="hero-actions">
         <a href="/docs/evaluation" class="btn btn--primary">
@@ -71,66 +71,68 @@
   </div>
 </section>
 
-<!-- SCANNER BAR -->
-<div class="scanner-bar" aria-label="Supported scanners">
-  <span class="scanner-label">Ingests</span>
+<!-- SIGNAL BAR -->
+<div class="scanner-bar" aria-label="Supported release evidence sources">
+  <span class="scanner-label">Normalizes</span>
   <ul class="scanner-list" role="list">
+    <li>JUnit</li>
+    <li>GitHub Checks</li>
     <li>Grype</li>
     <li>Syft</li>
     <li>Trivy</li>
-    <li>Baseline reports</li>
-    <li>GitHub Actions</li>
+    <li>Runtime signals</li>
+    <li>Custom producers</li>
   </ul>
 </div>
 
 <!-- MAIN CONTENT -->
 <main>
 
-  <!-- THE WEDGE -->
+  <!-- THE OS -->
   <section class="content-section reveal" aria-labelledby="wedge-heading">
     <div class="section-meta">
-      <p class="eyebrow">The wedge</p>
-      <h2 id="wedge-heading">The decision layer,<br>not the scanner layer.</h2>
-      <p class="section-intro">Most tools return vulnerability lists and leave the release call to humans. Veridion closes that gap for introduced dependency risk.</p>
+      <p class="eyebrow">The OS layer</p>
+      <h2 id="wedge-heading">The product is the<br>release evidence fabric.</h2>
+      <p class="section-intro">No two organizations validate releases the same way. Veridion gives every team one way to declare, ingest, validate, and govern the signals that decide whether software ships.</p>
     </div>
     <div class="cards-3">
       <article class="card reveal-child">
         <p class="card-num" aria-hidden="true">01</p>
-        <h3>What changed?</h3>
-        <p>Dependency and lockfile changes, package metadata, SBOM deltas, and vulnerability reports are compared directly against the baseline.</p>
+        <h3>Declare producers</h3>
+        <p>Each adapter declares the evidence types and statuses it can emit. Internal platforms, test systems, scanners, and runtime tools all speak through the same vocabulary.</p>
       </article>
       <article class="card reveal-child">
         <p class="card-num" aria-hidden="true">02</p>
-        <h3>What risk was introduced?</h3>
-        <p>Veridion isolates vulnerable dependencies introduced <em>in this PR</em> from pre-existing backlog. Teams reason about the current change, not the entire historical scanner backlog.</p>
+        <h3>Ingest evidence</h3>
+        <p>Raw outputs become native Veridion evidence. Translators can be first-party or owned by your platform team in whatever language fits the source system.</p>
       </article>
       <article class="card reveal-child">
         <p class="card-num" aria-hidden="true">03</p>
-        <h3>What should happen next?</h3>
-        <p>A clear release decision, confidence level, and required next steps. A decision memo posted to the PR, not a raw finding dump.</p>
+        <h3>Decide consistently</h3>
+        <p>Validated evidence flows into policy and produces GO, CONDITIONAL GO, or NO GO with required approvals, next steps, and a machine-readable decision contract.</p>
       </article>
     </div>
   </section>
 
   <!-- STATEMENT BAND -->
   <div class="statement reveal">
-    <p>Tools detect problems.<br>Veridion decides whether they <strong>block release.</strong></p>
+    <p>Every company has different gates.<br>Veridion gives them <strong>consistent meaning.</strong></p>
   </div>
 
   <section class="content-section reveal" aria-labelledby="difference-heading">
     <div class="section-meta">
       <p class="eyebrow">Category</p>
-      <h2 id="difference-heading">Not vulnerability scanning.<br>Release governance.</h2>
-      <p class="section-intro">Security findings matter, but the product is the release decision. Veridion is not a scanner or a remediation tool.</p>
+      <h2 id="difference-heading">Not another gate.<br>The layer above gates.</h2>
+      <p class="section-intro">Security findings, tests, runtime health, approvals, and compliance checks are signals. Veridion is the semantic layer that turns those signals into release governance.</p>
     </div>
     <div class="cards-2">
       <article class="card reveal-child">
-        <h3>Security tools ask</h3>
-        <p>Is this vulnerable? What package is affected? What severity did the scanner report?</p>
+        <h3>Existing systems say</h3>
+        <p>The test failed. The check is pending. The scanner found a CVE. The incident is active. The approval is stale.</p>
       </article>
       <article class="card reveal-child">
         <h3>Veridion asks</h3>
-        <p>Did this PR introduce unacceptable dependency risk, and should that block, condition, or allow the release?</p>
+        <p>Does this evidence block, condition, or allow this specific release under the organization’s policy?</p>
       </article>
     </div>
   </section>
@@ -139,25 +141,25 @@
   <section class="content-section reveal" aria-labelledby="why-heading">
     <div class="section-meta">
       <p class="eyebrow">Why now</p>
-      <h2 id="why-heading">Dependency changes move fast.<br>Release trust lags.</h2>
+      <h2 id="why-heading">Release validation is fragmented.<br>Automation needs trust.</h2>
     </div>
     <div class="cards-2">
       <article class="tension-card tension-card--accel reveal-child">
         <p class="tension-label">The acceleration</p>
         <ul role="list">
-          <li>Automated dependency updates at higher volume</li>
-          <li>Container and package churn across many services</li>
-          <li>Scanner output mixed with old vulnerability backlog</li>
-          <li>Release frequency outpacing manual triage capacity</li>
+          <li>Every service has different tests, checks, owners, and runtime gates</li>
+          <li>Internal platforms produce custom validation signals</li>
+          <li>Security, CI, SRE, and compliance tools disagree on language</li>
+          <li>Release velocity is outpacing manual decision coordination</li>
         </ul>
       </article>
       <article class="tension-card tension-card--control reveal-child">
         <p class="tension-label">The control problem</p>
         <ul role="list">
-          <li>Which vulnerable dependency is actually new?</li>
-          <li>Was it already present in the baseline?</li>
-          <li>Does policy require a block or review?</li>
-          <li>What should the reviewer do next?</li>
+          <li>Which signals are required for this release?</li>
+          <li>Which producer emitted the evidence?</li>
+          <li>Is the evidence valid, fresh, and tied to this commit?</li>
+          <li>Does policy require a block, review, or approval?</li>
         </ul>
       </article>
     </div>
@@ -166,36 +168,36 @@
   <!-- HOW IT WORKS -->
   <section class="content-section reveal" aria-labelledby="how-heading">
     <div class="section-meta">
-      <p class="eyebrow">How it works</p>
-      <h2 id="how-heading">One action.<br>One decision.</h2>
+      <p class="eyebrow">Evidence gateway</p>
+      <h2 id="how-heading">Declare. Ingest.<br>Validate. Decide.</h2>
     </div>
     <ol class="steps" role="list">
       <li class="step reveal-child">
         <div class="step-num" aria-hidden="true">1</div>
         <div class="step-body">
-          <h3>Scan on every PR</h3>
-          <p>Syft, Grype, and Trivy run against both head and baseline. One bootstrap command generates the workflow with policy and accepted-risk support.</p>
+          <h3>Catalog signal meaning</h3>
+          <p>Canonical statuses and evidence types keep every adapter aligned. Failed, missing, degraded, stale, and unsatisfied mean the same thing across producers.</p>
         </div>
       </li>
       <li class="step reveal-child">
         <div class="step-num" aria-hidden="true">2</div>
         <div class="step-body">
-          <h3>Normalize, deduplicate, attribute</h3>
-          <p>Scanner output is unified into one schema. Cross-scanner dependency duplicates collapse. Each finding is attributed as introduced or pre-existing against the baseline.</p>
+          <h3>Declare producer capability</h3>
+          <p>Producer manifests describe who emits a signal, which evidence types are possible, which statuses can appear, and which subject identifiers attach to the release.</p>
         </div>
       </li>
       <li class="step reveal-child">
         <div class="step-num" aria-hidden="true">3</div>
         <div class="step-body">
-          <h3>Score against your policy</h3>
-          <p>Introduced severity, baseline quality, accepted risk, and policy produce a deterministic release verdict.</p>
+          <h3>Ingest and conform</h3>
+          <p>Raw outputs from JUnit, GitHub checks, scanners, runtime systems, and custom tools are translated, validated, and checked against the producer manifest.</p>
         </div>
       </li>
       <li class="step reveal-child">
         <div class="step-num" aria-hidden="true">4</div>
         <div class="step-body">
-          <h3>Decision posted to the PR</h3>
-          <p>GO, CONDITIONAL GO, or NO GO — with primary drivers and next steps. A decision memo, not a raw scanner log.</p>
+          <h3>Emit a decision contract</h3>
+          <p>Policy evaluates the normalized evidence and emits a stable contract for PR comments, deployment gates, approval routing, audit, and downstream automation.</p>
         </div>
       </li>
     </ol>
@@ -221,16 +223,16 @@
           <span class="decision-verdict decision-verdict--conditional">CONDITIONAL GO</span>
           <span class="decision-score" aria-label="Score 74">74</span>
         </div>
-        <p class="decision-scenario">Code risk introduced</p>
-        <p class="decision-body">Introduced code risk pushes the change into a controlled release path instead of an automatic block.</p>
+        <p class="decision-scenario">Required load test missing</p>
+        <p class="decision-body">The producer declared the load test as required, but no fresh evidence was emitted for this commit. Release requires review.</p>
       </article>
       <article class="decision-card decision-card--nogo reveal-child">
         <div class="decision-top">
           <span class="decision-verdict decision-verdict--nogo">NO GO</span>
           <span class="decision-score" aria-label="Score 38">38</span>
         </div>
-        <p class="decision-scenario">Dependency + IAM + ingress</p>
-        <p class="decision-body">Critical introduced dependency risk. Release blocked pending remediation or accepted-risk review.</p>
+        <p class="decision-scenario">Critical dependency + failed e2e</p>
+        <p class="decision-body">Introduced dependency risk and required validation failure both block release until remediation or approved exception.</p>
       </article>
       <article class="decision-card decision-card--conditional reveal-child">
         <div class="decision-top">
@@ -247,20 +249,20 @@
   <section class="content-section reveal" aria-labelledby="mvp-heading">
     <div class="section-meta">
       <p class="eyebrow">Current product</p>
-      <h2 id="mvp-heading">What the MVP<br>already proves.</h2>
+      <h2 id="mvp-heading">Start narrow.<br>Expand by evidence.</h2>
     </div>
     <div class="cards-3">
       <article class="card reveal-child">
-        <h3>Introduced dependency intelligence</h3>
-        <p>SBOM normalization, vulnerability deduplication, baseline comparison, and deterministic release decisioning. Legacy debt stays separate from current PR risk.</p>
+        <h3>Introduced dependency risk</h3>
+        <p>The first install path stays focused: Syft, Grype, Trivy, baseline comparison, accepted-risk metadata, and deterministic release decisioning for PRs.</p>
       </article>
       <article class="card reveal-child">
-        <h3>Policy that reads plainly</h3>
-        <p>Critical introduced dependency risk can block. High introduced dependency risk can require review. Accepted-risk exceptions stay visible with owner, reason, and expiry.</p>
+        <h3>Evidence gateway</h3>
+        <p>Native evidence JSON, producer manifests, catalog validation, conformance checks, and local translators let teams bring their own release signals without custom product work.</p>
       </article>
       <article class="card reveal-child">
         <h3>Machine-readable decisions</h3>
-        <p>GitHub Actions is the current wedge. The action also emits a stable decision contract so downstream workflow steps can gate without scraping PR prose.</p>
+        <p>Every run emits `veridion-decision.json`, a stable contract for workflow gates, approval routing, accepted-risk review, audit, and internal platform automation.</p>
       </article>
     </div>
   </section>
@@ -273,12 +275,12 @@
     </div>
     <div class="cards-2">
       <article class="card reveal-child">
-        <h3>Output should feel like a decision memo</h3>
-        <p>Introduced dependencies, vulnerability severity, baseline status, confidence, and next steps should be scannable without opening a single raw scanner log.</p>
+        <h3>Signals should have consistent meaning</h3>
+        <p>Adapter authors should be able to declare a producer, ingest raw output, validate native evidence, and prove conformance before the decision engine sees it.</p>
       </article>
       <article class="card reveal-child">
-        <h3>Accepted risk should stay visible</h3>
-        <p>A suppression should never erase the truth. It should downgrade cleanly, stay visible in the PR comment, and preserve accountability with an expiry date.</p>
+        <h3>Output should feel like a decision memo</h3>
+        <p>Dependency risk, test evidence, baseline quality, accepted risk, approvals, confidence, and next steps should be scannable without opening raw tool logs.</p>
       </article>
     </div>
     <div class="doc-links reveal-child" role="list">
@@ -298,6 +300,10 @@
         Operational Context
         <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2.5 7h9M8 3.5 11.5 7 8 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </a>
+      <a href="/docs/evidence-gateway" class="doc-link" role="listitem">
+        Evidence Gateway
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2.5 7h9M8 3.5 11.5 7 8 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
     </div>
   </section>
 
@@ -305,8 +311,8 @@
   <section class="cta-section reveal" id="quickstart" aria-labelledby="cta-heading">
     <div class="cta-inner">
       <div class="cta-glow" aria-hidden="true"></div>
-      <h2 id="cta-heading">Start with evaluation.<br>Move to live install when it earns it.</h2>
-      <p>Read the evaluation guide if you want to test the wedge with real PR scenarios. Use the bootstrap command when you are ready to run Veridion in a live repository and judge introduced dependency risk.</p>
+      <h2 id="cta-heading">Start with dependency risk.<br>Bring the rest of your signals next.</h2>
+      <p>Use the quickstart for the first PR gate. Use the Evidence Gateway when your platform team is ready to connect tests, checks, runtime metrics, approvals, and internal validation systems.</p>
       <div class="cta-code" role="group" aria-label="Bootstrap command">
         <code id="cta-code-text">veridion-bootstrap --preset dependency-risk-v1</code>
         <button class="copy-btn" id="copy-btn" aria-label="Copy command to clipboard" title="Copy">
@@ -322,6 +328,9 @@
         <a href="/docs/quickstart" class="btn btn--ghost btn--large">
           Read the quickstart
         </a>
+        <a href="/docs/evidence-gateway" class="btn btn--ghost btn--large">
+          Evidence gateway
+        </a>
       </div>
     </div>
   </section>
@@ -332,7 +341,7 @@
 <footer class="footer">
   <div class="footer-inner">
     <span class="footer-brand">Veridion</span>
-    <span class="footer-tagline">Scanner signals are noisy. Veridion makes release decisions explainable.</span>
+    <span class="footer-tagline">Release signals are fragmented. Veridion gives them consistent meaning.</span>
     <a href="https://github.com/veridionhq/veridion" class="footer-gh" target="_blank" rel="noopener noreferrer">
       GitHub
       <svg width="11" height="11" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2.5 7h9M8 3.5 11.5 7 8 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -346,26 +355,28 @@
 
   // ── Terminal animation ──────────────────────────────────────────
   var LINES = [
-    { t: '## Release Decision', c: 'h2' },
+    { t: '## Release Decision Contract', c: 'h2' },
     { t: '', c: 'blank' },
     { t: 'Decision:   CONDITIONAL GO', c: 'decision-cond' },
-    { t: 'RDI Score:  74', c: 'kv' },
+    { t: 'Gate:       review', c: 'kv' },
     { t: 'Confidence: HIGH', c: 'kv' },
     { t: '', c: 'blank' },
-    { t: 'Summary: Introduced: 1 | Existing: 47 | Suppressed: 0 | Files: 2', c: 'summary' },
+    { t: 'Evidence: tests=missing | dependency=high | approvals=unsatisfied', c: 'summary' },
+    { t: '', c: 'blank' },
+    { t: '### Evidence Gateway', c: 'h3' },
+    { t: '- producer: junit declared test_result evidence', c: 'li' },
+    { t: '- producer: trivy declared security_finding evidence', c: 'li' },
+    { t: '- conformance: passed for all emitted statuses', c: 'li' },
     { t: '', c: 'blank' },
     { t: '### Primary Drivers', c: 'h3' },
-    { t: '- high-severity vulnerability introduced in runtime dependency', c: 'li' },
-    { t: '- baseline reports did not contain this finding', c: 'li' },
-    { t: '- policy no_go threshold: 60 (score: 74)', c: 'li' },
-    { t: '', c: 'blank' },
-    { t: '### Required Approvals', c: 'h3' },
-    { t: '- Security owner', c: 'li' },
+    { t: '- required checkout e2e evidence is missing', c: 'li' },
+    { t: '- introduced high dependency risk requires review', c: 'li' },
+    { t: '- security owner approval is unsatisfied', c: 'li' },
     { t: '', c: 'blank' },
     { t: '### Required Next Steps', c: 'h3' },
-    { t: '- Prioritize remediation of introduced findings', c: 'li' },
-    { t: '- Upgrade the package or approve a time-bound exception', c: 'li' },
-    { t: '- Keep the baseline reports attached to preserve attribution', c: 'li' },
+    { t: '- Upload fresh e2e test evidence for this commit', c: 'li' },
+    { t: '- Review introduced dependency risk', c: 'li' },
+    { t: '- Capture security owner approval before release', c: 'li' },
   ];
 
   var terminalBody = document.getElementById('terminal-body');
