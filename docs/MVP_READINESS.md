@@ -127,8 +127,8 @@ Do not prioritize:
 - [ ] `veridion-evidence validate-producer` validates adapter declarations
 - [ ] `veridion-evidence ingest` runs the full local ingestion lifecycle
 - [ ] At least one non-security signal, such as JUnit or GitHub checks, can affect the release decision
-- [ ] Evidence canary workflow proves failed required evidence -> `NO GO`
-- [ ] Evidence canary workflow proves missing required evidence -> `CONDITIONAL GO`
+- [x] Evidence canary workflow proves failed required evidence -> `NO GO`
+- [x] Evidence canary workflow proves missing required evidence -> `CONDITIONAL GO`
 - [ ] A platform engineer can write a custom producer without changing Veridion core code
 - [ ] Design partners understand both the narrow wedge and the larger release-decision OS thesis
 

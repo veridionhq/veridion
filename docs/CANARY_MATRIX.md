@@ -4,6 +4,15 @@ This matrix is the acceptance check for the v1 dependency-risk wedge.
 
 The canary repository is wired to `veridion@v1.0.4` and uses the `dependency-risk-v1` policy. The goal is to keep the product behavior narrow, explainable, and aligned with the v1 rules.
 
+Evidence Gateway canary coverage is tracked separately because it exercises the
+release-decision OS expansion path on `veridion@develop`.
+
+Latest evidence canary run:
+
+- `veridion-canary` run: https://github.com/veridionhq/veridion-canary/actions/runs/27356193838
+- commit: `f41946c`
+- result: success
+
 ## Expected Outcomes
 
 | Scenario | Branch | Expected decision | Why |
@@ -12,6 +21,13 @@ The canary repository is wired to `veridion@v1.0.4` and uses the `dependency-ris
 | High dependency risk | `smoke/conditional` | `CONDITIONAL GO` | Introduces high-severity dependency risk, but no critical dependency risk |
 | Critical dependency risk | `smoke/no-go` | `NO GO` | Introduces critical dependency risk |
 | Accepted risk | `smoke/accepted-risk` | `CONDITIONAL GO` | Findings are suppressed by accepted-risk policy, but remain visible |
+
+## Evidence Gateway Outcomes
+
+| Scenario | Workflow | Expected decision | Why |
+| --- | --- | --- | --- |
+| Failed required evidence | `evidence-canary` | `NO GO` | Required JUnit evidence is present and failed |
+| Missing required evidence | `evidence-canary` | `CONDITIONAL GO` | Policy requires JUnit evidence, but no evidence bundle is present |
 
 ## Comment Contract
 
